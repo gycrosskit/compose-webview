@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name="io.github.gycrosskit.composewebview.ComposeWebViewFileProvider"
+            android:authorities="${applicationId}.composewebview.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/compose_webview_file_paths" />
+        </provider>
+    </application>
+</manifest>

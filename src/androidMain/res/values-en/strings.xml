@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="web_permission_explanation_title">Permission use</string>
+    <string name="web_permission_acknowledge">Got it</string>
+    <string name="web_permission_name_camera">Camera permission</string>
+    <string name="web_permission_name_microphone">Microphone permission</string>
+    <string name="web_permission_name_camera_microphone">Camera and microphone permissions</string>
+    <string name="web_permission_scenario_upload_photo">Used to take and upload a photo on the current web page.</string>
+    <string name="web_permission_scenario_upload_video">Used to record and upload a video with sound on the current web page.</string>
+    <string name="web_permission_scenario_video_capture">Used to provide video on the current web page, such as taking a photo or joining a video call.</string>
+    <string name="web_permission_scenario_audio_call">Used to capture audio on the current web page, such as for a voice or video call.</string>
+    <string name="web_permission_scenario_av_call">Used to provide video and audio on the current web page, such as for a video call.</string>
+    <string name="web_permission_impact_camera">Without permission, web photo and video features are unavailable. You can still browse and choose an image from your gallery.</string>
+    <string name="web_permission_impact_microphone">Without permission, web recording and calling features are unavailable. You can still browse the page.</string>
+    <string name="web_permission_impact_camera_microphone">Without permission, web capture, video, and recording features are unavailable. You can still browse the page.</string>
+</resources>

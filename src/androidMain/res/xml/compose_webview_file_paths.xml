@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path name="webview_pictures" path="Pictures/" />
+    <external-files-path name="webview_movies" path="Movies/" />
+    <cache-path name="webview_capture" path="webview_capture/" />
+</paths>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="web_permission_explanation_title">权限使用说明</string>
+    <string name="web_permission_acknowledge">知道了</string>
+    <string name="web_permission_name_camera">相机权限</string>
+    <string name="web_permission_name_microphone">麦克风权限</string>
+    <string name="web_permission_name_camera_microphone">相机和麦克风权限</string>
+    <string name="web_permission_scenario_upload_photo">用于当前网页拍照并上传图片。</string>
+    <string name="web_permission_scenario_upload_video">用于当前网页拍摄并上传视频，同时录制声音。</string>
+    <string name="web_permission_scenario_video_capture">用于当前网页提供视频画面，例如网页内拍照或视频通话。</string>
+    <string name="web_permission_scenario_audio_call">用于当前网页采集声音，例如网页内语音或音视频通话。</string>
+    <string name="web_permission_scenario_av_call">用于当前网页提供视频画面和声音，例如网页内音视频通话。</string>
+    <string name="web_permission_impact_camera">未授权时，将无法使用网页拍照或视频画面功能，但仍可浏览网页和从相册选择图片。</string>
+    <string name="web_permission_impact_microphone">未授权时，将无法使用网页录音或通话功能，但仍可浏览网页。</string>
+    <string name="web_permission_impact_camera_microphone">未授权时，将无法使用网页拍摄、视频画面或录音功能，但仍可浏览网页。</string>
+</resources>
