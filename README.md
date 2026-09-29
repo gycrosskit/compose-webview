@@ -26,7 +26,7 @@ Then add the tagged version to the KMP module:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("com.github.gycrosskit.compose-webview:compose-webview:0.1.0")
+            implementation("com.github.gycrosskit.compose-webview:compose-webview:0.1.1")
         }
     }
 }
