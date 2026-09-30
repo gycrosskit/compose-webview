@@ -56,3 +56,11 @@ WEBVIEW_IOS_RENDER_FRAMEWORK_DIR=/path/to/parent/of/OpenKuiklyIOSRender.framewor
 - 公共模型新增 Navigation/HistoryChanged/CapabilityUnsupported，穷尽 when 需更新；旧二进制 ABI 未验证。不能把保留源码入口等同于无条件二进制兼容。
 - OHOS Native 编译器生成的 C adapter 有既有 return-type 警告；未关闭类型检查。iOS simulator 的真实 Render 最终链接未执行，已执行 simulator Kotlin compile 和 iphoneos 真实 Render 最终链接。
 - 远程结果以不可变标签、GitHub Release、JitPack 实际下载及 ohpm registry 安装为准；本地检查不替代远程验证。
+
+## 0.2.0-rc.2 远程结果
+
+- 不可变标签指向 `2cb91d3a7442dd6d84891749b592315ea65034c7`，GitHub prerelease 已上传，JitPack 17 个模块构建成功。
+- `-PremoteOnly` 只从 JitPack 解析本组件：Kuikly Android APK/D8、无 Compose、iOS arm64 Framework/模拟器编译、OHOS shared library 通过；混合 CMP Android APK/D8 与 iOS 模拟器编译也通过。
+- iOS 原生代码从同一远程标签下载后，真实 Render Objective-C/最终链接/Swift 类型检查通过。Release HAR 下载与 SHA-256 校验、首航重试/来源白名单/capture 不支持回归和新独立 HAR 消费编译通过。
+- ohpm 已接受 `@gycrosskit/webview@0.2.0-rc.2` 的 next 提交，仍在审核，registry 尚不能安装；审核期间使用同标签 Release HAR。设备及生产验收未完成。
+- 日志：`build/remote-rc2-consumer.log`、`build/remote-rc2-cmp.log`、`build/remote-rc2-native-ios.log`、`build/remote-rc2-har-consumer.log`；[共用发布记录](https://github.com/gycrosskit/.github/blob/main/docs/发布记录/2026-09-30-WebView与Live预发布.md)。
