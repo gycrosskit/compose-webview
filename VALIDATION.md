@@ -1,6 +1,6 @@
 # WebView 0.2.0 候选验证
 
-日期：2026-09-30。独占 Worktree `gycrosskit-kuikly-webview`，任务分支 `codex/kuikly-webview`。本轮预发布 Maven / Pod / HAR 版本统一为 `0.2.0-rc.1`；历史本地候选结果保留，远程结果另行记录。
+日期：2026-09-30。独占 Worktree `gycrosskit-kuikly-webview`，任务分支 `codex/kuikly-webview`。本轮预发布 Maven / Pod / HAR 版本统一为 `0.2.0-rc.2`；历史本地候选结果保留，远程结果另行记录。
 
 ## 已执行
 

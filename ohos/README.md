@@ -1,6 +1,6 @@
 # GY WebView 鸿蒙构建
 
-`@gycrosskit/webview` 0.2.0-rc.1 预发布版，系统 ArkWeb + Kuikly 2.28.0，最低 HarmonyOS API 22。
+`@gycrosskit/webview` 0.2.0-rc.2 预发布版，系统 ArkWeb + Kuikly 2.28.0，最低 HarmonyOS API 22。
 
 完整安装、公共 wire、能力限制与安全来源证据见 [HAR README](webview-native/README.md)。变更见 [CHANGELOG](webview-native/CHANGELOG.md)，本地验证见 [VERIFICATION](VERIFICATION.md)。
 
