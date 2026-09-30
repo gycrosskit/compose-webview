@@ -1,7 +1,13 @@
 .gradle/
 .kotlin/
-build/
+**/build/
 local.properties
 .idea/
 *.iml
 .DS_Store
+**/oh_modules/
+**/.hvigor/
+**/oh-package-lock.json5
+**/BuildProfile.ets
+**/__pycache__/
+*.pyc

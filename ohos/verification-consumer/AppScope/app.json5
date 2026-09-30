@@ -1,0 +1,10 @@
+{
+  "app": {
+    "bundleName": "io.github.gycrosskit.webview",
+    "vendor": "gycrosskit",
+    "versionCode": 20000,
+    "versionName": "0.2.0",
+    "icon": "$media:app_icon",
+    "label": "$string:app_name"
+  }
+}

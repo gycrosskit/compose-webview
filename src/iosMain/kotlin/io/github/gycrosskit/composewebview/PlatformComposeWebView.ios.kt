@@ -56,11 +56,19 @@ internal actual fun PlatformAppWebView(
     pageEnteredAtMillis: Long,
     visible: Boolean,
 ) {
+    val initialNavigation = request.content.initialOrigin()?.let { WebViewNavigationRequest(it, true, false) }
+    if (initialNavigation != null && !request.allowsNavigation(initialNavigation)) {
+        DisposableEffect(request) {
+            callbacks.onEvent(WebViewEvent.Navigation(initialNavigation, true))
+            onDispose {}
+        }
+        return
+    }
     val currentRequest by rememberUpdatedState(request)
     val currentCallbacks by rememberUpdatedState(callbacks)
     val scope = rememberCoroutineScope()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    key(request.settings, request.security, request.scripts, request.blockedResourceRules) {
+    key(request.settings, request.security, request.scripts, request.blockedResourceRules, request.navigationPolicy) {
         val coordinator = remember {
             IosWebViewCoordinator(
                 state = state,
@@ -186,6 +194,7 @@ private class IosWebViewCoordinator(
     private var performanceTrace: WebViewPerformanceTrace? = null
     private var released = false
     private var navigationGeneration = 0
+    private var initialHtmlNavigation = false
     private var mediaTarget: WKWebView? = null
     private var mediaSuspended = true
     private var wasPaused = false
@@ -245,6 +254,7 @@ private class IosWebViewCoordinator(
                     current.content,
                     current.settings.cachePolicy,
                 ) {
+                    initialHtmlNavigation = current.content is WebViewContent.Html
                     performanceTrace?.load(current.content)
                     progress.show(0)
                     progress.observe(webView, restart = true)
@@ -256,6 +266,7 @@ private class IosWebViewCoordinator(
     fun loadWhenReady(webView: WKWebView, content: WebViewContent) {
         if (contentRulesReady) {
             state.loadIfChanged(webView, content, request().settings.cachePolicy) {
+                initialHtmlNavigation = content is WebViewContent.Html
                 performanceTrace?.load(content)
                 progress.show(0)
                 progress.observe(webView, restart = true)
@@ -312,6 +323,7 @@ private class IosWebViewCoordinator(
 
     @ObjCSignatureOverride
     override fun webView(webView: WKWebView, didStartProvisionalNavigation: WKNavigation?) {
+        initialHtmlNavigation = false
         navigationGeneration++
         visibleForNavigation = false
         performanceTrace?.pageStarted(webView.URL?.absoluteString)
@@ -386,14 +398,21 @@ private class IosWebViewCoordinator(
             WebViewNavigationTarget.CURRENT_WINDOW
         }
         val current = request()
-        val blockedByTrust = current.shouldBlockMainFrameNavigation(url, isMainFrame)
-        webView.evaluateJavaScript(IOS_HAS_RECENT_USER_GESTURE_SCRIPT) { value, _ ->
-            val hasUserGesture = (value as? NSNumber)?.boolValue ?: (value as? Boolean ?: false)
+        val navigation = WebViewNavigationRequest(url, isMainFrame, false, target)
+        val internalHtmlLoad = initialHtmlNavigation && navigation.isInternalHtmlInitialNavigation() &&
+            decidePolicyForNavigationAction.navigationType == platform.WebKit.WKNavigationTypeOther
+        if (isMainFrame) initialHtmlNavigation = false
+        val blockedByTrust = !internalHtmlLoad && !current.allowsNavigation(navigation)
+        fun decide(hasUserGesture: Boolean) {
             val decision = completeIosWebNavigation(
                 navigation = WebViewNavigationRequest(url, isMainFrame, hasUserGesture, target),
                 blockedByTrust = blockedByTrust,
                 isActive = { !released && state.isAttached(webView) },
-                route = { navigation -> callbacks().onNavigationRequest(navigation) },
+                route = { value ->
+                    callbacks().onNavigationRequest(value).also { decision ->
+                        callbacks().onEvent(WebViewEvent.Navigation(value, blockedByTrust || decision == WebViewNavigationDecision.BLOCK))
+                    }
+                },
                 loadPopup = { webView.loadRequest(decidePolicyForNavigationAction.request) },
                 onBlocked = {
                     progress.stop()
@@ -405,6 +424,10 @@ private class IosWebViewCoordinator(
                 if (decision == WebViewNavigationDecision.ALLOW) WKNavigationActionPolicy.WKNavigationActionPolicyAllow
                 else WKNavigationActionPolicy.WKNavigationActionPolicyCancel,
             )
+        }
+        if (blockedByTrust || internalHtmlLoad || !current.settings.javaScriptEnabled) decide(false)
+        else webView.evaluateJavaScript(IOS_HAS_RECENT_USER_GESTURE_SCRIPT) { value, _ ->
+            decide((value as? NSNumber)?.boolValue ?: (value as? Boolean ?: false))
         }
     }
 

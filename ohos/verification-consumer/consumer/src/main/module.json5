@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "WebViewConsumer",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet"
+    ]
+  }
+}

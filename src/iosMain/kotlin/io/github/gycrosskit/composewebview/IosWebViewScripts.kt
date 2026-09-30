@@ -30,6 +30,13 @@ internal val IOS_FILE_CHOOSER_GATE_SCRIPT = """
 /** 仅把既有 Android Bridge 兼容协议转发给 WKScriptMessageHandler，不在脚本中解释业务消息。 */
 internal const val IOS_BRIDGE_SCRIPT = """
     (function() {
+      window.GYWebViewBridge = {
+        postMessage: function(handlerName, data) {
+          var value = (data === undefined || data === null) ? '{}' :
+            (typeof data === 'object' ? JSON.stringify(data) : String(data));
+          window.webkit.messageHandlers.JSAndroidBridge.postMessage(String(handlerName) + '\u001F' + value);
+        }
+      };
       window.JSAndroidBridge = {
         handleJSBridgeMessage: function(handlerName, data) {
           window.webkit.messageHandlers.JSAndroidBridge.postMessage(
@@ -67,7 +74,13 @@ internal val IOS_WEB_EVENT_SCRIPT = """
       document.addEventListener('fullscreenchange', function() {
         publishFullscreen(Boolean(document.fullscreenElement || document.webkitFullscreenElement));
       }, true);
-      document.addEventListener('webkitbeginfullscreen', function() { publishFullscreen(true); }, true);
-      document.addEventListener('webkitendfullscreen', function() { publishFullscreen(false); }, true);
+      document.addEventListener('webkitbeginfullscreen', function(event) {
+        window.__GY_WEBVIEW_FULLSCREEN_VIDEO__ = event.target;
+        publishFullscreen(true);
+      }, true);
+      document.addEventListener('webkitendfullscreen', function() {
+        window.__GY_WEBVIEW_FULLSCREEN_VIDEO__ = null;
+        publishFullscreen(false);
+      }, true);
     })();
 """.trimIndent()
