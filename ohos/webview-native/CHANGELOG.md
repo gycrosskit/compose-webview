@@ -1,6 +1,6 @@
 # 变更记录
 
-## 0.2.0-rc.1（预发布）
+## 0.2.0-rc.2（预发布）
 
 - 增加 `GYWebView`，自行封装系统 ArkWeb 与 Kuikly 原生 View。
 - 对齐公共 WebViewRequest、导航规则、JSON 方法回调和统一 H5 Bridge 协议。

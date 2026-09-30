@@ -2,7 +2,7 @@
 
 Android、iOS、HarmonyOS 的系统网页组件封装。CMP 和 Kuikly 使用同一套请求、事件与安全契约；网页 URL、鉴权、业务 JSBridge 处理器和页面导航由宿主提供。
 
-本轮预发布版本为 **`0.2.0-rc.1`**，Maven / 原生 Pod / HAR 使用同一版本。设备验收尚未完成，生产接入前仍需真实 H5 和平台行为回归。已发布的 CMP `0.1.1` 坐标继续可用。
+本轮预发布版本为 **`0.2.0-rc.2`**，Maven / 原生 Pod / HAR 使用同一版本。设备验收尚未完成，生产接入前仍需真实 H5 和平台行为回归。已发布的 CMP `0.1.1` 坐标继续可用。
 
 ## 目录与接入边界
 
@@ -23,7 +23,7 @@ CMP 使用根模块；Kuikly 使用独立模块，按宿主 UI 引擎选择：
 
 ```kotlin
 // 预发布固定版本；settings 中添加 https://jitpack.io。
-val webViewVersion = "0.2.0-rc.1"
+val webViewVersion = "0.2.0-rc.2"
 commonMain.dependencies {
     implementation("com.github.gycrosskit.compose-webview:webview-kuikly:$webViewVersion")
 }
@@ -79,7 +79,7 @@ H5 通用入口为 `GYWebViewBridge.postMessage(handlerName, data)`，宿主收�
 
 AndroidX Activity 会传递稳定性注解包，该包不含 Compose UI 或执行运行时；独立消费者的门禁仅放行这两个注解模块。其他 Compose UI/runtime 依赖仍会使 Kuikly 验证失败。
 
-本地 Maven 打包执行 `bash scripts/package-maven.sh`。JitPack 使用 macOS 预构建归档和 SHA-256 校验；`release-checksums.txt` 保存不可变标签的真实归档校验值。远程消费者使用 `-PremoteOnly -PwebViewVersion=0.2.0-rc.1`，该模式仅从 JitPack 读取本组件。HAR 的 ohpm 审核状态须查询 registry 并实际安装确认；同标签 GitHub Release 的 HAR 可用于审核期间的远程预发布验收。
+本地 Maven 打包执行 `bash scripts/package-maven.sh`。JitPack 使用 macOS 预构建归档和 SHA-256 校验；`release-checksums.txt` 保存不可变标签的真实归档校验值。远程消费者使用 `-PremoteOnly -PwebViewVersion=0.2.0-rc.2`，该模式仅从 JitPack 读取本组件。HAR 的 ohpm 审核状态须查询 registry 并实际安装确认；同标签 GitHub Release 的 HAR 可用于审核期间的远程预发布验收。
 
 ## 许可证
 

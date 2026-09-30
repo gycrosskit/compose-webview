@@ -1,2 +1,3 @@
 # immutable-tag sha256-of-compose-webview-maven.tar.gz
 0.2.0-rc.1 27776ec3a16a755e85b7992dcd5106409f83ef979c7d39ae8ede87b1d3d52b42
+0.2.0-rc.2 db88418d329b647e12e2a7dddc569fa19ef3ed9a8631c618615fe09b98652b10

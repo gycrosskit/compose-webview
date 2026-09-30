@@ -1,10 +1,18 @@
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **0.2.0-rc.1 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖只有 `@kuikly-open/render:2.28.0`，不依赖 `@yuki8273/webview-ohos`。
+`@gycrosskit/webview` 的 **0.2.0-rc.2 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖只有 `@kuikly-open/render:2.28.0`，不依赖 `@yuki8273/webview-ohos`。
 
 ## 安装与注册
 
 HAR 使用同版本的不可变 GitHub Release；ohpm 上架前保持审核状态说明，不能把 prepublish 当作已发布。
+
+## 安装
+
+```bash
+ohpm install @gycrosskit/webview@0.2.0-rc.2
+```
+
+上架审核期间，可从同版本 GitHub Release 下载 HAR 并校验 SHA-256；不要使用本地源码构建替代远程验收。
 
 ```json
 {
