@@ -32,6 +32,14 @@ internal actual fun PlatformAppWebView(
     pageEnteredAtMillis: Long,
     visible: Boolean,
 ) {
+    val initialNavigation = request.content.initialOrigin()?.let { WebViewNavigationRequest(it, true, false) }
+    if (initialNavigation != null && !request.allowsNavigation(initialNavigation)) {
+        DisposableEffect(request) {
+            callbacks.onEvent(WebViewEvent.Navigation(initialNavigation, true))
+            onDispose {}
+        }
+        return
+    }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -51,7 +59,10 @@ internal actual fun PlatformAppWebView(
         }
     }
     val popupRouter = remember {
-        AndroidPopupRouter(request = { currentRequest }, callbacks = { currentCallbacks })
+        AndroidPopupRouter(request = { currentRequest }, onNavigation = { navigation ->
+            if (shouldBlockNavigation(navigation, currentRequest, currentCallbacks)) WebViewNavigationDecision.BLOCK
+            else WebViewNavigationDecision.ALLOW
+        })
     }
     val fullscreenController = remember(activity, lifecycleOwner, scope) {
         activity?.let {
@@ -85,7 +96,7 @@ internal actual fun PlatformAppWebView(
     }
 
     // 高权限来源集合变化时重建实例，保证旧页面的 Bridge/Client 不继续服务新安全边界。
-    key(request.security, request.scripts, request.settings.javaScriptEnabled) {
+    key(request.security, request.scripts, request.settings.javaScriptEnabled, request.navigationPolicy) {
         AppWebView(
             content = request.content,
             visible = visible,
@@ -200,24 +211,25 @@ private fun commonWebViewClient(
         }
     },
 ) {
+    private var initialHtmlNavigation = request().content is WebViewContent.Html
+
+    override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+        initialHtmlNavigation = false
+        super.onPageStarted(view, url, favicon)
+    }
+
+    private fun route(navigation: WebViewNavigationRequest): Boolean {
+        val internalHtmlLoad = initialHtmlNavigation && navigation.isInternalHtmlInitialNavigation()
+        if (navigation.isMainFrame) initialHtmlNavigation = false
+        return shouldBlockNavigation(navigation, request(), callbacks(), internalHtmlLoad)
+    }
+
     override fun shouldOverrideUrlLoading(view: WebView, navigation: WebResourceRequest): Boolean =
-        shouldBlockNavigation(
-            url = navigation.url.toString(),
-            isMainFrame = navigation.isForMainFrame,
-            hasUserGesture = navigation.hasGesture(),
-            request = request(),
-            callbacks = callbacks(),
-        )
+        route(WebViewNavigationRequest(navigation.url.toString(), navigation.isForMainFrame, navigation.hasGesture()))
 
     @Deprecated("Deprecated in Java")
     override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
-        shouldBlockNavigation(
-            url = url,
-            isMainFrame = true,
-            hasUserGesture = false,
-            request = request(),
-            callbacks = callbacks(),
-        )
+        route(WebViewNavigationRequest(url, true, false))
 
     override fun shouldInterceptRequest(
         view: WebView,
@@ -252,93 +264,14 @@ private fun commonWebViewClient(
 }
 
 private fun shouldBlockNavigation(
-    url: String,
-    isMainFrame: Boolean,
-    hasUserGesture: Boolean,
+    navigation: WebViewNavigationRequest,
     request: WebViewRequest,
     callbacks: WebViewCallbacks,
+    internalHtmlLoad: Boolean = false,
 ): Boolean {
-    val blockedByTrust = request.shouldBlockMainFrameNavigation(url, isMainFrame)
-    val blockedByCallback = callbacks.onNavigationRequest(
-        WebViewNavigationRequest(
-            url = url,
-            isMainFrame = isMainFrame,
-            hasUserGesture = hasUserGesture,
-            target = WebViewNavigationTarget.CURRENT_WINDOW,
-        ),
-    ) == WebViewNavigationDecision.BLOCK
-    return blockedByTrust || blockedByCallback
-}
-
-/** `window.open` 只解析目标并交给中立导航回调，临时 WebView 不安装 Bridge。 */
-private class AndroidPopupRouter(
-    private val request: () -> WebViewRequest,
-    private val callbacks: () -> WebViewCallbacks,
-) {
-    private val popups = mutableSetOf<WebView>()
-
-    fun createWindow(parent: WebView, hasUserGesture: Boolean, resultMessage: Message): Boolean {
-        if (!parent.isActiveAppWebView()) return false
-        val transport = resultMessage.obj as? WebView.WebViewTransport ?: return false
-        lateinit var popup: WebView
-        var routed = false
-        fun route(url: String?) {
-            val target = url?.takeUnless { it.isBlank() || it == "about:blank" } ?: return
-            if (routed) return
-            routed = true
-            val current = request()
-            val trusted =
-                !(current.security.appBridgeEnabled || current.security.pageBridgeEnabled) ||
-                    current.canUseAppBridgeAt(target)
-            val decision = callbacks().onNavigationRequest(
-                WebViewNavigationRequest(
-                    url = target,
-                    isMainFrame = true,
-                    hasUserGesture = hasUserGesture,
-                    target = WebViewNavigationTarget.NEW_WINDOW,
-                ),
-            )
-            if (trusted && decision == WebViewNavigationDecision.ALLOW && parent.isActiveAppWebView()) {
-                parent.loadUrl(target)
-            }
-            close(popup)
-        }
-        popup = WebView(parent.context).apply {
-            WebViewDiagnostics.created(this, "popup")
-            settings.javaScriptEnabled = true
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            webViewClient = object : android.webkit.WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    route(request.url.toString())
-                    return true
-                }
-
-                @Deprecated("Deprecated in Java")
-                override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                    route(url)
-                    return true
-                }
-
-                override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
-                    route(url)
-                }
-            }
-        }
-        popups += popup
-        transport.webView = popup
-        resultMessage.sendToTarget()
-        return true
-    }
-
-    fun close(target: WebView) {
-        if (!popups.remove(target)) return
-        WebViewDiagnostics.markReleased(target)
-        runCatching { target.stopLoading() }
-        runCatching { target.webChromeClient = null }
-        runCatching { target.webViewClient = android.webkit.WebViewClient() }
-        runCatching { target.destroy() }
-    }
-
-    fun release() = popups.toList().forEach(::close)
+    val blockedByPolicy = !internalHtmlLoad && !request.allowsNavigation(navigation)
+    val blockedByCallback = callbacks.onNavigationRequest(navigation) == WebViewNavigationDecision.BLOCK
+    val blocked = blockedByPolicy || blockedByCallback
+    callbacks.onEvent(WebViewEvent.Navigation(navigation, blocked))
+    return blocked
 }

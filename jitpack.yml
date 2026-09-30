@@ -1,5 +1,4 @@
 jdk:
   - openjdk17
 install:
-  - ./gradlew publishToMavenLocal --no-daemon
-  - python3 jitpack-metadata.py
+  - bash jitpack-install.sh compose-webview
