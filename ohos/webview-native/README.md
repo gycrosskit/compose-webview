@@ -4,7 +4,7 @@
 
 ## 安装与注册
 
-HAR 使用同版本的不可变 GitHub Release；ohpm 上架前保持审核状态说明，不能把 prepublish 当作已发布。
+`@gycrosskit/webview@0.2.0-rc.2` 已公开列于 OHPM Registry，可使用下方精确版本安装。GitHub Release 另提供不可变 HAR 与 SHA-256。
 
 ## 安装
 
@@ -12,7 +12,7 @@ HAR 使用同版本的不可变 GitHub Release；ohpm 上架前保持审核状�
 ohpm install @gycrosskit/webview@0.2.0-rc.2
 ```
 
-上架审核期间，可从同版本 GitHub Release 下载 HAR 并校验 SHA-256；不要使用本地源码构建替代远程验收。
+离线分发时，可从同版本 GitHub Release 下载 HAR 并校验 SHA-256；下载缓存的 file 依赖与 Registry 安装分开验收。
 
 ```json
 {
