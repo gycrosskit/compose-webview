@@ -54,6 +54,14 @@ const mocks = {
   '@kit.CoreFileKit': { picker: { DocumentSelectOptions: class {}, DocumentViewPicker: class { select() { return selectedFile.promise; } } } },
   './WebViewComponent': { createGYWebView() {} },
 };
+// 使用组件真实 Window owner，替身仅隔离系统 Window/ArkWeb。
+const policySource = process.env.WEBVIEW_WINDOW_POLICY_SOURCE || path.resolve(__dirname,
+  '../webview-native/oh_modules/@gycrosskit/system-actions-native/src/main/ets/WindowPolicy.ets');
+const policyExports = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(policySource, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }
+}).outputText, { exports: policyExports, require: name => mocks[name] });
+mocks['@gycrosskit/system-actions-native'] = policyExports;
 const cache = {};
 function load(file) {
   if (cache[file]) return cache[file];
@@ -249,6 +257,87 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(consumed, true); assert.equal(exits, 1); assert.deepEqual(orientations, [1, 0]); assert.deepEqual(layouts, [true, false]);
   fullscreenView.call('exitFullscreen', null, result => consumed = result.result); assert.equal(consumed, false);
   fullscreenView.onDestroy();
+
+  // ArkWeb 无参退出事件：同 render 确认退出前拒绝新进入，Window 恢复不等待事件。
+  const rapid = new GYWebView(); let firstRapidExit = 0; let rejectedRapidExit = 0; let currentRapidExit = 0;
+  rapid.enterFullscreen({ exitFullScreen: () => firstRapidExit++ }, 1600, 900); await rapid.windowTask;
+  rapid.exitFullscreen();
+  rapid.enterFullscreen({ exitFullScreen: () => rejectedRapidExit++ }, 1600, 900);
+  assert.equal(firstRapidExit, 1); assert.equal(rejectedRapidExit, 1); assert.equal(rapid.fullscreenHandler, null);
+  await rapid.windowTask;
+  assert.equal(layouts.at(-1), false, 'Window restores without waiting for native exit confirmation');
+  assert.equal(rapid.nativeExitPending, true);
+  rapid.nativeFullscreenExited();
+  assert.equal(rapid.nativeExitPending, false, 'late A exit acknowledges the gate without touching a later handler');
+  const currentRapidHandler = { exitFullScreen: () => currentRapidExit++ };
+  rapid.enterFullscreen(currentRapidHandler, 1600, 900); await rapid.windowTask;
+  assert.equal(rapid.fullscreenHandler, currentRapidHandler);
+  rapid.nativeFullscreenExited(); await rapid.windowTask;
+  assert.equal(rapid.fullscreenHandler, null); assert.equal(currentRapidExit, 0, 'native exit must not ask already-exited handler to exit again');
+  rapid.onDestroy();
+
+  const sourceChanged = new GYWebView(); sourceChanged.setProp('request', encoded(standard));
+  const oldRender = sourceChanged.renderToken;
+  sourceChanged.enterFullscreen({ exitFullScreen() {} }, 1600, 900); await sourceChanged.windowTask;
+  sourceChanged.exitFullscreen(); sourceChanged.setProp('request', encoded(standard));
+  assert.equal(sourceChanged.nativeExitPending, false, 'new Controller/render clears only old-render gate');
+  const sourceHandler = { exitFullScreen() {} };
+  sourceChanged.enterFullscreen(sourceHandler, 1600, 900); await sourceChanged.windowTask;
+  sourceChanged.nativeFullscreenExited(oldRender);
+  assert.equal(sourceChanged.fullscreenHandler, sourceHandler, 'old render exit cannot clear new source fullscreen');
+  sourceChanged.nativeFullscreenExited(sourceChanged.renderToken); await sourceChanged.windowTask; sourceChanged.onDestroy();
+
+  const synchronouslyExited = new GYWebView();
+  synchronouslyExited.enterFullscreen({ exitFullScreen: () => synchronouslyExited.nativeFullscreenExited() }, 1600, 900);
+  await synchronouslyExited.windowTask; synchronouslyExited.exitFullscreen(); await synchronouslyExited.windowTask;
+  assert.equal(synchronouslyExited.nativeExitPending, false, 'gate is set before synchronously emitted native exit');
+  synchronouslyExited.onDestroy();
+
+  const destroyedActive = new GYWebView(); let destroyedHandlerExit = 0;
+  destroyedActive.enterFullscreen({ exitFullScreen: () => destroyedHandlerExit++ }, 1600, 900); await destroyedActive.windowTask;
+  destroyedActive.onDestroy(); await destroyedActive.windowTask;
+  const afterDestroyWindowCalls = layouts.length + orientations.length;
+  destroyedActive.nativeFullscreenExited();
+  destroyedActive.enterFullscreen({ exitFullScreen: () => destroyedHandlerExit++ }, 1600, 900);
+  assert.equal(destroyedHandlerExit, 2); assert.equal(layouts.length + orientations.length, afterDestroyWindowCalls);
+
+  const componentSource = fs.readFileSync(path.join(root, 'WebViewComponent.ets'), 'utf8');
+  assert.ok(componentSource.includes('nativeFullscreenExited(this.renderToken)'), 'ArkUI exit events carry render ownership into acknowledgment');
+
+  const barCalls = []; let firstExit = 0; let secondExit = 0;
+  const sharedFullscreenWindow = { getPreferredOrientation: () => 0,
+    getWindowProperties: () => ({ isLayoutFullScreen: false, isFullScreen: false }),
+    setPreferredOrientation: async value => orientations.push(value),
+    setWindowSystemBarEnable: async value => barCalls.push(Array.from(value)),
+    setWindowLayoutFullScreen: async value => layouts.push(value) };
+  windowObject.getLastWindow = async () => sharedFullscreenWindow;
+  class HostPolicyView extends GYWebView {
+    fullscreenPolicy(width, height) {
+      return { enterOrientation: width <= 0 || height <= 0 || width > height ? 1 : undefined,
+        unspecifiedExitOrientation: 2, enterSystemBars: [],
+        exitSystemBarsWhenFullscreen: [], exitSystemBarsWhenNotFullscreen: ['status', 'navigation'] };
+    }
+  }
+  const firstFull = new HostPolicyView(); const secondFull = new HostPolicyView();
+  firstFull.enterFullscreen({ exitFullScreen: () => firstExit++ }, 0, 0); await firstFull.windowTask;
+  secondFull.enterFullscreen({ exitFullScreen: () => secondExit++ }, 0, 0); await secondFull.windowTask;
+  assert.equal(firstExit, 1, 'new shared owner exits old ArkWeb handler');
+  firstFull.onDestroy(); await firstFull.windowTask;
+  assert.deepEqual(barCalls, [[], []], 'old destruction cannot restore new view');
+  secondFull.exitFullscreen(); await secondFull.windowTask;
+  assert.equal(secondExit, 1); assert.deepEqual(barCalls, [[], [], ['status', 'navigation']]);
+  assert.equal(orientations.at(-1), 2, 'host UNSPECIFIED fallback is explicit policy');
+  secondFull.onDestroy();
+
+  const lateWindow = deferred(); let lateWindowCalls = 0;
+  windowObject.getLastWindow = () => lateWindow.promise;
+  const destroyedFull = new GYWebView();
+  destroyedFull.enterFullscreen({ exitFullScreen() {} }, 1600, 900);
+  await Promise.resolve(); destroyedFull.onDestroy();
+  lateWindow.resolve({ getPreferredOrientation: () => 0, getWindowProperties: () => ({}),
+    setPreferredOrientation: async () => lateWindowCalls++, setWindowLayoutFullScreen: async () => lateWindowCalls++ });
+  await destroyedFull.windowTask;
+  assert.equal(lateWindowCalls, 0, 'destroy before Window resolution never mutates window');
 
   // 执行真正的 document-start closure，拒绝来自 iframe 或页面伪造的消息端口。
   const bridgeSource = fs.readFileSync(path.join(root, 'GYWebView.ets'), 'utf8').match(/const BRIDGE_BOOTSTRAP: string = `([\s\S]*?)`;/)[1];

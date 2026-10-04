@@ -64,3 +64,14 @@ WEBVIEW_IOS_RENDER_FRAMEWORK_DIR=/path/to/parent/of/OpenKuiklyIOSRender.framewor
 - iOS 原生代码从同一远程标签下载后，真实 Render Objective-C/最终链接/Swift 类型检查通过。Release HAR 下载与 SHA-256 校验、首航重试/来源白名单/capture 不支持回归和新独立 HAR 消费编译通过。
 - ohpm 已接受 `@gycrosskit/webview@0.2.0-rc.2` 的 next 提交，仍在审核，registry 尚不能安装；审核期间使用同标签 Release HAR。设备及生产验收未完成。
 - 日志：`build/remote-rc2-consumer.log`、`build/remote-rc2-cmp.log`、`build/remote-rc2-native-ios.log`、`build/remote-rc2-har-consumer.log`；[共用发布记录](https://github.com/gycrosskit/.github/blob/main/docs/发布记录/2026-09-30-WebView与Live预发布.md)。
+
+## 2026-10-04 M11/M12 闭合候选 0.2.0-rc.3
+
+WebView 的资源缓存和完整网站数据清理进入 webview-core 两端；ArkWeb 全屏 handler 留本组件，窗口执行复用 system-actions 0.2.0-rc.2。宿主只注入目标方向/系统栏策略，保留 Web UI 与业务路由。
+
+- Android CMP/core 定向测试共60项，0失败/跳过；完整17个Maven modules、3个平台族变体 staging 编译与 metadata/实体产物 SHA 检查通过。
+- 实际 API22 WebView HAR Hvigor30/30任务通过；源和实际 HAR 的导航/Bridge/资源/全屏迟退出与多owner契约通过；ohpm prepublish通过。
+- system-actions 本轮 Registry 尚不可安装，本地构建以校验过的公开 Release HAR 临时 override 消费；override 仅用于候选验证，已恢复原根manifest。发布HAR保持精确Registry依赖0.2.0-rc.2，不包含本机路径。
+- Maven SHA与HAR SHA见Release SHA256SUMS；JitPack发布、真实远程 Maven/Pod/Release HAR消费与正式OHPM安装结果另记，不能用旧rc.2结果代替。
+
+没有执行网页设备/拍摄上传验收；本轮未实现OHOS capture新能力。源码全平台编译不等于宿主最终App/HAP已通过。

@@ -1,15 +1,15 @@
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **0.2.0-rc.2 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖只有 `@kuikly-open/render:2.28.0`，不依赖 `@yuki8273/webview-ohos`。
+`@gycrosskit/webview` 的 **0.2.0-rc.3 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.2`，后者提供共用窗口执行 owner。
 
 ## 安装与注册
 
-`@gycrosskit/webview@0.2.0-rc.2` 已公开列于 OHPM Registry，可使用下方精确版本安装。GitHub Release 另提供不可变 HAR 与 SHA-256。
+候选 HAR 0.2.0-rc.3 配套 system-actions 0.2.0-rc.2。正式 Registry 安装需两个精确版本可查询；Release HAR 与 Registry 分别验收。
 
 ## 安装
 
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.2
+ohpm install @gycrosskit/webview@0.2.0-rc.3
 ```
 
 离线分发时，可从同版本 GitHub Release 下载 HAR 并校验 SHA-256；下载缓存的 file 依赖与 Registry 安装分开验收。
@@ -81,3 +81,10 @@ bash ohos/scripts/verify-har.sh
 ```
 
 使用已有 DevEco Studio 的 Node、ohpm、hvigor 与 SDK，可用 `WEBVIEW_DEVECO_HOME` 指定相同工具目录。脚本依次运行源码 contract/security 检查、assembleHar、解包实际 HAR 的系统替身回归、ohpm prepublish，然后由独立 consumer 安装实际打包的 HAR 并编译公开 API。见 [VERIFICATION.md](../VERIFICATION.md)。这些检查不等于设备、权限弹窗、H5 时序或播放器验收。
+
+
+全屏原生事件限制：SDK 的 `onFullScreenExit` 没有 handler/id。主动调用 `exitFullscreen` 后，
+同一 render 在收到原生退出确认前拒绝下一次全屏并退出新 handler，避免旧通知释放新 lease。
+`nativeFullscreenExited(renderToken)` 先确认已主动退出的代次；系统/网页自行退出时再释放当前 lease。
+Window 的恢复不等待该事件，也不设置超时猜测归属；若 SDK 没有确认，同 render 的再进入保持拒绝。
+新 request 创建新 Controller/render 时清门禁，旧 token 事件仍被过滤；销毁不会再交付事件或操作新 owner。

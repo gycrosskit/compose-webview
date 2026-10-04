@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name = 'GYWebView'
-  s.version = '0.2.0-rc.2'
+  s.version = '0.2.0-rc.3'
   s.summary = '由 gycrosskit 维护的 Kuikly 系统 WKWebView 适配'
   s.homepage = 'https://github.com/gycrosskit/compose-webview'
   s.license = { :type => 'Apache-2.0', :file => 'LICENSE' }
