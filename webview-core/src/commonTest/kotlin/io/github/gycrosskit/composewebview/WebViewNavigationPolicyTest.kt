@@ -3,8 +3,45 @@ package io.github.gycrosskit.composewebview
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.assertEquals
 
 class WebViewNavigationPolicyTest {
+    @Test fun navigationOriginsDoNotGrantBridgeAndRemainIndependentOfJavascript() {
+        for (javascript in listOf(false, true)) {
+            val request = WebViewRequest(
+                WebViewContent.Url("https://safe.example/start"),
+                settings = WebViewSettings(javaScriptEnabled = javascript),
+                navigationPolicy = WebViewNavigationPolicy(
+                    allowedOrigins = setOf("https://safe.example", "https://other.example"),
+                    blockedRules = listOf(WebViewUrlRule.Contains("/shop")),
+                ),
+            )
+            for (origin in listOf("https://safe.example", "https://other.example")) {
+                assertTrue(request.allowsNavigation(WebViewNavigationRequest("$origin/page", true, false)))
+                assertFalse(request.canUseAppBridgeAt("$origin/page"))
+                assertFalse(request.canReceiveAppBridgeMessage("$origin/page", true))
+                assertFalse(request.allowsNavigation(WebViewNavigationRequest("$origin/shop", true, false)))
+            }
+        }
+    }
+
+    @Test fun copyAndCallerMutableSetRetainTheirExistingNavigationSemantics() {
+        val origins = mutableSetOf("https://safe.example")
+        val policy = WebViewNavigationPolicy(allowedOrigins = origins)
+        val copy = policy.copy(allowNewWindows = true)
+        val independent = policy.copy(allowedOrigins = setOf("https://other.example"))
+        fun navigation(host: String) = WebViewNavigationRequest("https://$host/page", true, false)
+        assertTrue(policy.allows(navigation("safe.example")))
+        assertFalse(policy.allows(navigation("other.example")))
+        origins.clear()
+        origins.add("https://other.example")
+        assertFalse(policy.allows(navigation("safe.example")))
+        assertTrue(policy.allows(navigation("other.example")))
+        assertTrue(copy.allows(navigation("other.example")))
+        assertEquals(independent, policy)
+        assertEquals(independent.hashCode(), policy.hashCode())
+    }
+
     @Test fun policyBlocksSchemesWindowsRulesAndUntrustedBridgeNavigation() {
         val request = WebViewRequest(
             WebViewContent.Url("https://safe.example/start"),

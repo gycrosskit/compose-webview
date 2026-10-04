@@ -99,3 +99,15 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 - `clearWebsiteData()` 删除完整Web账号数据，等待系统异步完成。
 
 组件在主线程执行原生操作；宿主决定普通清缓存或切环境、清自己的账号/Repository/图片缓存。取消结束调用方等待，已开始的系统删除继续；回调不得唤醒已取消的调用。
+
+## 当前工作树的未发布修复与契约
+
+Android 文件选择与媒体权限回执交付前核对当前 owner、可见生命周期和主页面信任；导航/隐藏撤销旧请求，
+已进入平台的 ActivityResult 保留 in-flight 标记直到真实回执，避免新请求接到旧结果。媒体请求自身 origin 也须可信，允许多个可信 origin 的合法 iframe。
+iOS 隐藏时撤销待交付媒体授权的 generation，重新显示不能恢复旧授权。
+
+`navigationPolicy.allowedOrigins` 与 JS/Bridge 权限独立。调用方传入的 `Set` 可实际为可变集合，`data class.copy` 保留相同集合引用；
+沿用每次解析，不增加可能失效的归一化缓存。直接生产 Android controller 的回调契约入口为 `bash verification/android-callbacks/verify.sh`。
+
+本轮 core Android 46 项、CMP Android 16 项测试、Android/iOS arm64/Simulator 编译，以及 16 项直接生产 controller 回调契约和 OHOS Node 契约通过。
+iOS 隐藏后授权的 generation 边界已检查并编译，未在设备驱动系统权限/UI；测试替身不能代替系统验收。

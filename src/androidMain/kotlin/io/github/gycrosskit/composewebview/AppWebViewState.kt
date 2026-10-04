@@ -30,7 +30,8 @@ actual class AppWebViewState actual internal constructor() {
     /** 最近一次真正写入原生 WebSettings/显示属性的值，避免普通重组重复调用平台 Setter。 */
     internal var appliedConfig: AppliedAppWebViewConfig? = null
     /** 只持有当前组合位置创建的实例；[detach] 必须在 destroy 前清空。 */
-    private var webView: WebView? = null
+    internal var webView: WebView? = null
+        private set
     /** 通用平台层可优先消费返回（例如退出 H5 CustomView 全屏），不向 shared 暴露 Android 控制器。 */
     private var backInterceptor: (() -> Boolean)? = null
     /** 标记因渲染进程退出而失效的实例，释放时据此避开不安全的平台调用。 */
