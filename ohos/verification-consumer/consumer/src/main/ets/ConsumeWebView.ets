@@ -1,3 +1,4 @@
+import { WindowPolicyController } from '@gycrosskit/system-actions-native';
 import { GYWebView, FullscreenWindowPolicy, WebViewRequest, WebEvent, KuiklyRenderBaseView } from '@gycrosskit/webview';
 
 export const request: WebViewRequest = {
@@ -25,3 +26,6 @@ export class HostPolicyWebView extends GYWebView {
     return { enterLayoutFullscreen: true };
   }
 }
+
+// 宿主与 Web HAR 从同一精确版本解析 shared，实际图另核 lock/installed package。
+export const windowPolicyController: WindowPolicyController = WindowPolicyController.shared;

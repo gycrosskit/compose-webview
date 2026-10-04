@@ -2,7 +2,7 @@
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
-当前 Maven 候选 **0.2.0-rc.5** 修复 Android 原生回执归属、CMP 隐藏/导航撤销与 iOS 隐藏授权 generation。Kuikly iOS 原生源码及 HAR 未改，继续配套已验 Pod/HAR `0.2.0-rc.4`；新 Maven 完整归档与远程消费正在执行。rc.3 的远程编译/链接已通过，但全变体下载追加检查发现三个 CMP iOS 资源 ZIP URL 404 和三个 root source 变体大小/哈希失配；rc.4 全变体 HTTP 下载、真实远程 Gradle/Git Pod 和 Release HAR 消费已通过，详见[闭合验收记录](docs/远程闭合验收.md)。OHPM `closure-rc4` 已接受审核，精确版本 Registry 查询仍为 NOTFOUND；可从[同版本 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.4) 下载 HAR，尚未声明 Registry 可安装。
+当前 Maven 候选 **0.2.0-rc.5** 修复 Android 原生回执归属、CMP 隐藏/导航撤销与 iOS 隐藏授权 generation。Kuikly iOS 原生源码未改，继续配套已验 Pod `0.2.0-rc.4`；HAR `0.2.0-rc.5` 更新精确 system-actions-native 依赖到 rc.3，保持共用窗口 owner，HAR 原生源码未改；新 Maven 完整归档与远程消费正在执行。rc.3 的远程编译/链接已通过，但全变体下载追加检查发现三个 CMP iOS 资源 ZIP URL 404 和三个 root source 变体大小/哈希失配；rc.4 全变体 HTTP 下载、真实远程 Gradle/Git Pod 和 Release HAR 消费已通过，详见[闭合验收记录](docs/远程闭合验收.md)。OHPM `closure-rc4` 已接受审核，精确版本 Registry 查询仍为 NOTFOUND；可从[同版本 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.4) 下载 HAR，尚未声明 Registry 可安装。
 
 ## 平台与模块
 
@@ -51,7 +51,7 @@ pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :t
 HarmonyOS 安装原生 HAR：
 
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.4
+ohpm install @gycrosskit/webview@0.2.0-rc.5
 ```
 
 ## 快速使用
@@ -114,6 +114,6 @@ iOS 隐藏后授权的 generation 边界已检查并编译，未在设备驱动�
 
 | 当前候选渠道 | 配套版本 |
 | --- | --- |
-| Maven / Git Pod / Release HAR | `0.2.0-rc.5` / `0.2.0-rc.4` / `0.2.0-rc.4` |
+| Maven / Git Pod / Release HAR | `0.2.0-rc.5` / `0.2.0-rc.4` / `0.2.0-rc.5` |
 
-Kuikly Render 2.28.0；HAR 配 system-actions-native 0.2.0-rc.2；OHPM 审核状态另核。候选尚待新版本远程验收，设备行为不由编译/链接推断。
+Kuikly Render 2.28.0；HAR 配 system-actions-native 0.2.0-rc.3（宿主同版，独立消费者核单一解析）；OHPM 审核状态另核。候选尚待新版本远程验收，设备行为不由编译/链接推断。

@@ -1,3 +1,7 @@
+# 0.2.0-rc.5
+
+- 精确依赖 system-actions-native 0.2.0-rc.3，使宿主与 Web HAR 使用同一窗口 owner 和 layout-only 方向恢复修复。Web HAR 原生源码与 rc.4 相同；Swift Pod 保持 rc.4。
+
 # 0.2.0-rc.4
 
 - Maven 空资源变体与 POM license 发布修复；HAR/Pod 与 Maven 同版本，运行时代码与 0.2.0-rc.3 相同。
