@@ -4,7 +4,7 @@
 
 ## 安装与注册
 
-候选 HAR 0.2.0-rc.5 配套 system-actions 0.2.0-rc.3。宿主直接使用系统组件时也选择 rc.3；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。当前候选正在打包验证，正式 Registry 安装需两个精确版本可查询；Release HAR 与 Registry 分别验收。
+候选 HAR 0.2.0-rc.5 配套 system-actions 0.2.0-rc.3。宿主直接使用系统组件时也选择 rc.3；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。当前候选已完成实际 Release HAR 新目录消费，正式 Registry 安装需两个精确版本可查询；Release HAR 与 Registry 分别验收。
 
 ## 安装
 
@@ -12,12 +12,16 @@
 ohpm install @gycrosskit/webview@0.2.0-rc.5
 ```
 
-离线分发时，可从同版本 GitHub Release 下载 HAR 并校验 SHA-256；下载缓存的 file 依赖与 Registry 安装分开验收。
+离线分发时，可从同版本 GitHub Release 下载 HAR 并校验 SHA-256；在 Registry 审核期间同时下载 Web rc.5 和 system-actions rc.3 的 Release HAR、校验各自 SHA；root override 保证 Web 传递依赖与宿主直接使用同一系统包。文件下载消费与 Registry 安装分开验收。
 
 ```json
 {
   "dependencies": {
-    "@gycrosskit/webview": "file:./libs/WebViewNative.har"
+    "@gycrosskit/webview": "file:./libs/WebViewNative.har",
+    "@gycrosskit/system-actions-native": "0.2.0-rc.3"
+  },
+  "overrides": {
+    "@gycrosskit/system-actions-native": "file:./libs/SystemActionsNative.har"
   }
 }
 ```
@@ -88,3 +92,5 @@ bash ohos/scripts/verify-har.sh
 `nativeFullscreenExited(renderToken)` 先确认已主动退出的代次；系统/网页自行退出时再释放当前 lease。
 Window 的恢复不等待该事件，也不设置超时猜测归属；若 SDK 没有确认，同 render 的再进入保持拒绝。
 新 request 创建新 Controller/render 时清门禁，旧 token 事件仍被过滤；销毁不会再交付事件或操作新 owner。
+
+HVigor 打入 HAR 的生成 lock 记录构建时的相对 override 缓存路径；包内公开 oh-package manifest 保持精确版本依赖。调用方 root override 指向自己下载并校验的 rc.3 HAR，不依赖发布机器缓存目录。新目录独立消费者 30/30 tasks、actual HAR 契约与唯一 owner realpath 检查通过，迁移结果见闭合记录，设备未验。
