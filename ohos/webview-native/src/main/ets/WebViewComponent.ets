@@ -55,7 +55,7 @@ struct GYWebViewComponent {
       .onPermissionRequest(event => { if (event) { if (this.live()) this.renderView.permissionRequest(event.request); else event.request.deny(); } })
       .onShowFileSelector(event => { if (!event) return true; if (this.live()) return this.renderView.selectFile(event); event.result.handleFileList([]); return true; })
       .onFullScreenEnter(event => { if (this.live()) this.renderView.enterFullscreen(event.handler, event.videoWidth || 0, event.videoHeight || 0); else event.handler.exitFullScreen(); })
-      .onFullScreenExit(() => { if (this.live()) this.renderView.leaveFullscreen(); })
+      .onFullScreenExit(() => { if (this.live()) this.renderView.nativeFullscreenExited(this.renderToken); })
       .onNavigationEntryCommitted(() => { if (this.live()) this.renderView.emitHistory(); })
       .visibility(this.renderView.visible ? Visibility.Visible : Visibility.Hidden)
       .width('100%').height('100%')

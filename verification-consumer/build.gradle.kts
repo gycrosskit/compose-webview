@@ -4,7 +4,7 @@ plugins {
     id("com.android.application") version "8.10.1"
 }
 
-val componentVersion = providers.gradleProperty("webViewVersion").orElse("0.2.0-rc.2").get()
+val componentVersion = providers.gradleProperty("webViewVersion").orElse("0.2.0-rc.3").get()
 val renderFrameworkDir = providers.gradleProperty("renderFrameworkDir").orNull
 val verifyCmp = providers.gradleProperty("verifyCmp").orElse("false").get().toBoolean()
 if (verifyCmp) apply(plugin = "org.jetbrains.kotlin.plugin.compose")

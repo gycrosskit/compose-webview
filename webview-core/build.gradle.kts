@@ -15,10 +15,12 @@ kotlin {
     ohosArm64()
     sourceSets {
         commonMain.dependencies {
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2-1.0.0")
             implementation(libs.ktor.http)
             implementation(libs.serialization.json)
         }
         androidMain.dependencies {
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
             api(libs.activity)
             implementation(libs.androidx.webkit)
         }

@@ -1,4 +1,4 @@
-import { GYWebView, WebViewRequest, WebEvent, KuiklyRenderBaseView } from '@gycrosskit/webview';
+import { GYWebView, FullscreenWindowPolicy, WebViewRequest, WebEvent, KuiklyRenderBaseView } from '@gycrosskit/webview';
 
 export const request: WebViewRequest = {
   content: { type: 'url', url: 'https://example.test' },
@@ -19,3 +19,9 @@ export function createWebView(): KuiklyRenderBaseView {
 }
 export function consumeEvent(event: WebEvent): string { return event.type; }
 export const viewName: string = GYWebView.VIEW_NAME;
+
+export class HostPolicyWebView extends GYWebView {
+  fullscreenPolicy(width: number, height: number): FullscreenWindowPolicy {
+    return { enterLayoutFullscreen: true };
+  }
+}

@@ -2,7 +2,7 @@
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
-当前版本 **0.2.0-rc.2（预发布）**，见 [Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.2)。Maven 与 OHPM 包已发布；设备/H5 业务行为需由接入应用验收。
+当前版本 **0.2.0-rc.3（预发布）**，见 [Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.3)。本轮版本尚待发布验证；设备/H5 业务行为需由接入应用验收。
 
 ## 平台与模块
 
@@ -37,21 +37,21 @@ dependencyResolutionManagement {
 
 ```kotlin
 // CMP Android/iOS
-implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.2")
+implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.3")
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.2")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.3")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖，也不适用于 CMP 入口：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.2'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.3'
 ```
 
 HarmonyOS 安装原生 HAR：
 
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.2
+ohpm install @gycrosskit/webview@0.2.0-rc.3
 ```
 
 ## 快速使用
@@ -90,3 +90,12 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 ## 许可证
 
 [Apache-2.0](LICENSE)。系统框架和 Kuikly 依赖分别遵循其原厂许可。
+
+## Web 数据清理（0.2.0-rc.3）
+
+`AndroidWebViewDataCleaner(applicationContext)` 与 `IosWebViewDataCleaner()` 提供两个挂起函数：
+
+- `clearResourceCache()` 仅删除资源缓存，保留Cookie/LocalStorage/IndexedDB。
+- `clearWebsiteData()` 删除完整Web账号数据，等待系统异步完成。
+
+组件在主线程执行原生操作；宿主决定普通清缓存或切环境、清自己的账号/Repository/图片缓存。取消结束调用方等待，已开始的系统删除继续；回调不得唤醒已取消的调用。

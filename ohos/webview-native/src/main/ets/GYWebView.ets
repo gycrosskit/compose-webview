@@ -4,6 +4,7 @@ import { webview } from '@kit.ArkWeb';
 import { url, util } from '@kit.ArkTS';
 import { window } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
+import { FullscreenWindowLease, FullscreenWindowPolicy, WindowPolicyController } from '@gycrosskit/system-actions-native';
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
 import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings } from './WebViewWire';
@@ -60,11 +61,11 @@ export class GYWebView extends KuiklyRenderBaseView {
   private permissionRequests: Set<PermissionRequest> = new Set();
   private fileResults: Set<FileSelectorResult> = new Set();
   private fullscreenHandler: FullScreenExitHandler | null = null;
-  private fullscreenWindow: window.Window | null = null;
-  private previousOrientation: window.Orientation = window.Orientation.UNSPECIFIED;
-  private previousLayoutFullscreen: boolean = false;
+  private fullscreenLease: FullscreenWindowLease | null = null;
+  private fullscreenRevision: number = 0;
+  // ArkWeb exit 事件没有 handler/id；主动退出确认前不接收同一 render 的下一次全屏。
+  private nativeExitPending: boolean = false;
   private windowTask: Promise<void> = Promise.resolve();
-  private static fullscreenOwner: GYWebView | null = null;
 
   settings(): WebViewSettings { return this.request?.settings || {}; }
 
@@ -100,6 +101,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     } catch (_) { this.fail('LOAD_EXCEPTION', 'Invalid or unsupported WebViewRequest'); }
     // 新请求拥有独立 Controller / Web 节点。旧文档的同源迟到事件也不能再次授予 Bridge。
     this.renderToken++;
+    this.nativeExitPending = false;
     this.renderTokens = [this.renderToken];
     return true;
   }
@@ -321,51 +323,71 @@ export class GYWebView extends KuiklyRenderBaseView {
     }
   }
 
+  /** 默认保持原生 View 的 layout/orientation 语义；应用可覆写方向与系统栏目标。 */
+  fullscreenPolicy(width: number, height: number): FullscreenWindowPolicy {
+    return {
+      enterOrientation: width > height && width > 0 ? window.Orientation.AUTO_ROTATION_LANDSCAPE : undefined,
+      enterLayoutFullscreen: true
+    };
+  }
+
   enterFullscreen(handler: FullScreenExitHandler, width: number, height: number): void {
-    if (!this.visible || this.lifetime.disposed || this.fullscreenHandler || GYWebView.fullscreenOwner) { handler.exitFullScreen(); return; }
+    if (!this.visible || this.lifetime.disposed || this.fullscreenHandler || this.nativeExitPending) { handler.exitFullScreen(); return; }
     this.fullscreenHandler = handler;
-    GYWebView.fullscreenOwner = this;
-    this.emit({ type: 'fullscreenChanged', isFullscreen: true });
-    this.windowTask = this.windowTask.then(async () => {
-      if (this.fullscreenHandler !== handler) return;
+    const revision = ++this.fullscreenRevision;
+    const lease = WindowPolicyController.shared.createFullscreenLease(async () => {
       const context = (this.getUIContext() as UIContext).getHostContext();
       if (!context) throw new Error('Window unavailable');
-      const target = await window.getLastWindow(context);
-      if (this.fullscreenHandler !== handler) return;
-      this.fullscreenWindow = target;
-      this.previousOrientation = target.getPreferredOrientation();
-      this.previousLayoutFullscreen = target.getWindowProperties().isLayoutFullScreen;
-      if (width > height && width > 0) await target.setPreferredOrientation(window.Orientation.AUTO_ROTATION_LANDSCAPE);
-      await target.setWindowLayoutFullScreen(true);
-    }).catch(() => { this.exitFullscreen(); this.fail('LOAD_EXCEPTION', 'Fullscreen window update failed'); });
+      return await window.getLastWindow(context);
+    }, this.fullscreenPolicy(width, height), () => {
+      // 新 View 接管时仅退出旧 ArkWeb handler；旧 lease 不恢复新 owner 的窗口。
+      if (this.fullscreenLease === lease) this.exitFullscreen();
+    });
+    this.fullscreenLease = lease;
+    this.emit({ type: 'fullscreenChanged', isFullscreen: true });
+    this.windowTask = lease.enter().then(entered => {
+      if (!entered && this.fullscreenRevision === revision && this.fullscreenHandler === handler) this.exitFullscreen();
+    }).catch(() => {
+      if (this.fullscreenRevision === revision && this.fullscreenHandler === handler) {
+        this.exitFullscreen();
+        this.fail('LOAD_EXCEPTION', 'Fullscreen window update failed');
+      }
+    });
   }
 
   exitFullscreen(): boolean {
-    const consumed = this.fullscreenHandler !== null || this.fullscreenWindow !== null;
-    try { this.fullscreenHandler?.exitFullScreen(); } catch (_) {}
+    const consumed = this.fullscreenHandler !== null || this.fullscreenLease !== null;
+    const handler = this.fullscreenHandler;
+    if (handler) {
+      // 在调用 handler 前设门禁，兼容其同步触发原生退出确认。
+      this.nativeExitPending = true;
+      try { handler.exitFullScreen(); } catch (_) {}
+    }
     this.leaveFullscreen();
     return consumed;
   }
 
+  nativeFullscreenExited(token: number = this.renderToken): void {
+    if (!this.isRenderActive(token)) return;
+    if (this.nativeExitPending) {
+      this.nativeExitPending = false;
+      return;
+    }
+    // 系统/网页主动退出当前全屏，尚未由本实例退出时才释放 active lease。
+    this.leaveFullscreen();
+  }
+
   leaveFullscreen(): void {
-    const handler = this.fullscreenHandler;
+    const lease = this.fullscreenLease;
+    const hadHandler = this.fullscreenHandler !== null;
     this.fullscreenHandler = null;
-    if (!handler && !this.fullscreenWindow) return;
-    this.windowTask = this.windowTask.then(async () => {
-      const target = this.fullscreenWindow;
-      this.fullscreenWindow = null;
-      try {
-        if (target) {
-          try { await target.setWindowLayoutFullScreen(this.previousLayoutFullscreen); }
-          finally { await target.setPreferredOrientation(this.previousOrientation); }
-        }
-      } finally {
-        if (GYWebView.fullscreenOwner === this) GYWebView.fullscreenOwner = null;
-        this.emit({ type: 'fullscreenChanged', isFullscreen: false });
-      }
+    this.fullscreenLease = null;
+    if (!lease && !hadHandler) return;
+    const revision = ++this.fullscreenRevision;
+    this.windowTask = (lease?.release() ?? Promise.resolve()).then(() => {
+      if (this.fullscreenRevision === revision) this.emit({ type: 'fullscreenChanged', isFullscreen: false });
     }).catch(() => {
-      if (GYWebView.fullscreenOwner === this) GYWebView.fullscreenOwner = null;
-      this.fail('LOAD_EXCEPTION', 'Fullscreen window restoration failed');
+      if (this.fullscreenRevision === revision) this.fail('LOAD_EXCEPTION', 'Fullscreen window restoration failed');
     });
   }
 
