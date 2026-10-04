@@ -2,7 +2,7 @@
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
-当前候选 **0.2.0-rc.4** 修复 Maven 空资源/source 变体及 POM license，运行时与 `0.2.0-rc.3` 相同，Pod/HAR 同版本。rc.3 的远程编译/链接已通过，但全变体下载追加检查发现三个 CMP iOS 资源 ZIP URL 404 和三个 root source 变体大小/哈希失配；新候选单独验收，详见[闭合验收记录](docs/远程闭合验收.md)。OHPM rc.3 仍在审核；rc.4 尚未声明 Registry 上架。
+当前候选 **0.2.0-rc.4** 修复 Maven 空资源/source 变体及 POM license，运行时与 `0.2.0-rc.3` 相同，Pod/HAR 同版本。rc.3 的远程编译/链接已通过，但全变体下载追加检查发现三个 CMP iOS 资源 ZIP URL 404 和三个 root source 变体大小/哈希失配；rc.4 全变体 HTTP 下载、真实远程 Gradle/Git Pod 和 Release HAR 消费已通过，详见[闭合验收记录](docs/远程闭合验收.md)。OHPM `closure-rc4` 已接受审核，精确版本 Registry 查询仍为 NOTFOUND；可从[同版本 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.4) 下载 HAR，尚未声明 Registry 可安装。
 
 ## 平台与模块
 
