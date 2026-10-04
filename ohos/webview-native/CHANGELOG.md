@@ -1,3 +1,7 @@
+# 0.2.0-rc.4
+
+- Maven 空资源变体与 POM license 发布修复；HAR/Pod 与 Maven 同版本，运行时代码与 0.2.0-rc.3 相同。
+
 # 0.2.0-rc.3
 
 - 全屏窗口执行迁入 system-actions 0.2.0-rc.2 共用 owner，宿主仅注入方向/系统栏策略。

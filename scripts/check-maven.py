@@ -45,25 +45,44 @@ for module in modules:
         checksum = module.with_name(module.name + "." + algorithm)
         if checksum.exists():
             assert checksum.read_text().strip() == hashlib.new(algorithm, module.read_bytes()).hexdigest(), checksum
+    pom = ET.parse(module.with_suffix(".pom")).getroot()
+    namespaces = {"m": "http://maven.apache.org/POM/4.0.0"}
+    assert pom.findtext("m:groupId", namespaces=namespaces) == expected_group, module
+    assert pom.findtext("m:version", namespaces=namespaces) == expected_version, module
+    published_module = pom.findtext("m:artifactId", namespaces=namespaces)
+    assert published_module == module.parent.parent.name, module
+    license = pom.find("m:licenses/m:license", namespaces)
+    assert license is not None, f"Missing Apache license: {module}"
+    assert license.findtext("m:name", namespaces=namespaces) == "Apache License, Version 2.0", module
+    assert license.findtext("m:url", namespaces=namespaces) == "https://www.apache.org/licenses/LICENSE-2.0.txt", module
+    assert license.findtext("m:distribution", namespaces=namespaces) == "repo", module
     data = json.loads(module.read_text())
     component = data["component"]
     assert component["group"] == expected_group, component
     assert component["version"] == expected_version, component
-    coordinates.setdefault(component["module"], set()).add(component["version"])
+    coordinates.setdefault(published_module, set()).add(component["version"])
     if "url" in component:
         assert resolve_artifact((module.parent / component["url"]).resolve()).is_file(), component
     for variant in data["variants"]:
+        assert variant["name"] != "metadataSourcesElements", variant
+        assert not variant["name"].endswith(("SourcesElements-published", "MetadataElements-published", "ResourcesElements-published")), variant
         target = variant.get("attributes", {}).get("org.jetbrains.kotlin.native.target")
         if target:
             platforms.add(target)
         if "available-at" in variant:
             redirect = variant["available-at"]
-            assert resolve_artifact((module.parent / redirect["url"]).resolve()).is_file(), redirect
+            assert redirect["group"] == expected_group and redirect["version"] == expected_version, redirect
+            target_module = resolve_artifact((module.parent / redirect["url"]).resolve())
+            assert redirect["module"] == target_module.parent.parent.name, redirect
+            assert target_module.is_file(), redirect
+            target_variants = json.loads(target_module.read_text())["variants"]
+            assert any(item["name"] == variant["name"] for item in target_variants), f"Dangling variant: {variant}"
         for entry in variant.get("files", []):
             artifact = resolve_artifact((module.parent / entry["url"]).resolve())
             assert artifact.is_file(), artifact
             assert artifact.stat().st_size == entry["size"], artifact
-            assert hashlib.sha256(artifact.read_bytes()).hexdigest() == entry["sha256"], artifact
+            for algorithm in ("md5", "sha1", "sha256", "sha512"):
+                assert hashlib.new(algorithm, artifact.read_bytes()).hexdigest() == entry[algorithm], artifact
 
 for module in modules:
     for variant in json.loads(module.read_text())["variants"]:
@@ -74,5 +93,12 @@ for module in modules:
 
 assert expected_targets <= platforms, platforms
 assert list(repository.rglob("*.aar")), "Android AAR is missing"
-assert expected_modules <= coordinates.keys(), coordinates
-print(f"Maven metadata: {len(modules)} modules; artifact hashes, project dependencies and platform variants passed")
+expected_coordinates = set(expected_modules)
+for name in expected_modules:
+    expected_coordinates.add(name + "-android")
+    # CMP 没有 OHOS 实现；只有 core 与 Kuikly 发布 OHOS。
+    expected_coordinates.update(name + "-" + target.replace("_", "") for target in expected_targets
+                                if not (name == "compose-webview" and target == "ohos_arm64"))
+assert expected_coordinates == coordinates.keys(), f"Missing or unexpected publications: {coordinates}"
+assert len(modules) == len(expected_coordinates), "Duplicate module metadata"
+print(f"Maven metadata: {len(modules)} modules; artifact hashes, Apache POM licenses, project dependencies and platform variants passed")

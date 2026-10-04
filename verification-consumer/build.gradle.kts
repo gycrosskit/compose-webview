@@ -4,7 +4,7 @@ plugins {
     id("com.android.application") version "8.10.1"
 }
 
-val componentVersion = providers.gradleProperty("webViewVersion").orElse("0.2.0-rc.3").get()
+val componentVersion = providers.gradleProperty("webViewVersion").orElse("0.2.0-rc.4").get()
 val renderFrameworkDir = providers.gradleProperty("renderFrameworkDir").orNull
 val simRenderFrameworkDir = providers.gradleProperty("simRenderFrameworkDir").orNull
 val verifyCmp = providers.gradleProperty("verifyCmp").orElse("false").get().toBoolean()
@@ -60,6 +60,15 @@ tasks.register("verifyNoCompose") {
         println("Kuikly-only runtime has no Compose UI/runtime (AndroidX annotations allowed)")
     }
 }
+tasks.register("verifyExactComponentVersion") {
+    doLast {
+        val versions = configurations.getByName("debugRuntimeClasspath").incoming.resolutionResult.allComponents
+            .mapNotNull { it.moduleVersion }.filter { it.group == "com.github.gycrosskit.compose-webview" }
+        check(versions.isNotEmpty() && versions.all { it.version == componentVersion })
+        println("Exact WebView artifacts: " + versions.joinToString())
+    }
+}
+
 android {
     namespace = "io.github.gycrosskit.webview.consumer"
     compileSdk = 36
