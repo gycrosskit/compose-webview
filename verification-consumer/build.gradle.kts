@@ -6,6 +6,7 @@ plugins {
 
 val componentVersion = providers.gradleProperty("webViewVersion").orElse("0.2.0-rc.3").get()
 val renderFrameworkDir = providers.gradleProperty("renderFrameworkDir").orNull
+val simRenderFrameworkDir = providers.gradleProperty("simRenderFrameworkDir").orNull
 val verifyCmp = providers.gradleProperty("verifyCmp").orElse("false").get().toBoolean()
 if (verifyCmp) apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 kotlin {
@@ -17,7 +18,12 @@ kotlin {
         }
     }
     iosX64()
-    iosSimulatorArm64 { binaries.framework { baseName = "WebViewConsumer" } }
+    iosSimulatorArm64 {
+        binaries.framework {
+            baseName = "WebViewConsumer"
+            simRenderFrameworkDir?.let { linkerOpts("-F$it", "-framework", "OpenKuiklyIOSRender") }
+        }
+    }
     ohosArm64 { binaries.sharedLib { baseName = "webview_consumer" } }
     sourceSets {
         commonMain.dependencies {
