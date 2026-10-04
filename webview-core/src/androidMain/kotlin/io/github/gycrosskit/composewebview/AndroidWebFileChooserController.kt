@@ -46,12 +46,7 @@ internal class AndroidWebFileChooserController(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         externalResultInFlight = false
-        if (destroyed) return@register
-        val current = callback
-        callback = null
-        callbackOwner = null
-        current?.onReceiveValue(uri?.let { arrayOf(it) })
-        cameraOutputUri = null
+        complete(uri?.let { arrayOf(it) })
     }
 
     fun show(
@@ -94,7 +89,11 @@ internal class AndroidWebFileChooserController(
 
         if (!captureEnabled && !allowMultiple && acceptsImage && !acceptsVideo && Build.VERSION.SDK_INT >= 33) {
             activity.runOnUiThread {
-                if (callbackOwner !== webView || !isAttached(webView)) return@runOnUiThread
+                if (requestId != currentRequestId) return@runOnUiThread
+                if (callbackOwner !== webView || !allowed(webView)) {
+                    cancel()
+                    return@runOnUiThread
+                }
                 runCatching {
                     externalResultInFlight = true
                     photoPickerLauncher.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
@@ -217,9 +216,11 @@ internal class AndroidWebFileChooserController(
     }
 
     private fun launch(intent: Intent) {
+        val currentRequestId = requestId
+        val owner = callbackOwner
         activity.runOnUiThread {
-            val owner = callbackOwner
-            if (callback == null || owner == null || !isAttached(owner)) {
+            if (requestId != currentRequestId) return@runOnUiThread
+            if (callback == null || owner == null || !allowed(owner)) {
                 cancel()
                 return@runOnUiThread
             }
@@ -234,14 +235,19 @@ internal class AndroidWebFileChooserController(
     }
 
     private fun handleResult(resultCode: Int, data: Intent?) {
-        val current = callback ?: run {
-            cameraOutputUri = null
-            return
-        }
+        complete(resolveResult(resultCode, data))
+    }
+
+    private fun allowed(owner: WebView): Boolean = !destroyed && isAttached(owner) &&
+        request().security.run { fileChooserEnabled && trustedOrigins.isTrusted(owner.url) }
+
+    private fun complete(result: Array<Uri>?) {
+        val current = callback
+        val permitted = callbackOwner?.let(::allowed) == true
         callback = null
         callbackOwner = null
-        current.onReceiveValue(resolveResult(resultCode, data))
         cameraOutputUri = null
+        current?.onReceiveValue(if (permitted) result else null)
     }
 
     private fun resolveResult(resultCode: Int, data: Intent?): Array<Uri>? {
@@ -254,14 +260,12 @@ internal class AndroidWebFileChooserController(
     }
 
     private fun cancel() {
+        requestId++
         val key = permissionKey
         permissionKey = null
         if (key != null) permissions.cancel(key)
-        callback?.onReceiveValue(null)
-        callback = null
-        callbackOwner = null
-        cameraOutputUri = null
         pendingIntent = null
+        complete(null)
     }
 }
 

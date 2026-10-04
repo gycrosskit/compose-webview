@@ -45,13 +45,14 @@ internal actual fun PlatformAppWebView(
     val scope = rememberCoroutineScope()
     val currentRequest by rememberUpdatedState(request)
     val currentCallbacks by rememberUpdatedState(callbacks)
+    val currentVisible by rememberUpdatedState(visible)
     val activity = remember(context) { context.findComponentActivity() }
     val capabilities = remember(activity) {
         activity?.let {
                 AndroidWebCapabilities(
                     activity = it,
                     request = { currentRequest },
-                    isAttached = state::isAttached,
+                    isAttached = { currentVisible && state.isAttached(it) },
                 onPermissionSettingsRequired = { permissions ->
                     currentCallbacks.onEvent(WebViewEvent.PermissionSettingsRequired(permissions))
                 },
@@ -88,6 +89,13 @@ internal actual fun PlatformAppWebView(
             popupRouter.release()
         }
     }
+    DisposableEffect(visible, capabilities, fullscreenController, state) {
+        if (!visible) {
+            state.webView?.let { capabilities?.release(it) }
+            fullscreenController?.hide()
+        }
+        onDispose {}
+    }
     val earlyScriptInstaller = remember {
         AndroidEarlyScriptInstaller { view, metric, duration ->
             WebViewDiagnostics.performanceMetric(view, metric, duration)
@@ -108,6 +116,7 @@ internal actual fun PlatformAppWebView(
                     listener = listener,
                     request = { currentRequest },
                     callbacks = { currentCallbacks },
+                    onDocumentChanged = { capabilities?.release(it) },
                 )
             },
             webChromeClientFactory = { owner, listener ->
@@ -188,6 +197,7 @@ private fun commonWebViewClient(
     listener: AppWebViewClient.Listener,
     request: () -> WebViewRequest,
     callbacks: () -> WebViewCallbacks,
+    onDocumentChanged: (WebView) -> Unit,
 ) = object : AppWebViewClient(
     object : AppWebViewClient.Listener {
         override fun onPageLoadStarted(url: String?) {
@@ -215,6 +225,7 @@ private fun commonWebViewClient(
 
     override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
         initialHtmlNavigation = false
+        onDocumentChanged(view)
         super.onPageStarted(view, url, favicon)
     }
 

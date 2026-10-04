@@ -161,7 +161,7 @@ internal actual fun PlatformAppWebView(
             },
             modifier = modifier,
             update = { target ->
-                target.hidden = !visible
+                coordinator.setVisible(target, visible)
                 coordinator.loadWhenReady(target, request.content)
             },
             onRelease = { target ->
@@ -209,6 +209,11 @@ private class IosWebViewCoordinator(
             pageEnteredAtMillis = pageEnteredAtMillis,
         ).also { it.created(creationDurationMillis) }
         suspendMedia(webView, mediaSuspended, "attach")
+    }
+
+    fun setVisible(webView: WKWebView, visible: Boolean) {
+        if (!visible && !webView.hidden) navigationGeneration++
+        webView.hidden = !visible
     }
 
     fun setMediaSuspended(suspended: Boolean) {
@@ -299,7 +304,7 @@ private class IosWebViewCoordinator(
         val sourceUrl = initiatedByFrame.request.URL?.absoluteString
         val generation = navigationGeneration
         val stillAllowed = {
-            !released && generation == navigationGeneration && state.isAttached(webView) &&
+            !released && !webView.hidden && generation == navigationGeneration && state.isAttached(webView) &&
                 request().security.run { mediaCaptureEnabled && trustedOrigins.isTrusted(sourceUrl) }
         }
         if (!stillAllowed()) {

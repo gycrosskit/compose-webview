@@ -84,7 +84,8 @@ internal class AndroidWebMediaPermissionController(
 
     private fun allowed(owner: WebView, platformRequest: PermissionRequest): Boolean =
         !destroyed && isAttached(owner) && request().security.run {
-            mediaCaptureEnabled && trustedOrigins.isTrusted(platformRequest.origin.toString())
+            mediaCaptureEnabled && trustedOrigins.isTrusted(platformRequest.origin.toString()) &&
+                trustedOrigins.isTrusted(owner.url)
         }
 }
 

@@ -2,7 +2,7 @@
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
-当前候选 **0.2.0-rc.4** 修复 Maven 空资源/source 变体及 POM license，运行时与 `0.2.0-rc.3` 相同，Pod/HAR 同版本。rc.3 的远程编译/链接已通过，但全变体下载追加检查发现三个 CMP iOS 资源 ZIP URL 404 和三个 root source 变体大小/哈希失配；rc.4 全变体 HTTP 下载、真实远程 Gradle/Git Pod 和 Release HAR 消费已通过，详见[闭合验收记录](docs/远程闭合验收.md)。OHPM `closure-rc4` 已接受审核，精确版本 Registry 查询仍为 NOTFOUND；可从[同版本 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.4) 下载 HAR，尚未声明 Registry 可安装。
+当前 Maven 候选 **0.2.0-rc.5** 修复 Android 原生回执归属、CMP 隐藏/导航撤销与 iOS 隐藏授权 generation。Kuikly iOS 原生源码未改，继续配套已验 Pod `0.2.0-rc.4`；HAR `0.2.0-rc.5` 更新精确 system-actions-native 依赖到 rc.3，保持共用窗口 owner，HAR 原生源码未改；新 Maven 完整归档与远程消费正在执行。rc.3 的远程编译/链接已通过，但全变体下载追加检查发现三个 CMP iOS 资源 ZIP URL 404 和三个 root source 变体大小/哈希失配；rc.4 全变体 HTTP 下载、真实远程 Gradle/Git Pod 和 Release HAR 消费已通过，详见[闭合验收记录](docs/远程闭合验收.md)。OHPM `closure-rc4` 已接受审核，精确版本 Registry 查询仍为 NOTFOUND；可从[同版本 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.4) 下载 HAR，尚未声明 Registry 可安装。
 
 ## 平台与模块
 
@@ -37,9 +37,9 @@ dependencyResolutionManagement {
 
 ```kotlin
 // CMP Android/iOS
-implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.4")
+implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.5")
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.4")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.5")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖，也不适用于 CMP 入口：
@@ -51,7 +51,7 @@ pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :t
 HarmonyOS 安装原生 HAR：
 
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.4
+ohpm install @gycrosskit/webview@0.2.0-rc.5
 ```
 
 ## 快速使用
@@ -99,3 +99,29 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 - `clearWebsiteData()` 删除完整Web账号数据，等待系统异步完成。
 
 组件在主线程执行原生操作；宿主决定普通清缓存或切环境、清自己的账号/Repository/图片缓存。取消结束调用方等待，已开始的系统删除继续；回调不得唤醒已取消的调用。
+
+## 0.2.0-rc.5 发布候选与契约
+
+Android 文件选择与媒体权限回执交付前核对当前 owner、可见生命周期和主页面信任；导航/隐藏撤销旧请求，
+已进入平台的 ActivityResult 保留 in-flight 标记直到真实回执，避免新请求接到旧结果。媒体请求自身 origin 也须可信，允许多个可信 origin 的合法 iframe。
+iOS 隐藏时撤销待交付媒体授权的 generation，重新显示不能恢复旧授权。
+
+`navigationPolicy.allowedOrigins` 与 JS/Bridge 权限独立。调用方传入的 `Set` 可实际为可变集合，`data class.copy` 保留相同集合引用；
+沿用每次解析，不增加可能失效的归一化缓存。直接生产 Android controller 的回调契约入口为 `bash verification/android-callbacks/verify.sh`。
+
+本轮 core Android 46 项、CMP Android 16 项测试、Android/iOS arm64/Simulator 编译，以及 16 项直接生产 controller 回调契约和 OHOS Node 契约通过。
+iOS 隐藏后授权的 generation 边界已检查并编译，未在设备驱动系统权限/UI；测试替身不能代替系统验收。
+
+| 当前候选渠道 | 配套版本 |
+| --- | --- |
+| Maven / Git Pod / Release HAR | `0.2.0-rc.5` / `0.2.0-rc.4` / `0.2.0-rc.5` |
+
+Kuikly Render 2.28.0；HAR 配 system-actions-native 0.2.0-rc.3（宿主同版，独立消费者核单一解析）；OHPM 审核状态另核。候选尚待新版本远程验收，设备行为不由编译/链接推断。
+
+## 0.2.0-rc.5 本地发布制品校验
+
+Fresh macOS staging 与归档解包复验均通过，全部 17 个 publication 的声明文件四类哈希、四类 sidecar、Apache-2.0 POM 及同名 available-at 目标身份均已校验。Maven 归档 SHA-256：`98f5318086f0ec008cf0c8c540c5d23592f82d644980d8b3153b5e2ccf01be3a`。
+
+Maven / Release HAR `0.2.0-rc.5`；未变 Swift Pod 保留 `0.2.0-rc.4`；HAR 精确配 system-actions-native `0.2.0-rc.3` / Render `2.28.0`。
+
+新版本标签 / Release / JitPack 全变体下载与真实远程消费者仍待完成；本地验证不代替发布或设备验收。
