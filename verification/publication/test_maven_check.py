@@ -33,8 +33,15 @@ class MavenCheckContracts(unittest.TestCase):
             self.modules[name] = module
             module.with_suffix(".pom").write_text(f'''<project xmlns="http://maven.apache.org/POM/4.0.0"><groupId>{self.group}</groupId><artifactId>{name}</artifactId><version>1.0</version><licenses><license><name>Apache License, Version 2.0</name><url>https://www.apache.org/licenses/LICENSE-2.0.txt</url><distribution>repo</distribution></license></licenses></project>''')
 
+            for path in (artifact, module, module.with_suffix(".pom")):
+                self.checksums(path)
+
+    def checksums(self, path):
+        for algorithm in ("md5", "sha1", "sha256", "sha512"):
+            path.with_name(path.name + "." + algorithm).write_text(hashlib.new(algorithm, path.read_bytes()).hexdigest())
+
     def check(self):
-        return subprocess.run([sys.executable, str(Path(__file__).resolve().parents[2] / "scripts/check-maven.py"), str(self.root), self.group, "1.0", "example", "ios_arm64"], capture_output=True, text=True)
+        return subprocess.run([sys.executable, str(Path(__file__).resolve().parents[2] / "scripts/check-maven.py"), str(self.root), self.group, "1.0", "example", "ios_arm64", "example,example-android,example-iosarm64"], capture_output=True, text=True)
 
     def test_full_publications_with_platform_owner_component(self):
         result = self.check()
@@ -47,6 +54,7 @@ class MavenCheckContracts(unittest.TestCase):
     def test_missing_apache_license_rejected(self):
         pom = self.modules["example-android"].with_suffix(".pom")
         pom.write_text(pom.read_text().replace("Apache License, Version 2.0", "unknown"))
+        self.checksums(pom)
         self.assertNotEqual(self.check().returncode, 0)
 
     def test_existing_module_without_target_variant_rejected(self):
@@ -54,6 +62,7 @@ class MavenCheckContracts(unittest.TestCase):
         data = json.loads(module.read_text())
         data["variants"].append({"name": "missingApiElements-published", "available-at": {"url": "../../example-android/1.0/example-android-1.0.module", "group": self.group, "version": "1.0", "module": "example-android"}})
         module.write_text(json.dumps(data))
+        self.checksums(module)
         self.assertNotEqual(self.check().returncode, 0)
 
 
