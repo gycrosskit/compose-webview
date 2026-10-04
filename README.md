@@ -4,6 +4,92 @@
 
 当前 Maven 候选 **0.2.0-rc.5** 修复 Android 原生回执归属、CMP 隐藏/导航撤销与 iOS 隐藏授权 generation。Kuikly iOS 原生源码未改，继续配套已验 Pod `0.2.0-rc.4`；HAR `0.2.0-rc.5` 更新精确 system-actions-native 依赖到 rc.3，保持共用窗口 owner，HAR 原生源码未改；新 Maven 完整归档、全变体 HTTP 与真实远程消费已通过。rc.3 的远程编译/链接已通过，但全变体下载追加检查发现三个 CMP iOS 资源 ZIP URL 404 和三个 root source 变体大小/哈希失配；rc.4 全变体 HTTP 下载、真实远程 Gradle/Git Pod 和 Release HAR 消费已通过，详见[闭合验收记录](docs/远程闭合验收.md)。OHPM `closure-rc5` 已接受审核，精确版本 Registry 查询仍为 NOTFOUND；可从[当前 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.5) 下载 HAR，尚未声明 Registry 可安装。
 
+## 架构与调用流程
+
+先看 UI 入口，再看原生接线：CMP 和 Kuikly 共用 `webview-core` 的请求与事件，但各自创建、管理原生 View。业务 URL、账号、导航处理和页面状态由宿主提供。
+
+```mermaid
+flowchart TB
+    Host["宿主页面：URL、账号、业务事件"] --> CMP["CMP：AppWebView / AppWebViewState"]
+    Host --> Kuikly["Kuikly：GYWebView"]
+    CMP --> Core["webview-core：请求、导航、安全、事件契约"]
+    Kuikly --> Core
+    CMP --> Android["Android WebView"]
+    CMP --> IOS["iOS WKWebView"]
+    Kuikly --> Android
+    Kuikly --> IOS
+    Kuikly --> OHOS["HarmonyOS ArkWeb / HAR"]
+    OHOS --> Window["system-actions：共用窗口策略 owner"]
+```
+
+CMP 原生实现随 KMP 产物提供；Kuikly 还需注册同名原生 View，iOS 配 Pod，HarmonyOS 配 HAR。两种 UI 入口的原生安装方式不能互相替代。
+
+下面以 Kuikly Android 为例：导航规则预先下发，在原生同步判断；事件返回宿主用于观察。Bridge、文件与媒体请求另行校验可信来源，导航规则不等于高权限授权。
+
+```mermaid
+sequenceDiagram
+    participant Host as 宿主页面
+    participant View as GYWebView
+    participant Native as Android 原生 View
+    participant Web as 网页与系统回执
+    Host->>View: request / visible
+    View->>Native: 编码请求与属性下发
+    Native->>Native: 同步校验 navigationPolicy
+    alt 允许导航
+        Native->>Web: 加载 URL 或 HTML
+        Web-->>Native: 加载、Bridge 或系统请求
+        Native->>Native: 校验来源、owner、可见性与 generation
+        Native-->>View: WebViewEvent
+        View-->>Host: onEvent
+    else 阻止导航
+        Native-->>View: Navigation(blocked = true)
+        View-->>Host: onEvent
+    end
+    Host->>View: 隐藏、切换请求或移除 View
+    View->>Native: 更新属性或释放原生 View
+    Native->>Native: 撤销旧通道与未完成请求
+    Web-->>Native: 旧请求的迟到回执
+    Native->>Native: 丢弃失效回执
+```
+
+类图只保留接入时需要理解的公共类型；虚线表示使用关系，实线表示请求中的字段引用。
+
+```mermaid
+classDiagram
+    class WebViewRequest {
+        +content
+        +security
+        +navigationPolicy
+    }
+    class WebViewSecurity {
+        +trustedOrigins
+        +fileChooserEnabled
+        +mediaCaptureEnabled
+    }
+    class WebViewNavigationPolicy {
+        +allowedOrigins
+    }
+    class GYWebView {
+        +reload()
+        +goBack(callback)
+        +evaluateJavascript(script, callback)
+    }
+    class WebViewCallbacks {
+        +onNavigationRequest
+        +onEvent
+    }
+    class WebViewEvent {
+        <<interface>>
+    }
+    WebViewRequest --> WebViewSecurity : security
+    WebViewRequest --> WebViewNavigationPolicy : navigationPolicy
+    GYWebView ..> WebViewRequest : 属性输入
+    GYWebView ..> WebViewEvent : 事件输出
+    WebViewCallbacks ..> WebViewEvent : CMP 事件回调
+```
+
+源码入口：[请求与安全](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt)、[导航规则](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt)、[CMP 入口与状态](src/commonMain/kotlin/io/github/gycrosskit/composewebview/ComposeWebView.kt)、[Kuikly 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt)、[Android 原生接线](webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt)。`AppWebViewState` 属于当前组合位置，不能放进 ViewModel 或跨页面复用；Kuikly 命令通过异步回调返回。
+
 ## 平台与模块
 
 | 平台 | 入口 | 最低要求 |
