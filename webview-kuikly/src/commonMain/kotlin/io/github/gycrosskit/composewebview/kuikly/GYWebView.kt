@@ -48,7 +48,7 @@ class GYWebViewAttr : Attr() {
         return this
     }
 
-    /** 设置可见性，初始默认 true；隐藏由原生撤销权限与脚本回调并退出全屏。 */
+    /** 设置可见性，初始默认 true；隐藏由原生撤销权限与显式 JS 回执并退出全屏；当前文档初始化继续。 */
     fun visible(value: Boolean): GYWebViewAttr {
         "visible" with value
         return this

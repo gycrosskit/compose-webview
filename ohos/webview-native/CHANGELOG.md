@@ -1,3 +1,10 @@
+# 0.2.0-rc.8（候选）
+
+- 当前文档隐藏时仍执行初始化脚本，隐藏队列拒绝/清空业务消息；显示先同步 JS 可见状态，再恢复活动状态与 Bridge 端口，不重载页面。
+- 旧 JS visibility revision、旧 Controller/generation 完成不能恢复隐藏队列；导航撤销等待标记，新文档不会被旧 Promise 锁住。
+- DOM_READY 在 document-start 注册真实 DOMContentLoaded，page-visible/page-end 安全兜底；命名脚本每文档执行一次。
+- 保留可信主文档、JavaScript 开关、旧 render/generation、隐藏业务消息与权限门禁；Native Pod 保持 0.2.0-rc.7。
+
 # 0.2.0-rc.5
 
 - 精确依赖 system-actions-native 0.2.0-rc.3，使宿主与 Web HAR 使用同一窗口 owner 和 layout-only 方向恢复修复。Web HAR 原生源码与 rc.4 相同；Swift Pod 保持 rc.4。

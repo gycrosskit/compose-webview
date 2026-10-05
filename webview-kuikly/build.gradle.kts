@@ -23,7 +23,10 @@ kotlin {
             implementation(libs.androidx.webkit)
         }
         commonTest.dependencies { implementation(kotlin("test")) }
-        androidUnitTest.dependencies { implementation(libs.junit) }
+        androidUnitTest.dependencies {
+            implementation(libs.junit)
+            implementation("org.robolectric:robolectric:4.16.1")
+        }
     }
 }
 
@@ -31,6 +34,7 @@ android {
     namespace = "io.github.gycrosskit.composewebview.kuikly"
     compileSdk = 36
     defaultConfig { minSdk = 24 }
+    testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

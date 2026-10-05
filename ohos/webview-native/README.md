@@ -1,18 +1,22 @@
+> 当前 HAR `0.2.0-rc.8` 为候选版本；构建、Release 远程消费与 OHPM Registry 可安装性分别验收。
+
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **0.2.0-rc.5 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.3`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **0.2.0-rc.8 候选版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.3`，后者提供共用窗口执行 owner。
 
 ## 安装与注册
 
-候选 HAR 0.2.0-rc.5 配套 system-actions 0.2.0-rc.3。宿主直接使用系统组件时也选择 rc.3；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。当前候选已完成实际 Release HAR 新目录消费，正式 Registry 安装需两个精确版本可查询；Release HAR 与 Registry 分别验收。
+候选 HAR 0.2.0-rc.8 配套 system-actions 0.2.0-rc.3。宿主直接使用系统组件时也选择 rc.3；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。本候选的实际 Release HAR 消费尚待验收，正式 Registry 安装需两个精确版本可查询；Release HAR 与 Registry 分别验收。rc.5 的既有消费记录保留在历史验收文档中。
 
 ## 安装
 
+以下为候选精确坐标，须在发布后确认 Registry 可查询再安装。
+
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.5
+ohpm install @gycrosskit/webview@0.2.0-rc.8
 ```
 
-离线分发时，可从同版本 GitHub Release 下载 HAR 并校验 SHA-256；在 Registry 审核期间同时下载 Web rc.5 和 system-actions rc.3 的 Release HAR、校验各自 SHA；root override 保证 Web 传递依赖与宿主直接使用同一系统包。文件下载消费与 Registry 安装分开验收。
+候选发布后，离线分发可从同版本 GitHub Release 下载 HAR 并校验 SHA-256；在 Registry 审核期间同时下载 Web rc.8 和 system-actions rc.3 的 Release HAR、校验各自 SHA；root override 保证 Web 传递依赖与宿主直接使用同一系统包。文件下载消费与 Registry 安装分开验收。
 
 ```json
 {
@@ -53,12 +57,12 @@ JavaScript、Bridge、文件 URL、媒体采集默认关闭。TLS 错误调用 `
 | URL / HTML | 首航 headers 仅随顶层 `loadUrl` 传入；相对资源使用 HTML baseUrl |
 | history / 方法 | 首航 loadUrl/loadData 抛错后 reload 重建 Controller/Web 节点，新 attached 原样重交 URL headers 或 HTML base/history 一次；已提交文档 reload 继续 refresh 保留历史；goBack 优先退出全屏；goForward、stopLoading、exitFullscreen |
 | evaluateJavascript | 必须 JS 开启、文档就绪且当前 HTTPS 来源可信，或处于低权限 pageBridge 初始同源；输入 `{script}`，输出 `{result: string|null}` |
-| scripts | document-start 原生注入；DOM_READY 等待 DOMContentLoaded；DOCUMENT_FINISHED 在 page-end。脚本只作用于 top；可信门禁默认开启 |
+| scripts | DOCUMENT_START/DOM_READY 在 document-start 注册；DOM_READY 等待真实 DOMContentLoaded，page-visible/page-end 兜底；DOCUMENT_FINISHED 在 page-end。隐藏仍初始化，每个 id 每文档一次；仅作用 top，JS/可信门禁保留 |
 | Bridge | 主文档独占 MessagePort；appBridge 只允许可信 HTTPS；pageBridge 只允许初始精确 HTTP(S) 同源 |
 | 媒体采集 | CAMERA/MICROPHONE，可信来源与当前主文档精确同源；系统授权后再次校验当前 request 与 generation。其他资源拒绝 |
 | 文件选择 | 可信当前主文档的系统 DocumentViewPicker，单选或最多 10 项多选；不支持 capture，可信且就绪的当前 HTTPS 页面触发时发出 `capabilityUnsupported` / `FILE_CAPTURE`，并以空文件列表完成一次系统结果。系统事件不提供来源 frame；accept 由页面/服务端校验 |
 | 全屏 | 单个 owner，保存并恢复原窗口 layoutFullScreen 与方向（包括 UNSPECIFIED）；尺寸为横屏视频时使用 AUTO_ROTATION_LANDSCAPE。宿主使用 fullscreenChanged 调整 Kuikly 页面布局 |
-| 可见性 / 释放 | 隐藏、导航、请求切换、render 退出及 onDestroy 撤销消息端口、系统请求和迟到回调；隐藏停止媒体、onInactive，显示后 onActive 并重新握手 |
+| 可见性 / 释放 | 隐藏、导航、请求切换、render 退出及 onDestroy 撤销消息端口、系统请求和迟到回调；隐藏停止媒体、onInactive，显示后 onActive 并重新握手，不重载或重复初始化 |
 
 `capabilityUnsupported` 对应 Kotlin `WebViewEvent.CapabilityUnsupported(WebViewCapability.FILE_CAPTURE)`，只表示平台未实现拍摄，不伪装为成功、用户取消、失败或权限拒绝，也不请求拍摄权限。DocumentViewPicker 结果在导航、隐藏、request 切换和销毁时以空列表结算，迟到回调不能给新文档交付 URI。当前 SDK 缺少真实来源 frame 和独立 user-gesture 字段，不能把当前可信页面检查写成来源 frame 证明；拍摄入口需未来实现并获得真实设备文件 URI 后才能宣布可用。
 
@@ -74,7 +78,7 @@ GYWebViewBridge.postMessage('handlerName', { value: 'data' });
 
 载荷为 `handlerName` + 原始 `data` 字符串，组件不解释命令。保留 `JSAndroidBridge.handleJSBridgeMessage` / `WebViewJavascriptBridge.callHandler` 同义 shim；`registerHandler` 仅兼容无操作占位，不承诺原生 responseCallback。
 
-document-start 的 top-only closure 保持端口私有，端口准备前最多缓存 32 条且总计 64 KiB；单条最多 64 KiB、handlerName 最多 80 字符。原生在 firstContentVisible / page-end 校验实际当前来源，再把端口发送给精确 origin 的主文档。禁止 `'*'`，禁止全 frame JavaScriptProxy；页面伪造 MessageEvent 和 iframe 发来的握手均拒绝。导航/隐藏/释放关闭两端原生句柄，旧 generation 永久失效；同文档重新显示会建立新端口。无法在早期注入成功的环境里不承诺首航早期消息可用，HTML opaque origin 也不从 baseUrl 伪造实际 sender 来源。
+document-start 的 top-only closure 保持端口私有，端口准备前最多缓存 32 条且总计 64 KiB；单条最多 64 KiB、handlerName 最多 80 字符。原生在 firstContentVisible / page-end 校验实际当前来源，再把端口发送给精确 origin 的主文档。禁止 `'*'`，禁止全 frame JavaScriptProxy；页面伪造 MessageEvent 和 iframe 发来的握手均拒绝。导航/隐藏/释放关闭两端原生句柄，旧 generation 永久失效；隐藏初始化不入业务队列，已有队列同时撤销。恢复先完成 JS 状态同步再握手，JS revision 拒绝同文档晚执行的旧可见性更新；原生 visible/origin/generation 始终是授权门禁，页面内状态只是队列管理。同文档重新显示会建立新端口。无法在早期注入成功的环境里不承诺首航早期消息可用，HTML opaque origin 也不从 baseUrl 伪造实际 sender 来源。
 
 主文档投递证据：[OpenHarmony ArkWeb Controller API](https://github.com/openharmony/docs/blob/master/zh-cn/application-dev/reference/apis-arkweb/capi-web-arkweb-controllerapi.md) 的 postWebMessage 定义为发送端口到 HTML 主页面；[ArkTS NAPI 实现](https://github.com/openharmony/web_webview/blob/master/interfaces/kits/napi/webviewcontroller/napi_webview_controller.cpp) 的 postMessage 调用 [WebviewController::PostWebMessage](https://github.com/openharmony/web_webview/blob/master/interfaces/kits/napi/webviewcontroller/webview_controller.cpp)，最终调用同一 NWeb::PostWebMessage。生命周期要求见[华为应用与前端页面数据通道](https://developer.huawei.com/consumer/cn/doc/HarmonyOS-Guides/web-app-page-data-channel)。
 

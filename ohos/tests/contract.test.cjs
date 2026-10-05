@@ -14,7 +14,7 @@ if (harArgument >= 0) {
   root = path.join(extracted, 'package/src/main/ets');
   process.on('exit', () => fs.rmSync(extracted, { recursive: true, force: true }));
 }
-const deferred = () => { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; };
+const deferred = () => { let resolve, reject; const promise = new Promise((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; };
 let nextJavascript = null;
 let permission = null;
 let selectedFile = null;
@@ -26,13 +26,13 @@ class Port {
   message(message) { this.callback?.(message); }
 }
 class Controller {
-  loads = []; data = []; refreshes = 0; url = 'https://trusted.test/page'; ports = []; deliveries = [];
+  loads = []; data = []; refreshes = 0; url = 'https://trusted.test/page'; ports = []; deliveries = []; scripts = []; scriptContext = null;
   loadUrl(url, headers) { if (failNextLoad) { failNextLoad = false; throw new Error('first load rejected'); } this.loads.push({ url, headers }); this.url = url; }
   loadData(...args) { if (failNextLoad) { failNextLoad = false; throw new Error('first load rejected'); } this.data.push(args); }
   getUrl() { return this.url; }
   getUserAgent() { return 'ArkWeb'; }
   setCustomUserAgent(value) { this.userAgent = value; }
-  runJavaScript(source) { this.lastScript = source; if (nextJavascript) { const task = nextJavascript; nextJavascript = null; return task.promise; } return Promise.resolve('null'); }
+  runJavaScript(source) { this.lastScript = source; this.scripts.push(source); const task = nextJavascript; nextJavascript = null; const execute = () => { if (this.scriptContext) vm.runInNewContext(source, this.scriptContext); return 'null'; }; if (task?.deferExecution) return task.promise.then(execute); execute(); return task ? task.promise : Promise.resolve('null'); }
   createWebMessagePorts() { const ports = [new Port(), new Port()]; this.ports.push(ports); return ports; }
   postMessage(name, ports, origin) { this.deliveries.push({ name, ports, origin }); }
   accessBackward() { return true; } accessForward() { return false; }
@@ -125,9 +125,76 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   ]) {
     const location = new URL(target); const window = {}; window.top = mainFrame ? window : {};
     vm.runInNewContext(wire.guardedScript(guarded, standard), { window, location });
-    assert.equal(window.executions || 0, expected, `${target} mainFrame=${mainFrame}`);
+    vm.runInNewContext(wire.guardedScript(guarded, standard), { window, location });
+    assert.equal(window.executions || 0, expected, `${target} mainFrame=${mainFrame} executes once`);
   }
+  const prototypeIdPage = {}; prototypeIdPage.top = prototypeIdPage;
+  const prototypeIdContext = { window: prototypeIdPage, location: new URL('https://trusted.test/page') };
+  const prototypeIdScript = wire.guardedScript({ ...guarded, id: '__proto__' }, standard);
+  vm.runInNewContext(prototypeIdScript, prototypeIdContext); vm.runInNewContext(prototypeIdScript, prototypeIdContext);
+  assert.equal(prototypeIdPage.executions, 1, '__proto__ script id uses own-property per-document deduplication');
   const { GYWebView } = load('GYWebView.ets');
+  // 生产 ArkTS + 系统 Controller 替身：初始化与可见业务能力使用不同门禁。
+  const scriptRequest = request({ settings: { javaScriptEnabled: true }, security: { ...standard.security, appBridgeEnabled: true },
+    scripts: [
+      { id: 'start', source: 'window.started=(window.started||0)+1;', injectionTime: 'DOCUMENT_START', onlyForTrustedMainFrame: true },
+      { id: 'ready', source: 'window.ready=(window.ready||0)+1;', injectionTime: 'DOM_READY', onlyForTrustedMainFrame: true },
+      { id: 'finished', source: 'window.finished=(window.finished||0)+1;', injectionTime: 'DOCUMENT_FINISHED', onlyForTrustedMainFrame: true },
+    ] });
+  const hidden = new GYWebView(); const hiddenEvents = [];
+  hidden.setProp('onEvent', event => hiddenEvents.push(event)); hidden.setProp('visible', false);
+  hidden.setProp('request', encoded(scriptRequest)); hidden.onControllerAttached(); hidden.onPageBegin('https://trusted.test/page');
+  const documentListeners = {}; const pageListeners = {}; const page = { addEventListener: (name, callback) => pageListeners[name] = callback }; page.top = page;
+  const document = { readyState: 'loading', addEventListener: (name, callback) => { (documentListeners[name] ||= []).push(callback); } };
+  page.dispatchEvent = event => pageListeners[event.type]?.(event);
+  const hiddenContext = { window: page, document, location: new URL('https://trusted.test/page'), TextEncoder, Event: class { constructor(type) { this.type = type; } } };
+  hidden.controller.scriptContext = hiddenContext;
+  const startScripts = hidden.documentStartScripts();
+  assert.equal(startScripts.length, 3, 'DOM_READY is registered at actual document-start');
+  startScripts.forEach(item => vm.runInNewContext(item.script, hiddenContext));
+  assert.equal(page.started, 1); assert.equal(page.ready, undefined);
+  assert.equal(page.GYWebViewBridge.postMessage('hidden-init', '{}'), false, 'hidden-start bootstrap never queues business messages');
+  document.readyState = 'interactive'; documentListeners.DOMContentLoaded.forEach(callback => callback());
+  assert.equal(page.ready, 1, 'real DOMContentLoaded initializes while hidden');
+  document.readyState = 'complete'; hidden.onPageEnd('https://trusted.test/page'); hidden.onPageEnd('https://trusted.test/page');
+  hidden.onPageVisible('https://trusted.test/page');
+  assert.equal(page.ready, 1); assert.equal(page.finished, 1, 'repeated native phases execute named scripts once per document');
+  assert.equal(hidden.controller.deliveries.length, 0, 'hidden initialization cannot open a business channel');
+  const initializedController = hidden.controller; const beforeShowScripts = initializedController.scripts.length;
+  hidden.setProp('visible', true); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  assert.equal(hidden.controller, initializedController); assert.equal(initializedController.refreshes, 0);
+  assert.equal(initializedController.deliveries.length, 1); assert.equal(page.ready, 1); assert.equal(page.finished, 1);
+  assert.equal(initializedController.scripts.length, beforeShowScripts + 2, 'show synchronizes visibility before bridge bootstrap');
+  const delayedHide = deferred(); delayedHide.deferExecution = true; nextJavascript = delayedHide;
+  hidden.setProp('visible', false); hidden.setProp('visible', true);
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  const currentVisibilityRevision = page.__GY_WEBVIEW_VISIBILITY_REVISION__;
+  assert.equal(page.__GY_WEBVIEW_VISIBLE__, true);
+  delayedHide.resolve('null'); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  assert.equal(page.__GY_WEBVIEW_VISIBLE__, true, 'late-executing hide cannot overwrite newer show');
+  assert.equal(page.__GY_WEBVIEW_VISIBILITY_REVISION__, currentVisibilityRevision);
+  hidden.setProp('visible', false);
+  const lateScript = deferred(); nextJavascript = lateScript;
+  hidden.onPageVisible('https://trusted.test/page');
+  hidden.call('stopLoading', null, () => {}); const beforeCancelledFailure = hiddenEvents.length;
+  lateScript.reject(new Error('late script failure')); await Promise.resolve(); await Promise.resolve();
+  assert.equal(hiddenEvents.length, beforeCancelledFailure, 'cancelled script completion cannot emit a late failure');
+  const oldToken = hidden.renderToken; const oldController = hidden.controller;
+  hidden.setProp('request', encoded(scriptRequest));
+  assert.equal(hidden.isRenderActive(oldToken), false, 'old render cannot enter production page callbacks');
+  assert.equal(oldController.ports[0][0].closed, true);
+  hidden.onControllerAttached(); hidden.onPageBegin('https://trusted.test/page');
+  hidden.onDestroy(); const beforeLateEnd = hidden.controller.scripts.length;
+  hidden.onPageEnd('https://trusted.test/page');
+  assert.equal(hidden.controller.scripts.length, beforeLateEnd, 'destroyed document cannot initialize');
+  const noVisibleCallback = new GYWebView(); noVisibleCallback.setProp('visible', false);
+  noVisibleCallback.setProp('request', encoded(scriptRequest)); noVisibleCallback.onControllerAttached();
+  noVisibleCallback.onPageBegin('https://trusted.test/page'); noVisibleCallback.onPageEnd('https://trusted.test/page');
+  assert.equal(noVisibleCallback.controller.scripts.length, 2, 'page-end supplies DOM_READY fallback when visible callback is absent');
+  noVisibleCallback.onDestroy();
+  const disabledScripts = new GYWebView(); disabledScripts.setProp('request', encoded(request({ scripts: scriptRequest.scripts })));
+  disabledScripts.onControllerAttached(); disabledScripts.onPageEnd('https://trusted.test/page');
+  assert.equal(disabledScripts.documentStartScripts().length, 0); assert.equal(disabledScripts.controller.scripts.length, 0); disabledScripts.onDestroy();
   // 系统替身执行 HAR 中的真实实现，首航失败必须重建，保留原请求且只提交一次。
   for (const content of [
     { type: 'url', url: 'https://trusted.test/retry', additionalHeaders: { Authorization: 'test-only' } },
@@ -207,10 +274,39 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(oldPorts[0].closed, true); assert.equal(oldPorts[1].closed, true);
   oldPorts[0].message(encoded({ handlerName: 'stale', data: '{}' }));
   assert.equal(events.filter(event => event.type === 'bridgeMessage').length, beforeHide);
-  view.setProp('visible', true); await Promise.resolve(); await Promise.resolve();
+  view.setProp('visible', true); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
   assert.equal(view.controller.deliveries.length, 2, 'visible resumes same-document handshake');
   oldPorts[0].message(encoded({ handlerName: 'still-stale', data: '{}' }));
   assert.equal(events.filter(event => event.type === 'bridgeMessage').length, beforeHide);
+  const visibilityRace = new GYWebView(); visibilityRace.setProp('visible', false);
+  visibilityRace.setProp('request', encoded(bridgeRequest)); visibilityRace.onControllerAttached();
+  visibilityRace.onPageEnd('https://trusted.test/page');
+  const showSync = deferred(); nextJavascript = showSync;
+  visibilityRace.setProp('visible', true); visibilityRace.onPageEnd('https://trusted.test/page');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(visibilityRace.controller.deliveries.length, 0, 'page-end cannot handshake before visibility synchronization');
+  showSync.resolve('null'); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  assert.equal(visibilityRace.controller.deliveries.length, 1, 'current visibility synchronization opens one channel');
+  visibilityRace.setProp('visible', false);
+  const staleShowSync = deferred(); nextJavascript = staleShowSync;
+  visibilityRace.setProp('visible', true); visibilityRace.setProp('visible', false); visibilityRace.setProp('visible', true);
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  assert.equal(visibilityRace.controller.deliveries.length, 2);
+  staleShowSync.resolve('null'); await Promise.resolve(); await Promise.resolve();
+  assert.equal(visibilityRace.controller.deliveries.length, 2, 'stale hide/show generation never opens another channel');
+  visibilityRace.setProp('visible', false); const replacedShow = deferred(); nextJavascript = replacedShow;
+  visibilityRace.setProp('visible', true); const replacedController = visibilityRace.controller;
+  visibilityRace.setProp('request', encoded(bridgeRequest)); replacedShow.resolve('null');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(replacedController.deliveries.length, 2, 'replaced controller completion never flushes old messages'); visibilityRace.onDestroy();
+  const navigationDuringSync = new GYWebView(); navigationDuringSync.setProp('visible', false);
+  navigationDuringSync.setProp('request', encoded(bridgeRequest)); navigationDuringSync.onControllerAttached();
+  const navigationSync = deferred(); nextJavascript = navigationSync;
+  navigationDuringSync.setProp('visible', true); navigationDuringSync.onPageBegin('https://trusted.test/next');
+  navigationSync.resolve('null'); await Promise.resolve(); await Promise.resolve();
+  navigationDuringSync.onPageEnd('https://trusted.test/next'); await Promise.resolve(); await Promise.resolve();
+  assert.equal(navigationDuringSync.controller.deliveries.length, 1, 'new document resets cancelled visibility wait and handshakes');
+  navigationDuringSync.onDestroy();
   const evalTask = deferred(); nextJavascript = evalTask; let late = 0;
   view.call('evaluateJavascript', encoded({ script: '1+1' }), () => late++);
   view.setProp('request', encoded(standard)); evalTask.resolve('2'); await Promise.resolve();
@@ -395,5 +491,19 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(top.GYWebViewBridge.postMessage('ready', '{}'), true); assert.equal(sent.length, 2);
   assert.equal(top.GYWebViewBridge.postMessage('x', 'x'.repeat(65537)), false);
   assert.equal(top.GYWebViewBridge.postMessage('x', '字'.repeat(30000)), false, 'limit counts UTF-8 bytes');
-  console.log(`PASS (${harArgument >= 0 ? 'actual HAR' : 'source'}): first-load retry URL/HTML, synchronous origin policy, typed unsupported capture, once-only results, Bridge and lifecycle`);
+  // 执行真实 bootstrap：保留可见首航队列，隐藏初始/撤销队列不能在恢复时 flush。
+  for (const initiallyVisible of [true, false]) {
+    const visibilityListeners = {}; const visibilityTop = { __GY_WEBVIEW_VISIBLE__: initiallyVisible,
+      addEventListener: (name, callback) => visibilityListeners[name] = callback }; visibilityTop.top = visibilityTop;
+    vm.runInNewContext(bridgeSource, { window: visibilityTop, TextEncoder });
+    assert.equal(visibilityTop.GYWebViewBridge.postMessage('before-hide', '{}'), initiallyVisible);
+    visibilityTop.__GY_WEBVIEW_VISIBLE__ = false; visibilityListeners.GYWebViewVisibility();
+    assert.equal(visibilityTop.GYWebViewBridge.postMessage('hidden-init', '{}'), false);
+    visibilityTop.__GY_WEBVIEW_VISIBLE__ = true; visibilityListeners.GYWebViewVisibility();
+    const delivered = []; const resumedPort = { close() {}, postMessage: message => delivered.push(message) };
+    visibilityListeners.message({ isTrusted: true, source: null, data: 'GYWebViewChannel', ports: [resumedPort] });
+    assert.equal(delivered.length, 0, 'no pre-hide or hidden message is flushed after show');
+    assert.equal(visibilityTop.GYWebViewBridge.postMessage('visible-new', '{}'), true); assert.equal(delivered.length, 1);
+  }
+  console.log(`PASS (${harArgument >= 0 ? 'actual HAR' : 'source'}): first-load retry URL/HTML, synchronous origin policy, typed unsupported capture, once-only results, hidden initialization, Bridge and lifecycle`);
 })().catch(error => { console.error(error); process.exitCode = 1; });
