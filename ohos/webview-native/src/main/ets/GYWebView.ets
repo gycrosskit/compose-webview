@@ -12,6 +12,28 @@ import { createGYWebView } from './WebViewComponent';
 
 interface EvalParams { script: string; }
 interface BridgeMessage { handlerName: string; data: string; }
+/**
+ * 发往 Kuikly 的中立事件，仅设置与 type 对应的字段，业务正文、URL 和文件地址不得直接记日志。
+ * @property type 事件判别名，对应 WebViewWire.decodeEvent。
+ * @property url 当前主文档或导航地址，可含敏感查询参数。
+ * @property title 原始标题，尚未做业务展示过滤。
+ * @property progress 加载进度百分比，0..100。
+ * @property canGoBack 是否可消费历史返回。
+ * @property canGoForward 是否可消费历史前进。
+ * @property handlerName Bridge 协议处理器名。
+ * @property data Bridge 原始业务正文。
+ * @property isFullscreen 是否处于 H5 全屏。
+ * @property kind 中立错误类型。
+ * @property message 错误说明，不携带业务解析结果。
+ * @property errorCode 原生错误码。
+ * @property httpStatus HTTP 状态码。
+ * @property isMainFrame 是否主文档导航/错误。
+ * @property hasUserGesture 原生确认的用户手势。
+ * @property target CURRENT_WINDOW 或 NEW_WINDOW。
+ * @property blocked 是否同步拒绝导航。
+ * @property permissions 需宿主提供设置入口的 CAMERA/MICROPHONE。
+ * @property capability 不支持的中立能力名。
+ */
 export interface WebEvent {
   type: string; url?: string; title?: string; progress?: number; canGoBack?: boolean; canGoForward?: boolean;
   handlerName?: string; data?: string; isFullscreen?: boolean; kind?: string; message?: string;
@@ -41,13 +63,23 @@ window.addEventListener('message',function(event){
 window.addEventListener('pagehide',function(){if(port)port.close();port=null;queue=[];bytes=0});
 })();`;
 
+/**
+ * ArkWeb 原生 Kuikly 组件；在所属 UI 线程调用，输入变化重建 Web 节点，销毁后不可复用。
+ * 所有异步授权、选择器和 JS 结果在导航、隐藏、输入变化或销毁时撤销。
+ */
 @Observed
 export class GYWebView extends KuiklyRenderBaseView {
+  /** Kuikly 原生注册名，三端保持一致。 */
   static readonly VIEW_NAME: string = 'GYWebView';
+  /** 仅属于当前 renderToken 的 ArkWeb Controller；不能跨页面持有。 */
   controller: webview.WebviewController = new webview.WebviewController();
+  /** 当前已验证请求；无效输入或销毁时为 null。 */
   request: WebViewRequest | null = null;
+  /** 初始 true，隐藏撤销异步操作并停媒退出全屏。 */
   visible: boolean = true;
+  /** 当前 Web 节点身份，输入变化后递增。 */
   renderToken: number = 0;
+  /** 当前渲染节点列表，仅含当前身份，用于 ArkUI 替换旧 Controller。 */
   renderTokens: number[] = [0];
   private documentReady: boolean = false;
   private renderFailed: boolean = false;
@@ -67,6 +99,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   private nativeExitPending: boolean = false;
   private windowTask: Promise<void> = Promise.resolve();
 
+  /** 返回当前声明配置；未设置输入时使用空对象的默认值。 */
   settings(): WebViewSettings { return this.request?.settings || {}; }
 
   setProp(key: string, value: KRAny | KuiklyRenderCallback): boolean {
@@ -111,8 +144,10 @@ export class GYWebView extends KuiklyRenderBaseView {
       wrapBuilder<[KuiklyRenderBaseView]>(createGYWebView), this);
   }
 
+  /** ArkUI 回调入口核验节点身份、销毁状态及渲染进程状态。 */
   isRenderActive(token: number): boolean { return !this.lifetime.disposed && !this.renderFailed && token === this.renderToken; }
 
+  /** 当前节点首次附着后提交内容，重复或旧节点附着安全忽略。 */
   onControllerAttached(token: number = this.renderToken): void {
     if (!this.isRenderActive(token) || this.attached) return;
     this.attached = true;
@@ -144,6 +179,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     } catch (_) { this.loadingRequest = false; this.pendingHtmlNavigation = false; this.fail('LOAD_EXCEPTION', 'ArkWeb load failed'); }
   }
 
+  /** 原生同步拦截导航；仅一次无手势内部 HTML 首航可消费例外。 */
   interceptNavigation(request: WebResourceRequest): boolean {
     const current = this.request;
     const target = request.getRequestUrl();
@@ -160,6 +196,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     return !allowed;
   }
 
+  /** 同步拒绝新窗口并发观察事件，不创建第二个 Controller。 */
   rejectNewWindow(event: OnWindowNewEvent): void {
     // SDK 指定 null 表示取消；只启用事件分流，不创建/支持第二个窗口。
     event.handler.setWebController(null!);
@@ -167,6 +204,7 @@ export class GYWebView extends KuiklyRenderBaseView {
       target: 'NEW_WINDOW', blocked: true });
   }
 
+  /** 拒绝命中规则及本地资源；null 表示继续内核网络请求。 */
   interceptResource(request: WebResourceRequest): WebResourceResponse {
     const current = this.request;
     // SDK 回调类型未写 nullable；ArkWeb 契约用 null 表示沿用内核网络请求。
@@ -178,6 +216,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     return response;
   }
 
+  /** 开始新文档并撤销上一文档能力请求/端口。 */
   onPageBegin(value: string): void {
     this.documentReady = false;
     this.loadingRequest = false;
@@ -186,6 +225,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.emit({ type: 'pageStarted', url: value });
   }
 
+  /** 当前文档可绘制时执行 DOM_READY 脚本并尝试主文档端口握手。 */
   onPageVisible(value: string): void {
     this.documentReady = true;
     this.emit({ type: 'firstContentVisible', url: value });
@@ -194,6 +234,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.emitHistory();
   }
 
+  /** 当前文档完成时执行完成脚本并更新历史。 */
   onPageEnd(value: string): void {
     this.documentReady = true;
     this.emit({ type: 'pageFinished', url: value });
@@ -202,6 +243,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.emitHistory();
   }
 
+  /** 返回原生首航注入脚本；JS 关闭为空，可信限定由页面内主文档门禁再次检查。 */
   documentStartScripts(): ScriptItem[] {
     const request = this.request;
     if (!request || request.settings.javaScriptEnabled !== true) return [];
@@ -256,6 +298,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     }).catch(() => { if (this.lifetime.current(generation)) this.fail('LOAD_EXCEPTION', 'Bridge bootstrap failed'); });
   }
 
+  /** 主文档来源授权通过后申请系统权限；取消/异源/部分授权均 deny，结果只结算一次。 */
   permissionRequest(request: PermissionRequest): void {
     try {
       const current = this.request;
@@ -287,6 +330,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     }
   }
 
+  /** 接管系统选择器，返回 true；无授权、失败或撤销返回空列表，直接拍摄明确不支持。 */
   selectFile(event: OnShowFileSelectorEvent): boolean {
     this.fileResults.add(event.result);
     const complete = (files: string[]): void => {
@@ -331,6 +375,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     };
   }
 
+  /** 申请共享 Window owner，width/height 单位像素；冲突或失活立即退出原生 handler。 */
   enterFullscreen(handler: FullScreenExitHandler, width: number, height: number): void {
     if (!this.visible || this.lifetime.disposed || this.fullscreenHandler || this.nativeExitPending) { handler.exitFullScreen(); return; }
     this.fullscreenHandler = handler;
@@ -355,6 +400,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     });
   }
 
+  /** 主动退出并恢复所属 Window lease；true 表示消费全屏，无参原生确认前拒绝同节点再次进入。 */
   exitFullscreen(): boolean {
     const consumed = this.fullscreenHandler !== null || this.fullscreenLease !== null;
     const handler = this.fullscreenHandler;
@@ -367,6 +413,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     return consumed;
   }
 
+  /** 处理原生无参退出确认；旧节点不得撤销新节点全屏。 */
   nativeFullscreenExited(token: number = this.renderToken): void {
     if (!this.isRenderActive(token)) return;
     if (this.nativeExitPending) {
@@ -377,6 +424,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.leaveFullscreen();
   }
 
+  /** 撤销当前 lease 并异步恢复 Window；重复调用安全忽略。 */
   leaveFullscreen(): void {
     const lease = this.fullscreenLease;
     const hadHandler = this.fullscreenHandler !== null;
@@ -432,16 +480,20 @@ export class GYWebView extends KuiklyRenderBaseView {
     try { return this.controller.getUrl(); } catch (_) { return ''; }
   }
 
+  /** 交付当前实例事件；销毁后静默丢弃，回调在所属 UI 执行链执行。 */
   emit(event: WebEvent): void { if (!this.lifetime.disposed) this.eventCallback?.(event); }
+  /** 发布中立主文档错误，errorCode/httpStatus 可缺省。 */
   fail(kind: string, message: string, errorCode?: number, httpStatus?: number): void {
     this.emit({ type: 'loadFailed', kind: kind, message: message, url: this.attached ? this.currentUrl() : '',
       errorCode: errorCode, httpStatus: httpStatus, isMainFrame: true });
   }
+  /** 当前 Controller 存活时发布历史可用性和地址。 */
   emitHistory(): void {
     if (!this.attached || this.lifetime.disposed) return;
     try { this.emit({ type: 'historyChanged', canGoBack: this.controller.accessBackward(), canGoForward: this.controller.accessForward(), url: this.currentUrl() }); }
     catch (_) { this.fail('LOAD_EXCEPTION', 'ArkWeb history unavailable'); }
   }
+  /** 标记渲染进程失败，撤销所有能力；reload 会重建 Controller。 */
   renderExited(): void {
     this.renderFailed = true; this.documentReady = false; this.revokePending(); this.exitFullscreen();
     this.fail('RENDER_PROCESS', 'Web renderer exited');

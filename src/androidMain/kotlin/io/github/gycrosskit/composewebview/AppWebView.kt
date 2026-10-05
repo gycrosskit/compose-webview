@@ -1,13 +1,9 @@
 package io.github.gycrosskit.composewebview
 
-import android.annotation.SuppressLint
 import android.graphics.Color as AndroidColor
 import android.net.Uri
-import android.os.Build
 import android.os.SystemClock
 import android.view.View
-import android.webkit.CookieManager
-import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -24,8 +20,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.webkit.WebSettingsCompat
-import androidx.webkit.WebViewFeature
 
 /** 使用公共状态监听器创建业务定制 [WebViewClient] 的工厂。 */
 typealias WebViewClientFactory = (AppWebViewClient.Listener) -> WebViewClient
@@ -44,6 +38,18 @@ typealias WebChromeClientFactory = (WebView, AppWebChromeClient.Listener) -> and
  *
  * [onNavigationRequest] 返回 `true` 表示导航已被业务接管，WebView 不再加载该地址。
  * [onRelease] 只用于释放业务附加资源，公共销毁流程会在其后继续执行。
+ * @param content 声明式内容，相等内容跨重组不重复加载。
+ * @param visible 默认 true；隐藏原生 View 不移除组合实例，生命周期停媒由所属壳层处理。
+ * @param modifier 布局与外观约束。
+ * @param state 当前组合位置独占状态，默认 remember 创建。
+ * @param config 网页设置，默认关闭 JavaScript 和高风险访问。
+ * @param backgroundColor 原生背景色，默认透明。
+ * @param onNavigationRequest UI 线程同步路由；true 表示业务接管，默认 false。
+ * @param webViewClientFactory 可选加载 Client 工厂，须继续转发 Listener 合同。
+ * @param webChromeClientFactory 可选 ChromeClient 工厂，须继续转发 Listener 合同。
+ * @param configure 创建实例时一次性扩展配置，默认空。
+ * @param onRelease UI 线程释放业务附加资源，默认空；抛错仍继续核心销毁。
+ * @param pageEnteredAtMillis 与 webViewMonotonicNowMillis 同源的毫秒起点，默认 null 表示未知。
  */
 @Composable
 fun AppWebView(

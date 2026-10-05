@@ -2,7 +2,13 @@ package io.github.gycrosskit.composewebview
 
 import io.ktor.http.Url
 
-/** Kuikly 事件没有同步返回值，导航决定必须随请求下发到原生。 */
+/**
+ * Kuikly 事件没有同步返回值，导航决定必须随请求下发到原生。
+ * @property allowedSchemes 允许的规范化小写 scheme，默认 HTTP/HTTPS；平台可以进一步限制。
+ * @property blockedRules 主文档拒绝规则，默认空；不用于子资源过滤。
+ * @property allowNewWindows 是否允许新窗口导航，默认 false；平台可拒绝或沿用当前窗口。
+ * @property allowedOrigins 主文档精确 HTTP/HTTPS 来源白名单，默认空表示不限制来源。
+ */
 data class WebViewNavigationPolicy(
     val allowedSchemes: Set<String> = setOf("http", "https"),
     val blockedRules: List<WebViewUrlRule> = emptyList(),
@@ -15,6 +21,7 @@ data class WebViewNavigationPolicy(
         require(allowedOrigins.all { it.toHttpOrigin() != null }) { "allowedOrigins requires valid HTTP/HTTPS origins" }
     }
 
+    /** 同步检查 scheme、窗口、主文档规则和来源；不负责 JS/Bridge 来源授权。 */
     fun allows(navigation: WebViewNavigationRequest): Boolean {
         val scheme = runCatching { Url(navigation.url).protocol.name.lowercase() }.getOrNull()
         return scheme in allowedSchemes &&

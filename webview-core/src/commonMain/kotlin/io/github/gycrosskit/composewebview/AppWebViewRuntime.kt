@@ -18,6 +18,7 @@ enum class AppWebViewLogLevel {
  * 模块日志出口。诊断地址保持原文，Bridge 数据仍不得进入日志。
  */
 fun interface AppWebViewLogSink {
+    /** 同步接收调用线程上的日志；不可阻塞 UI 或持有页面，message 可能含完整敏感 URL。 */
     fun log(level: AppWebViewLogLevel, message: String, error: Throwable?)
 }
 

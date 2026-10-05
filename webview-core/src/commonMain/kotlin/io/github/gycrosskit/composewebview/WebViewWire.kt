@@ -4,6 +4,7 @@ import kotlinx.serialization.json.*
 
 /** UI 无关的 wire 编解码；原生收到不合法请求时必须拒绝整个请求。 */
 object WebViewWire {
+    /** 编码完整声明式请求，Native 应按同一 wire 字段解释来源与能力门禁。 */
     fun encodeRequest(request: WebViewRequest): String = buildJsonObject {
         put("content", when (val content = request.content) {
             is WebViewContent.Url -> buildJsonObject {
@@ -38,6 +39,7 @@ object WebViewWire {
         })
     }.toString()
 
+    /** 解码请求；缺省字段沿用模型默认值，错误 JSON 类型或非法契约抛出异常，不能部分授权。 */
     fun decodeRequest(raw: String): WebViewRequest {
         val value = Json.parseToJsonElement(raw).jsonObject
         val content = value.getValue("content").jsonObject
@@ -46,7 +48,7 @@ object WebViewWire {
         val policy = value["navigationPolicy"]?.jsonObject ?: JsonObject(emptyMap())
         return WebViewRequest(
             content = when (content.requiredString("type")) {
-                "url" -> WebViewContent.Url(content.requiredString("url"), content["additionalHeaders"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap())
+                "url" -> WebViewContent.Url(content.requiredString("url"), content["additionalHeaders"]?.jsonObject?.mapValues { (_, value) -> value.jsonPrimitive.let { require(it.isString); it.content } } ?: emptyMap())
                 "html" -> WebViewContent.Html(content.requiredString("html"), content.stringOrNull("baseUrl"), content.string("mimeType", "text/html"), content.string("encoding", "UTF-8"), content.stringOrNull("historyUrl"))
                 else -> error("Unsupported WebView content")
             },
@@ -69,6 +71,7 @@ object WebViewWire {
         )
     }
 
+    /** 生成 Kuikly Native 回调字典；保留 null，时间单位为毫秒，消息正文不记录日志。 */
     fun eventValues(event: WebViewEvent): Map<String, Any?> = when (event) {
         is WebViewEvent.PageStarted -> mapOf("type" to "pageStarted", "url" to event.url)
         is WebViewEvent.FirstContentVisible -> mapOf("type" to "firstContentVisible", "url" to event.url)
@@ -85,6 +88,7 @@ object WebViewWire {
         is WebViewEvent.HistoryChanged -> mapOf("type" to "historyChanged", "canGoBack" to event.canGoBack, "canGoForward" to event.canGoForward, "url" to event.url)
     }
 
+    /** 解码已确认的 Native 事件；未知事件、非法枚举或数值拒绝，不推断成功状态。 */
     fun decodeEvent(raw: String): WebViewEvent {
         val value = Json.parseToJsonElement(raw).jsonObject
         return when (value.requiredString("type")) {
@@ -177,11 +181,12 @@ object WebViewWire {
     } ?: emptyList()
 
     private fun strings(values: Collection<String>) = JsonArray(values.map(::JsonPrimitive))
-    private fun JsonObject.strings(key: String): List<String> = get(key)?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+    private fun JsonObject.strings(key: String): List<String> = get(key)?.jsonArray?.map { it.jsonPrimitive.let { value -> require(value.isString); value.content } } ?: emptyList()
     private fun JsonObject.requiredString(key: String): String = getValue(key).jsonPrimitive.let { require(it.isString); it.content }
     private fun JsonObject.stringOrNull(key: String): String? = get(key)?.takeUnless { it == JsonNull }?.jsonPrimitive?.let { require(it.isString); it.content }
     private fun JsonObject.string(key: String, default: String): String = stringOrNull(key) ?: default
-    private fun JsonObject.boolean(key: String, default: Boolean): Boolean = get(key)?.jsonPrimitive?.boolean ?: default
-    private fun JsonObject.integer(key: String, default: Int): Int = get(key)?.jsonPrimitive?.int ?: default
+    // JsonPrimitive 的转换会接受带引号的 "true"/"1"；wire 必须保持 JSON 原始类型，不能静默放宽能力开关。
+    private fun JsonObject.boolean(key: String, default: Boolean): Boolean = get(key)?.jsonPrimitive?.let { require(!it.isString); it.boolean } ?: default
+    private fun JsonObject.integer(key: String, default: Int): Int = get(key)?.jsonPrimitive?.let { require(!it.isString); it.int } ?: default
     private inline fun <reified T : Enum<T>> JsonObject.enum(key: String, default: T): T = stringOrNull(key)?.let { enumValueOf<T>(it) } ?: default
 }

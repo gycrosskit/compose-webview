@@ -4,13 +4,18 @@ import android.os.Message
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 
-/** `window.open` 只解析目标并交给中立导航回调，临时 WebView 不安装 Bridge。 */
+/** `window.open` 只解析目标并交给中立导航回调，临时 WebView 不安装 Bridge。
+ * UI 线程调用，页面退出时 release 解除全部临时实例。
+ * @param request 获取当前声明式输入。
+ * @param onNavigation 同步中立路由，宿主可拒绝或接管；不可阻塞 UI。
+ */
 class AndroidPopupRouter(
     private val request: () -> WebViewRequest,
     private val onNavigation: (WebViewNavigationRequest) -> WebViewNavigationDecision,
 ) {
     private val popups = mutableSetOf<WebView>()
 
+    /** 接管 Chromium 临时弹窗并在当前页面路由，返回 false 表示拒绝；临时实例由 close/release 销毁。 */
     fun createWindow(parent: WebView, hasUserGesture: Boolean, resultMessage: Message): Boolean {
         if (!parent.isActiveAppWebView()) return false
         val transport = resultMessage.obj as? WebView.WebViewTransport ?: return false
@@ -65,6 +70,7 @@ class AndroidPopupRouter(
         return true
     }
 
+    /** 移出持有集合后销毁指定临时弹窗，避免迟到回调再次路由。 */
     fun close(target: WebView) {
         if (!popups.remove(target)) return
         WebViewDiagnostics.markReleased(target)
@@ -74,5 +80,6 @@ class AndroidPopupRouter(
         runCatching { target.destroy() }
     }
 
+    /** 页面退出时释放全部临时弹窗；所有调用位于 UI 线程。 */
     fun release() = popups.toList().forEach(::close)
 }

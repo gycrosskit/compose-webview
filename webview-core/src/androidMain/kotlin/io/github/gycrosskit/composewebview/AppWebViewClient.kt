@@ -16,6 +16,8 @@ import android.webkit.WebViewClient
  *
  * 子资源失败不会覆盖整页内容；主帧网络、HTTP、SSL 和渲染进程错误通过
  * [Listener.onPageLoadFailed] 汇总。一次导航最多派发一次失败，避免多个系统回调重复刷新 UI。
+ * UI 线程创建和接收原生回调；所属实例释放后不复用。
+ * @property listener 当前原生实例的状态回调，继承实现应继续转发该合同。
  */
 open class AppWebViewClient(
     protected val listener: Listener,

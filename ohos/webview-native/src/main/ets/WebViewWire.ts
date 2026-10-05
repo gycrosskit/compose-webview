@@ -1,9 +1,37 @@
 import { url } from '@kit.ArkTS';
 
+/**
+ * 中立内容 wire；由 decodeRequest 校验后使用，正文和 URL 可能包含敏感数据。
+ * @property type url 或 html 内容类型。
+ * @property url 非空顶层 URL。
+ * @property additionalHeaders 本次顶层请求头，缺省为空；不适用于全部子资源。
+ * @property html 非空 HTML 正文。
+ * @property baseUrl HTML 来源/相对链接基准，默认无来源。
+ * @property mimeType 默认 text/html，桥仅支持此类型。
+ * @property encoding 默认 UTF-8。
+ * @property historyUrl 可选历史显示地址，不替代来源授权。
+ */
 export interface WebViewContent {
   type: string; url?: string; additionalHeaders?: Record<string, string>;
   html?: string; baseUrl?: string | null; mimeType?: string; encoding?: string; historyUrl?: string | null;
 }
+/**
+ * ArkWeb 消费的中立设置；本地文件、新窗口与每实例第三方 Cookie 能力不受支持时拒绝请求。
+ * @property javaScriptEnabled 默认 false。
+ * @property domStorageEnabled 默认 true。
+ * @property allowFileAccess 必须关闭。
+ * @property allowContentAccess 必须关闭。
+ * @property mixedContentPolicy 默认 NEVER_ALLOW。
+ * @property cachePolicy 默认 DEFAULT。
+ * @property acceptsThirdPartyCookies 默认 false，不能启用。
+ * @property supportMultipleWindows 默认 false，不能启用。
+ * @property javaScriptCanOpenWindowsAutomatically 默认 false，不能启用。
+ * @property mediaPlaybackRequiresUserGesture 默认 true。
+ * @property loadsImagesAutomatically 默认 true。
+ * @property blockNetworkImage 默认 false。
+ * @property supportZoom 默认 true。
+ * @property userAgentSuffix 可选 User-Agent 后缀，不含 CR/LF。
+ */
 export interface WebViewSettings {
   javaScriptEnabled?: boolean; domStorageEnabled?: boolean; allowFileAccess?: boolean; allowContentAccess?: boolean;
   mixedContentPolicy?: string; cachePolicy?: string; acceptsThirdPartyCookies?: boolean;
@@ -11,19 +39,64 @@ export interface WebViewSettings {
   mediaPlaybackRequiresUserGesture?: boolean; loadsImagesAutomatically?: boolean; blockNetworkImage?: boolean;
   supportZoom?: boolean; userAgentSuffix?: string | null;
 }
+/**
+ * 高权限 HTTPS 来源授权；路径、查询和 fragment 不参与匹配。
+ * @property urls 精确来源列表，含 scheme/host/有效端口；空列表不授权。
+ * @property trustedHostSuffixes 完整域标签后缀，允许子域及 HTTPS 任意有效端口。
+ */
 export interface TrustOrigins { urls: string[]; trustedHostSuffixes: string[]; }
+/**
+ * 所有能力缺省关闭，file/media/appBridge 必须配置可信 HTTPS 来源。
+ * @property trustedOrigins 高权限来源白名单。
+ * @property appBridgeEnabled 可信主文档业务 Bridge，与 pageBridge 互斥。
+ * @property pageBridgeEnabled 初始 HTTP/HTTPS 同源主文档 Bridge，与 appBridge 互斥。
+ * @property fileChooserEnabled 可信且就绪主文档可以选择文件；URI 不得写日志。
+ * @property mediaCaptureEnabled 可信主文档可请求摄像头/麦克风，系统授权仍单独申请。
+ */
 export interface WebViewSecurity {
   trustedOrigins: TrustOrigins; appBridgeEnabled?: boolean; pageBridgeEnabled?: boolean;
   fileChooserEnabled?: boolean; mediaCaptureEnabled?: boolean;
 }
+/**
+ * 声明式 URL 过滤规则，不用 Contains 替代来源鉴权。
+ * @property type contains/exactHost/hostSuffix。
+ * @property value contains 非空匹配片段。
+ * @property ignoreCase contains 默认 false。
+ * @property host exactHost 目标域。
+ * @property suffix hostSuffix 目标域及子域。
+ */
 export interface WebViewUrlRule { type: string; value?: string; ignoreCase?: boolean; host?: string; suffix?: string; }
+/**
+ * 主文档脚本声明，输入不可信时应由宿主拒绝而非拼接。
+ * @property id 非空稳定脚本标识。
+ * @property source 非空可信脚本正文。
+ * @property injectionTime DOCUMENT_START/DOM_READY/DOCUMENT_FINISHED。
+ * @property onlyForTrustedMainFrame 默认 true；false 仍拒绝 iframe。
+ */
 export interface WebViewScript { id: string; source: string; injectionTime: string; onlyForTrustedMainFrame: boolean; }
+/**
+ * 原生同步导航策略，不等待 Kotlin 异步观察事件。
+ * @property allowedSchemes 允许的 scheme；ArkWeb 进一步限制为 HTTP/HTTPS。
+ * @property allowedOrigins 可选精确主文档来源白名单，空时不限制。
+ * @property blockedRules 主文档拒绝规则。
+ * @property allowNewWindows 默认 false；此平台不支持启用。
+ */
 export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; }
+/**
+ * 单个原生实例的完整 JSON 输入；变化重建 Controller 并撤销旧异步操作。
+ * @property content 本次声明式内容。
+ * @property settings 渲染与能力设置。
+ * @property security 来源授权与高权限开关。
+ * @property scripts 命名业务脚本，默认空。
+ * @property blockedResourceRules 子资源拒绝规则。
+ * @property navigationPolicy 原生同步导航策略。
+ */
 export interface WebViewRequest {
   content: WebViewContent; settings: WebViewSettings; security: WebViewSecurity;
   scripts: WebViewScript[]; blockedResourceRules: WebViewUrlRule[]; navigationPolicy: NavigationPolicy;
 }
 
+/** 规范化 HTTP/HTTPS origin 为显式有效端口；凭据、无效 URL 或端口返回空字符串。 */
 export function origin(value: string): string {
   try {
     const parsed = new url.URL(value.trim());
@@ -40,6 +113,7 @@ function validHost(value: string): boolean {
   return host.length > 0 && host.split('.').every(label => label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label));
 }
 
+/** 按 HTTPS 精确来源或域标签后缀同步检查；不读取网络或系统状态。 */
 export function trusted(value: string, security: WebViewSecurity): boolean {
   const target = origin(value);
   if (!target.startsWith('https:')) return false;
@@ -53,6 +127,7 @@ export function trusted(value: string, security: WebViewSecurity): boolean {
     });
 }
 
+/** 同步匹配 URL 过滤规则；无效 host URL 返回 false。 */
 export function matches(value: string, rule: WebViewUrlRule): boolean {
   if (rule.type === 'contains') {
     const needle = rule.value || '';
@@ -65,6 +140,7 @@ export function matches(value: string, rule: WebViewUrlRule): boolean {
   } catch (_) { return false; }
 }
 
+/** 同步检查主帧/子资源导航与 Bridge 来源；不启动外部 Ability。 */
 export function navigationAllowed(value: string, mainFrame: boolean, request: WebViewRequest): boolean {
   try {
     const parsed = new url.URL(value);
@@ -84,6 +160,7 @@ export function navigationAllowed(value: string, mainFrame: boolean, request: We
   } catch (_) { return false; }
 }
 
+/** 解析并验证完整 JSON 输入，格式或平台不支持的能力抛出 Error；不记录原始正文。 */
 export function decodeRequest(raw: string): WebViewRequest {
   const request = JSON.parse(raw) as WebViewRequest;
   if (!request || !request.content || !request.settings || !request.security || !request.security.trustedOrigins ||
@@ -170,9 +247,14 @@ export function guardedScript(script: WebViewScript, request: WebViewRequest): s
 
 /** 所有异步操作用同一个 generation 校验，在导航、输入变更、隐藏和销毁时撤销。 */
 export class CallbackLifetime {
+  /** 撤销版本，从 0 开始；调用方在发起异步工作时捕获。 */
   generation: number = 0;
+  /** 永久释放标志，初始 false；dispose 后不能复用。 */
   disposed: boolean = false;
+  /** 同一 UI 线程撤销所有先前捕获的版本，允许后续新操作。 */
   invalidate(): void { this.generation++; }
+  /** 仅在实例存活且版本未变化时允许异步结果交付。 */
   current(generation: number): boolean { return !this.disposed && generation === this.generation; }
+  /** 永久释放并推进版本；所有迟到回调均失效。 */
   dispose(): void { this.disposed = true; this.invalidate(); }
 }

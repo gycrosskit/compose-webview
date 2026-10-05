@@ -20,26 +20,73 @@ fun parseAppWebBridgeMessage(raw: String): WebViewBridgeMessage? {
 
 /** 网页组件向 UI/业务连接层发布的中立事件。 */
 sealed interface WebViewEvent {
+    /**
+     * 主文档/子框架导航观察事件，原生已同步作出决定。
+     * @property request 原始导航请求。
+     * @property blocked 是否被来源、平台或宿主路由拒绝。
+     */
     data class Navigation(val request: WebViewNavigationRequest, val blocked: Boolean) : WebViewEvent
+    /**
+     * 原生历史状态变化。
+     * @property canGoBack 是否可以返回。
+     * @property canGoForward 是否可以前进。
+     * @property url 当前主文档完整地址，未知时为 null。
+     */
     data class HistoryChanged(val canGoBack: Boolean, val canGoForward: Boolean, val url: String?) : WebViewEvent
+    /**
+     * 主文档开始新导航。
+     * @property url 主文档地址，平台可能尚未提供。
+     */
     data class PageStarted(val url: String?) : WebViewEvent
-    /** 原生内核已经提交首个可绘制主文档，不必等待全部子资源完成。 */
+    /**
+     * 原生内核已经提交首个可绘制主文档，不必等待全部子资源完成。
+     * @property url 当前主文档地址，未知为 null。
+     */
     data class FirstContentVisible(val url: String?) : WebViewEvent
+    /**
+     * 主文档加载完成，不表示所有子资源或业务接口完成。
+     * @property url 主文档地址，未知为 null。
+     */
     data class PageFinished(val url: String?) : WebViewEvent
+    /**
+     * 原始文档标题变化，展示过滤由 UI 层负责。
+     * @property title 标题，尚未提供或无标题时可为 null。
+     */
     data class TitleChanged(val title: String?) : WebViewEvent
+    /**
+     * 原生主文档加载进度。
+     * @property progress 百分比，范围 0..100；100 表示本次导航完成。
+     */
     data class ProgressChanged(val progress: Int) : WebViewEvent {
         init {
             require(progress in 0..100)
         }
     }
+    /**
+     * 通过原生来源门禁的 Bridge 消息。
+     * @property value 原始处理器名称与业务正文，可能含敏感字段。
+     */
     data class BridgeMessage(val value: WebViewBridgeMessage) : WebViewEvent
-    /** 平台网页进入或退出 H5 自定义全屏；宿主可据此同步 Window 与控制层。 */
+    /**
+     * 网页进入或退出 H5 自定义全屏，宿主可同步 Window 与控制层。
+     * @property isFullscreen 是否处于全屏。
+     */
     data class FullscreenChanged(val isFullscreen: Boolean) : WebViewEvent
+    /**
+     * 主文档整页级失败。
+     * @property error 中立错误快照。
+     */
     data class LoadFailed(val error: WebViewLoadError) : WebViewEvent
-    /** 原生平台无法提供请求的能力，宿主可据此提供替代入口。 */
+    /**
+     * 原生无法提供指定能力，宿主可以展示替代入口。
+     * @property capability 不支持的中立能力。
+     */
     data class CapabilityUnsupported(val capability: WebViewCapability) : WebViewEvent
 
-    /** 系统已拒绝网页所需权限；宿主应提供应用设置入口，不再重复触发系统授权框。 */
+    /**
+     * 系统已禁止再次询问所需权限，宿主可提供应用设置入口。
+     * @property permissions 非空权限集合；不代表本次仍有未完成系统授权请求。
+     */
     data class PermissionSettingsRequired(
         val permissions: Set<WebViewPermission>,
     ) : WebViewEvent {
@@ -48,7 +95,11 @@ sealed interface WebViewEvent {
         }
     }
 
-    /** 无需 H5 接入、由原生预置脚本采集的 Navigation Timing / Paint Timing 指标。 */
+    /**
+     * 原生脚本采集的 Navigation/Paint Timing 指标。
+     * @property name 指标名称。
+     * @property navigationDurationMillis 导航时间线的非负毫秒值，含累计指标与分段耗时。
+     */
     data class PerformanceMetric(
         val name: WebViewPerformanceMetric,
         val navigationDurationMillis: Long,
@@ -59,6 +110,7 @@ sealed interface WebViewEvent {
     }
 }
 
+/** 平台可显式拒绝并由宿主提供替代入口的能力。 */
 enum class WebViewCapability {
     FILE_CAPTURE,
 }
@@ -69,6 +121,7 @@ enum class WebViewPermission {
     MICROPHONE,
 }
 
+/** Navigation/Paint Timing 指标；具体支持与上报次数取决于浏览器内核。 */
 enum class WebViewPerformanceMetric {
     /** 域名解析耗时；命中系统或内核缓存时可能为 0。 */
     DNS_LOOKUP,

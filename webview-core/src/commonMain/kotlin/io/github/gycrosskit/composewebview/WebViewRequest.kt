@@ -7,7 +7,8 @@ package io.github.gycrosskit.composewebview
  * @property settings 不含平台常量的网页设置。
  * @property security 高权限来源门禁。
  * @property scripts 按声明时机在可信主文档执行的命名脚本。
- * @property blockedResourceRules 平台支持时应拦截的子资源规则。
+ * @property blockedResourceRules 平台支持时应拦截的子资源规则，默认空。
+ * @property navigationPolicy 原生同步导航门禁；默认允许 HTTP/HTTPS 并拒绝新窗口。
  */
 data class WebViewRequest(
     val content: WebViewContent,
