@@ -101,11 +101,11 @@ fun AppWebView(
 
                     val listener = state.createWebViewClientListener(this)
                     webViewClient = webViewClientFactory?.invoke(listener)
-                        ?: DefaultAppWebViewClient(listener) { currentNavigationRequest(it) }
+                        ?: DefaultAppWebViewClient(listener, { it === this && state.isAttached(this) }) { currentNavigationRequest(it) }
 
                     val chromeListener = state.createWebChromeClientListener(this)
                     webChromeClient = webChromeClientFactory?.invoke(this, chromeListener)
-                        ?: AppWebChromeClient(chromeListener)
+                        ?: AppWebChromeClient(chromeListener) { it === this && state.isAttached(this) }
 
                     currentConfigure(this)
                 }
@@ -140,15 +140,16 @@ fun AppWebView(
 /** 默认 Client 只提供主框架状态转发和声明式导航拦截，不加入任何业务路由。 */
 private class DefaultAppWebViewClient(
     listener: AppWebViewClient.Listener,
+    private val isOwner: (WebView) -> Boolean,
     private val onNavigationRequest: (Uri) -> Boolean,
-) : AppWebViewClient(listener) {
+) : AppWebViewClient(listener, isOwner) {
     override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean {
-        return onNavigationRequest(request.url)
+        return !isOwner(view) || !view.isActiveAppWebView() || onNavigationRequest(request.url)
     }
 
     @Deprecated("Deprecated in Java")
     override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-        return onNavigationRequest(Uri.parse(url))
+        return !isOwner(view) || !view.isActiveAppWebView() || onNavigationRequest(Uri.parse(url))
     }
 }
 

@@ -35,12 +35,24 @@ sealed interface WebViewUrlRule {
     /** 匹配目标域及其子域，避免 `example.com.evil.test` 一类相似域绕过。
      * @property suffix 目标域后缀，按完整域标签边界匹配。
      */
-    data class HostSuffix(val suffix: String) : WebViewUrlRule {
+    data class HostSuffix(
+        val suffix: String,
+        /** 可选协议限定；与域名条件同时满足，避免把 HTTP 商城导航当作 HTTPS 接管。 */
+        val scheme: String? = null,
+        /** false 只匹配子域，保留父域页面在 WebView 内的原有行为。 */
+        val includeRoot: Boolean = true,
+        /** 拒绝 authority 中任何 userinfo，包括空 @；默认 false 保留旧的 URL 匹配行为。 */
+        val rejectUserInfo: Boolean = false,
+    ) : WebViewUrlRule {
         private val normalizedSuffix = normalizeRuleHost(suffix)
+        init { require(scheme == null || scheme.matches(Regex("[a-z][a-z0-9+.-]*"))) }
 
         override fun matches(url: String): Boolean {
+            if (rejectUserInfo && (!url.contains("://") || url.trim().any { it.code <= 0x20 || it == '\\' })) return false
+            if (rejectUserInfo && url.substringAfter("://", "").substringBefore('/').substringBefore('?').substringBefore('#').contains('@')) return false
+            if (scheme != null && runCatching { Url(url.trim()).protocol.name.lowercase() }.getOrNull() != scheme) return false
             val host = parsedHost(url) ?: return false
-            return host == normalizedSuffix || host.endsWith(".$normalizedSuffix")
+            return (includeRoot && host == normalizedSuffix) || host.endsWith(".$normalizedSuffix")
         }
     }
 }
@@ -57,5 +69,7 @@ private fun normalizeRuleHost(value: String): String {
 }
 
 private fun parsedHost(value: String): String? = runCatching {
-    Url(value.trim()).host.lowercase().trimEnd('.').takeIf(String::isNotBlank)
+    val rawHost = Url(value.trim()).host.lowercase()
+    if (rawHost.startsWith('.') || rawHost.endsWith("..")) null
+    else rawHost.removeSuffix(".").takeIf { it.isNotBlank() && it.split('.').all(String::isNotBlank) }
 }.getOrNull()

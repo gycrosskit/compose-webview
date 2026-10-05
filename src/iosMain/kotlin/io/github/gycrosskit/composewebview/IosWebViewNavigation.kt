@@ -12,6 +12,7 @@ internal fun completeIosWebNavigation(
     route: (WebViewNavigationRequest) -> WebViewNavigationDecision,
     loadPopup: () -> Unit,
     onBlocked: () -> Unit,
+    onAllowedMainFrame: () -> Unit = {},
 ): WebViewNavigationDecision {
     if (!isActive()) {
         AppWebViewRuntime.log(AppWebViewLogLevel.INFO, "忽略已失活实例的 iOS 网页导航回调")
@@ -31,5 +32,6 @@ internal fun completeIosWebNavigation(
         loadPopup()
         return WebViewNavigationDecision.BLOCK
     }
+    if (navigation.isMainFrame) onAllowedMainFrame()
     return WebViewNavigationDecision.ALLOW
 }

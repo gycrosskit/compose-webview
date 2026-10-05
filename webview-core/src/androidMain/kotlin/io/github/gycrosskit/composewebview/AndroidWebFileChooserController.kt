@@ -28,6 +28,10 @@ internal class AndroidWebFileChooserController(
     private var callback: ValueCallback<Array<Uri>>? = null
     private var callbackOwner: WebView? = null
     private var cameraOutputUri: Uri? = null
+    private var cameraOutputFile: File? = null
+    private val captureFiles = mutableMapOf<File, WebView>()
+    private var acceptedTypes: List<String> = emptyList()
+    private var maxFiles = 1
     private var pendingIntent: Intent? = null
     private var permissionKey: Any? = null
     private var externalResultInFlight = false
@@ -84,6 +88,8 @@ internal class AndroidWebFileChooserController(
         val acceptTypes = normalizeWebViewMimeTypes(params?.acceptTypes.orEmpty())
         val captureEnabled = params?.isCaptureEnabled == true && current.security.mediaCaptureEnabled
         val allowMultiple = params?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
+        acceptedTypes = acceptTypes
+        maxFiles = if (allowMultiple) 10 else 1
         val acceptsImage = accepts(acceptTypes, "image/")
         val acceptsVideo = accepts(acceptTypes, "video/")
 
@@ -115,12 +121,14 @@ internal class AndroidWebFileChooserController(
         if (destroyed) return
         destroyed = true
         cancel()
+        clearCaptureFiles()
         fileLauncher.unregister()
         photoPickerLauncher.unregister()
     }
 
     fun release(owner: WebView) {
         if (callbackOwner === owner) cancel()
+        captureFiles.filterValues { it === owner }.keys.toList().forEach { file -> file.delete(); captureFiles.remove(file) }
     }
 
     private fun launchLegacyChooser(
@@ -170,8 +178,10 @@ internal class AndroidWebFileChooserController(
         val prefix = if (video) "webview_video_" else "webview_capture_"
         val outputDirectory = activity.getExternalFilesDir(directory)
             ?: File(activity.cacheDir, "webview_capture/$directory")
-        val output = File(outputDirectory, "$prefix${System.currentTimeMillis()}$extension")
+        val output = File(outputDirectory, "$prefix${UUID.randomUUID()}$extension")
             .also { it.parentFile?.mkdirs() }
+        cameraOutputFile = output
+        callbackOwner?.let { captureFiles[output] = it }
         cameraOutputUri = FileProvider.getUriForFile(
             activity,
             "${activity.packageName}.composewebview.fileprovider",
@@ -182,6 +192,9 @@ internal class AndroidWebFileChooserController(
             addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }.onFailure {
+        cameraOutputFile?.delete()
+        captureFiles.remove(cameraOutputFile)
+        cameraOutputFile = null
         cameraOutputUri = null
         logWebError("无法创建 WebView 拍摄输出文件", it)
     }.getOrNull()
@@ -241,17 +254,47 @@ internal class AndroidWebFileChooserController(
     private fun allowed(owner: WebView): Boolean = !destroyed && isAttached(owner) &&
         request().security.run { fileChooserEnabled && trustedOrigins.isTrusted(owner.url) }
 
+    /** 系统 RESULT_OK 不代表输出有效；成功文件保留到文档撤销，供内核异步上传。 */
     private fun complete(result: Array<Uri>?) {
         val current = callback
-        val permitted = callbackOwner?.let(::allowed) == true
+        val permitted = callbackOwner?.let(::allowed) == true && result != null &&
+            result.size in 1..maxFiles && result.all(::validFile)
+        val output = cameraOutputFile
+        if (!permitted || result?.contains(cameraOutputUri) != true) {
+            output?.delete()
+            captureFiles.remove(output)
+        }
         callback = null
         callbackOwner = null
         cameraOutputUri = null
+        cameraOutputFile = null
         current?.onReceiveValue(if (permitted) result else null)
+    }
+
+    private fun validFile(uri: Uri): Boolean = runCatching {
+        val capture = if (uri == cameraOutputUri) cameraOutputFile else null
+        val mime = if (capture != null) {
+            val header = capture.inputStream().use { stream -> ByteArray(12).also { stream.read(it) } }
+            when {
+                capture.extension == "jpg" && header[0] == 0xff.toByte() && header[1] == 0xd8.toByte() && header[2] == 0xff.toByte() -> "image/jpeg"
+                capture.extension == "mp4" && String(header, 4, 4, Charsets.US_ASCII) == "ftyp" -> "video/mp4"
+                else -> return false
+            }
+        } else activity.contentResolver.getType(uri)?.lowercase() ?: return false
+        val size = capture?.length() ?: activity.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: return false
+        size in 1L..50L * 1024L * 1024L && (acceptedTypes.isEmpty() || acceptedTypes.any {
+            it == "*/*" || it == mime || (it.endsWith("/*") && mime.startsWith(it.dropLast(1)))
+        })
+    }.getOrDefault(false)
+
+    private fun clearCaptureFiles() {
+        captureFiles.keys.forEach(File::delete)
+        captureFiles.clear()
     }
 
     private fun resolveResult(resultCode: Int, data: Intent?): Array<Uri>? {
         if (resultCode != Activity.RESULT_OK) return null
+        cameraOutputUri?.let { return arrayOf(it) }
         data?.clipData?.let { selected ->
             return Array(selected.itemCount) { index -> selected.getItemAt(index).uri }
         }

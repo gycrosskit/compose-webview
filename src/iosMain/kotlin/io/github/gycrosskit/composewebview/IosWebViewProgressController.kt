@@ -54,7 +54,7 @@ internal class IosWebViewProgressController(
             // loadRequest/loadData 会在当前调用栈稍后执行；先让 WebKit 接收导航。
             delay(PROGRESS_SAMPLE_INTERVAL_MILLIS)
             while (isActive) {
-                if (currentGeneration != generation) break
+                if (currentGeneration != generation || !state.isAttached(webView)) break
                 val sample = tracker.sample(
                     estimatedProgress = webView.estimatedProgress,
                     isLoading = webView.loading,

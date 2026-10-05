@@ -2,6 +2,7 @@ package io.github.gycrosskit.composewebview
 
 /** 生成可重复执行的业务脚本包装；document-start 不可用时可在首次可见和完成回调安全兜底。 */
 fun WebViewRequest.earlyScriptSource(): String? {
+    if (!settings.javaScriptEnabled) return null
     val scripts = scripts.filter { it.injectionTime != WebViewScriptInjectionTime.DOCUMENT_FINISHED }
     if (scripts.isEmpty()) return null
     val trustExpression = security.trustedOrigins.javascriptTrustExpression()
@@ -32,6 +33,7 @@ fun WebViewRequest.earlyScriptSource(): String? {
 
 /** 返回 document-start 注册来源；非可信限定脚本可使用全来源，页面内仍只执行主文档。 */
 fun WebViewRequest.earlyScriptOriginRules(): Set<String> {
+    if (!settings.javaScriptEnabled) return emptySet()
     val early = scripts.filter { it.injectionTime != WebViewScriptInjectionTime.DOCUMENT_FINISHED }
     return when {
         early.isEmpty() -> emptySet()
@@ -42,7 +44,7 @@ fun WebViewRequest.earlyScriptOriginRules(): Set<String> {
 
 /** 筛选文档完成时脚本；可信限定脚本按当前地址重新授权，调用方负责 JavaScript 开关。 */
 fun WebViewRequest.finishedScriptsAt(url: String?): List<WebViewScript> = scripts.filter { script ->
-    script.injectionTime == WebViewScriptInjectionTime.DOCUMENT_FINISHED && canInject(script, url)
+    settings.javaScriptEnabled && script.injectionTime == WebViewScriptInjectionTime.DOCUMENT_FINISHED && canInject(script, url)
 }
 
 /** 固定协议只接收无符号毫秒数，不携带 URL、DOM 或业务数据。 */

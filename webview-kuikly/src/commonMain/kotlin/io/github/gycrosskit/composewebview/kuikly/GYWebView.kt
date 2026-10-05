@@ -42,7 +42,7 @@ class GYWebView : DeclarativeBaseView<GYWebViewAttr, GYWebViewEvent>() {
 
 /** 随 Kuikly 渲染任务下发网页声明与可见性；输入变化撤销旧页面的异步操作。 */
 class GYWebViewAttr : Attr() {
-    /** 编码中立输入为 JSON；模型构造负责公共契约校验，平台仍可拒绝不支持的配置，安全变化可能重建实例。 */
+    /** 编码中立输入为 JSON；模型构造负责公共契约校验，平台仍可拒绝不支持的配置，安全变化可能重建实例；仅 navigationPolicy 变化即时更新门禁并保留当前 DOM。 */
     fun request(value: WebViewRequest): GYWebViewAttr {
         "request" with WebViewWire.encodeRequest(value)
         return this

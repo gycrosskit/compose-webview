@@ -14,10 +14,10 @@ internal fun List<WebViewUrlRule>.toWebKitContentRuleList(): String = joinToStri
         is WebViewUrlRule.Contains -> ".*${rule.value.regexEscaped()}.*"
         is WebViewUrlRule.ExactHost ->
             "^[a-zA-Z][a-zA-Z0-9+.-]*://${rule.host.normalizedRuleHost().regexEscaped()}" +
-                "(?::[0-9]+)?(?:/|$)"
+                "(:[0-9]+)?(/.*)?$"
         is WebViewUrlRule.HostSuffix ->
-            "^[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^./]+\\.)*" +
-                "${rule.suffix.normalizedRuleHost().regexEscaped()}(?::[0-9]+)?(?:/|$)"
+            "^${rule.scheme?.regexEscaped() ?: "[a-zA-Z][a-zA-Z0-9+.-]*"}://(${if (rule.rejectUserInfo) "[^./:@]+" else "[^./]+"}\\.)${if (rule.includeRoot) "*" else "+"}" +
+                "${rule.suffix.normalizedRuleHost().regexEscaped()}(:[0-9]+)?(/.*)?$"
     }
     val caseSensitive = rule is WebViewUrlRule.Contains && !rule.ignoreCase
     """{"trigger":{"url-filter":"${filter.jsonEscaped()}","url-filter-is-case-sensitive":$caseSensitive},"action":{"type":"block"}}"""

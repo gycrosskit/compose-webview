@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSError
 import platform.Foundation.NSNumber
+import platform.Foundation.NSUUID
 import platform.Foundation.NSURLErrorDomain
 import platform.WebKit.WKNavigation
 import platform.WebKit.WKNavigationAction
@@ -35,6 +36,7 @@ import platform.WebKit.WKScriptMessage
 import platform.WebKit.WKScriptMessageHandlerProtocol
 import platform.WebKit.WKSecurityOrigin
 import platform.WebKit.WKUIDelegateProtocol
+import platform.WebKit.WKOpenPanelParameters
 import platform.WebKit.WKUserContentController
 import platform.WebKit.WKUserScript
 import platform.WebKit.WKUserScriptInjectionTime
@@ -56,6 +58,14 @@ internal actual fun PlatformAppWebView(
     pageEnteredAtMillis: Long,
     visible: Boolean,
 ) {
+    if (request.security.fileChooserEnabled && !iosSupportsControlledFileChooser()) {
+        DisposableEffect(request) {
+            callbacks.onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.FILE_CHOOSER))
+            callbacks.onEvent(WebViewEvent.LoadFailed(WebViewLoadError(WebViewErrorKind.LOAD_EXCEPTION, "Controlled file chooser requires iOS 18.4")))
+            onDispose {}
+        }
+        return
+    }
     val initialNavigation = request.content.initialOrigin()?.let { WebViewNavigationRequest(it, true, false) }
     if (initialNavigation != null && !request.allowsNavigation(initialNavigation)) {
         DisposableEffect(request) {
@@ -95,39 +105,6 @@ internal actual fun PlatformAppWebView(
         UIKitView(
             factory = {
                 val userContentController = WKUserContentController()
-                userContentController.addUserScript(
-                    WKUserScript(
-                        source = IOS_FILE_CHOOSER_GATE_SCRIPT,
-                        injectionTime = WKUserScriptInjectionTime.WKUserScriptInjectionTimeAtDocumentStart,
-                        forMainFrameOnly = false,
-                    ),
-                )
-                if (currentRequest.settings.javaScriptEnabled) {
-                    userContentController.addUserScript(
-                        WKUserScript(
-                            source = WEB_VIEW_PERFORMANCE_SCRIPT,
-                            injectionTime = WKUserScriptInjectionTime.WKUserScriptInjectionTimeAtDocumentStart,
-                            forMainFrameOnly = true,
-                        ),
-                    )
-                    currentRequest.earlyScriptSource()?.let { source ->
-                        userContentController.addUserScript(
-                            WKUserScript(
-                                source = source,
-                                injectionTime =
-                                    WKUserScriptInjectionTime.WKUserScriptInjectionTimeAtDocumentStart,
-                                forMainFrameOnly = true,
-                            ),
-                        )
-                    }
-                }
-                userContentController.addUserScript(
-                    WKUserScript(
-                        source = IOS_WEB_EVENT_SCRIPT,
-                        injectionTime = WKUserScriptInjectionTime.WKUserScriptInjectionTimeAtDocumentStart,
-                        forMainFrameOnly = true,
-                    ),
-                )
                 val configuration = WKWebViewConfiguration().apply {
                     this.userContentController = userContentController
                     defaultWebpagePreferences.allowsContentJavaScript =
@@ -194,13 +171,21 @@ private class IosWebViewCoordinator(
     private var performanceTrace: WebViewPerformanceTrace? = null
     private var released = false
     private var navigationGeneration = 0
+    private var documentToken = NSUUID().UUIDString
+    private val fileChooser = IosWebFileChooserController()
     private var initialHtmlNavigation = false
     private var mediaTarget: WKWebView? = null
     private var mediaSuspended = true
     private var wasPaused = false
     private var resumedAfterPause = false
 
+    private fun emit(event: WebViewEvent) {
+        val owner = mediaTarget ?: return
+        if (!released && state.isAttached(owner)) callbacks().onEvent(event)
+    }
+
     fun attach(webView: WKWebView, creationDurationMillis: Long) {
+        state.javascriptAllowed = { request().canEvaluateJavascriptAt(it.URL?.absoluteString) }
         mediaTarget = webView
         progress.attach(webView)
         performanceTrace = WebViewPerformanceTrace(
@@ -209,11 +194,41 @@ private class IosWebViewCoordinator(
             pageEnteredAtMillis = pageEnteredAtMillis,
         ).also { it.created(creationDurationMillis) }
         suspendMedia(webView, mediaSuspended, "attach")
+        prepareDocumentScripts(webView)
     }
 
     fun setVisible(webView: WKWebView, visible: Boolean) {
-        if (!visible && !webView.hidden) navigationGeneration++
+        if (visible == webView.hidden) {
+            state.invalidateJavascriptCallbacks()
+            navigationGeneration++
+            documentToken = NSUUID().UUIDString
+            fileChooser.cancel(revokeDocument = true)
+            webView.evaluateJavaScript(transportScript(visible), null)
+        }
         webView.hidden = !visible
+    }
+
+    private fun transportScript(visible: Boolean): String =
+        "if((window.__GY_WEBVIEW_TRANSPORT_REVISION__||0)<=$navigationGeneration){window.__GY_WEBVIEW_TRANSPORT_REVISION__=$navigationGeneration;" +
+            "window.__GY_WEBVIEW_BRIDGE_TRANSPORT__={postMessage:function(value){if($visible)window.webkit.messageHandlers.JSAndroidBridge.postMessage({token:'$documentToken',value:value});}};" +
+            "window.__GY_WEBVIEW_EVENT_TRANSPORT__={postMessage:function(value){window.webkit.messageHandlers.ComposeWebViewEvent.postMessage({token:'$documentToken',value:value});}};}"
+
+    private fun prepareDocumentScripts(webView: WKWebView) {
+        documentToken = NSUUID().UUIDString
+        val controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        fun add(source: String, mainFrame: Boolean = true) {
+            controller.addUserScript(WKUserScript(source, WKUserScriptInjectionTime.WKUserScriptInjectionTimeAtDocumentStart, mainFrame))
+        }
+        add(transportScript(!webView.hidden))
+        add(IOS_FILE_CHOOSER_GATE_SCRIPT, false)
+        val current = request()
+        if (current.settings.javaScriptEnabled) {
+            add(WEB_VIEW_PERFORMANCE_SCRIPT.replace("window.webkit.messageHandlers.ComposeWebViewEvent", "window.__GY_WEBVIEW_EVENT_TRANSPORT__"))
+            add(IOS_WEB_EVENT_SCRIPT.replace("window.webkit.messageHandlers.ComposeWebViewEvent", "window.__GY_WEBVIEW_EVENT_TRANSPORT__"))
+            current.earlyScriptSource()?.let { add(it) }
+            if (current.canUseAppBridgeAt(current.content.initialOrigin())) add(IOS_BRIDGE_SCRIPT.replace("window.webkit.messageHandlers.JSAndroidBridge", "window.__GY_WEBVIEW_BRIDGE_TRANSPORT__"))
+        }
     }
 
     fun setMediaSuspended(suspended: Boolean) {
@@ -248,6 +263,7 @@ private class IosWebViewCoordinator(
             encodedContentRuleList = encodedRules,
         ) { ruleList: WKContentRuleList?, _: NSError? ->
             scope.launch {
+                if (released || !state.isAttached(webView)) return@launch
                 if (ruleList != null) {
                     webView.configuration.userContentController.addContentRuleList(ruleList)
                 }
@@ -281,6 +297,8 @@ private class IosWebViewCoordinator(
 
     fun release(webView: WKWebView) {
         released = true
+        navigationGeneration++
+        fileChooser.cancel(revokeDocument = true)
         suspendMedia(webView, true, "release")
         webView.closeAllMediaPresentationsWithCompletionHandler(null)
         mediaTarget = null
@@ -321,50 +339,55 @@ private class IosWebViewCoordinator(
                 },
             )
             if (active && deniedPermissions.isNotEmpty()) {
-                callbacks().onEvent(WebViewEvent.PermissionSettingsRequired(deniedPermissions))
+                emit(WebViewEvent.PermissionSettingsRequired(deniedPermissions))
             }
         }
     }
 
     @ObjCSignatureOverride
     override fun webView(webView: WKWebView, didStartProvisionalNavigation: WKNavigation?) {
+        if (released || !state.isAttached(webView)) return
         initialHtmlNavigation = false
         navigationGeneration++
+        fileChooser.cancel(revokeDocument = true)
         visibleForNavigation = false
         performanceTrace?.pageStarted(webView.URL?.absoluteString)
         state.pageStarted(webView)
-        callbacks().onEvent(WebViewEvent.PageStarted(webView.URL?.absoluteString))
-        callbacks().onEvent(WebViewEvent.ProgressChanged(0))
+        emit(WebViewEvent.PageStarted(webView.URL?.absoluteString))
+        emit(WebViewEvent.ProgressChanged(0))
         progress.show(0)
         progress.observe(webView, restart = false)
     }
 
     @ObjCSignatureOverride
     override fun webView(webView: WKWebView, didCommitNavigation: WKNavigation?) {
+        if (released || !state.isAttached(webView)) return
         state.navigationCommitted(webView)
         request().earlyScriptSource()?.let { webView.evaluateJavaScript(it, null) }
     }
 
     @ObjCSignatureOverride
     override fun webView(webView: WKWebView, didFinishNavigation: WKNavigation?) {
+        if (released || !state.isAttached(webView)) return
         progress.stop()
         progress.hide()
         state.pageFinished(webView)
         val url = webView.URL?.absoluteString
         publishFirstVisible(webView, url)
         performanceTrace?.pageFinished(url)
-        callbacks().onEvent(WebViewEvent.TitleChanged(webView.title))
-        callbacks().onEvent(WebViewEvent.ProgressChanged(100))
-        callbacks().onEvent(WebViewEvent.PageFinished(url))
+        emit(WebViewEvent.TitleChanged(webView.title))
+        emit(WebViewEvent.ProgressChanged(100))
+        emit(WebViewEvent.PageFinished(url))
+        if (released || !state.isAttached(webView)) return
         val current = request()
-        val fileChooserAllowed = current.security.fileChooserEnabled &&
+        val fileChooserAllowed = iosSupportsControlledFileChooser() && current.security.fileChooserEnabled &&
             current.security.trustedOrigins.isTrusted(url)
         webView.evaluateJavaScript(
             "window.$FILE_CHOOSER_ALLOWED_FLAG = ${fileChooserAllowed.toString()};",
             null,
         )
-        if (current.canUseAppBridgeAt(url)) {
-            webView.evaluateJavaScript(IOS_BRIDGE_SCRIPT, null)
+        if (current.settings.javaScriptEnabled && current.canUseAppBridgeAt(url)) {
+            webView.evaluateJavaScript(IOS_BRIDGE_SCRIPT.replace("window.webkit.messageHandlers.JSAndroidBridge", "window.__GY_WEBVIEW_BRIDGE_TRANSPORT__"), null)
         }
         // didCommit 是正常提前路径；完成回调仍为旧系统或特殊导航提供幂等兜底。
         current.earlyScriptSource()?.let { webView.evaluateJavaScript(it, null) }
@@ -408,14 +431,15 @@ private class IosWebViewCoordinator(
             decidePolicyForNavigationAction.navigationType == platform.WebKit.WKNavigationTypeOther
         if (isMainFrame) initialHtmlNavigation = false
         val blockedByTrust = !internalHtmlLoad && !current.allowsNavigation(navigation)
+        val generation = navigationGeneration
         fun decide(hasUserGesture: Boolean) {
             val decision = completeIosWebNavigation(
                 navigation = WebViewNavigationRequest(url, isMainFrame, hasUserGesture, target),
                 blockedByTrust = blockedByTrust,
-                isActive = { !released && state.isAttached(webView) },
+                isActive = { !released && state.isAttached(webView) && generation == navigationGeneration },
                 route = { value ->
                     callbacks().onNavigationRequest(value).also { decision ->
-                        callbacks().onEvent(WebViewEvent.Navigation(value, blockedByTrust || decision == WebViewNavigationDecision.BLOCK))
+                        emit(WebViewEvent.Navigation(value, blockedByTrust || decision == WebViewNavigationDecision.BLOCK))
                     }
                 },
                 loadPopup = { webView.loadRequest(decidePolicyForNavigationAction.request) },
@@ -423,6 +447,11 @@ private class IosWebViewCoordinator(
                     progress.stop()
                     progress.hide()
                     state.navigationCancelled(webView)
+                },
+                onAllowedMainFrame = {
+                    navigationGeneration++
+                    fileChooser.cancel(revokeDocument = true)
+                    prepareDocumentScripts(webView)
                 },
             )
             decisionHandler(
@@ -440,12 +469,17 @@ private class IosWebViewCoordinator(
         userContentController: WKUserContentController,
         didReceiveScriptMessage: WKScriptMessage,
     ) {
+        val owner = didReceiveScriptMessage.webView ?: return
+        if (released || !state.isAttached(owner) || owner.configuration.userContentController != userContentController) return
+        val envelope = didReceiveScriptMessage.body as? Map<*, *> ?: return
+        if (envelope["token"] != documentToken) return
+        val payload = envelope["value"] as? String ?: return
         if (didReceiveScriptMessage.name == WEB_EVENT_HANDLER) {
-            val raw = didReceiveScriptMessage.body.toString()
+            val raw = payload
             parseWebViewPerformanceMessage(raw)?.let { (metric, duration) ->
                 if (didReceiveScriptMessage.frameInfo.mainFrame) {
                     performanceTrace?.performanceMetric(metric, duration)
-                    callbacks().onEvent(WebViewEvent.PerformanceMetric(metric, duration))
+                    emit(WebViewEvent.PerformanceMetric(metric, duration))
                     if (metric == WebViewPerformanceMetric.FIRST_CONTENT_VISIBLE) {
                         val sourceWebView = didReceiveScriptMessage.webView ?: return
                         publishFirstVisible(
@@ -464,16 +498,41 @@ private class IosWebViewCoordinator(
         }
         val url = didReceiveScriptMessage.frameInfo.request.URL?.absoluteString
         val current = request()
+        if (owner.hidden || didReceiveScriptMessage.name != APP_BRIDGE_HANDLER) return
         if (!current.canReceiveAppBridgeMessage(url, didReceiveScriptMessage.frameInfo.mainFrame)) return
-        val raw = didReceiveScriptMessage.body.toString()
+        if (!current.canUseAppBridgeAt(owner.URL?.absoluteString)) return
+        val raw = payload
         val message = parseAppWebBridgeMessage(raw) ?: return
-        callbacks().onEvent(WebViewEvent.BridgeMessage(message))
+        emit(WebViewEvent.BridgeMessage(message))
+    }
+
+    @ObjCSignatureOverride
+    override fun webView(
+        webView: WKWebView,
+        runOpenPanelWithParameters: WKOpenPanelParameters,
+        initiatedByFrame: WKFrameInfo,
+        completionHandler: (List<*>?) -> Unit,
+    ) {
+        val generation = navigationGeneration
+        val origin = WebViewTrustPolicy(listOfNotNull(webView.URL?.absoluteString))
+        val frameOrigin = initiatedByFrame.securityOrigin.let { source ->
+            val host = source.host.let { if (it.contains(':') && !it.startsWith('[')) "[$it]" else it }
+            "${source.protocol}://$host:${source.port.takeIf { it > 0 } ?: if (source.protocol == "https") 443 else 80}"
+        }
+        val allowed = {
+            iosSupportsControlledFileChooser() && !released && !webView.hidden && state.isAttached(webView) &&
+                generation == navigationGeneration && initiatedByFrame.mainFrame &&
+                request().security.fileChooserEnabled && request().security.trustedOrigins.isTrusted(webView.URL?.absoluteString) &&
+                origin.isTrusted(frameOrigin) && origin.isTrusted(initiatedByFrame.request.URL?.absoluteString) && origin.isTrusted(webView.URL?.absoluteString)
+        }
+        if (!allowed() || runOpenPanelWithParameters.allowsDirectories) { completionHandler(null); return }
+        fileChooser.show(webView, runOpenPanelWithParameters.allowsMultipleSelection, request, allowed, completionHandler)
     }
 
     private fun updateFullscreen(value: Boolean) {
         if (fullscreen == value) return
         fullscreen = value
-        callbacks().onEvent(WebViewEvent.FullscreenChanged(value))
+        emit(WebViewEvent.FullscreenChanged(value))
     }
 
     private fun publishFirstVisible(webView: WKWebView, url: String?) {
@@ -481,7 +540,7 @@ private class IosWebViewCoordinator(
         if (!state.pageCommitted(webView)) return
         visibleForNavigation = true
         performanceTrace?.firstContentVisible(url)
-        callbacks().onEvent(WebViewEvent.FirstContentVisible(url))
+        emit(WebViewEvent.FirstContentVisible(url))
     }
 
     private fun reportFailure(webView: WKWebView, error: NSError) {
@@ -501,7 +560,7 @@ private class IosWebViewCoordinator(
         state.loadFailed(webView, loadError)
         performanceTrace?.pageFailed(loadError)
         AppWebViewRuntime.log(AppWebViewLogLevel.WARNING, "ios-navigation-failed domain=${error.domain} code=${error.code}")
-        callbacks().onEvent(WebViewEvent.LoadFailed(loadError))
+        emit(WebViewEvent.LoadFailed(loadError))
         // 系统弹窗消失与失败回调可能乱序；仅补偿尚未提交的首个 GET，状态层限制次数及错误码。
         if (resumedAfterPause && !mediaSuspended) state.retryInitialNetworkFailure()
     }

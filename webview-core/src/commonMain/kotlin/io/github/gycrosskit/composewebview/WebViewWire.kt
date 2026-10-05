@@ -166,7 +166,7 @@ object WebViewWire {
         when (rule) {
             is WebViewUrlRule.Contains -> { put("type", "contains"); put("value", rule.value); put("ignoreCase", rule.ignoreCase) }
             is WebViewUrlRule.ExactHost -> { put("type", "exactHost"); put("host", rule.host) }
-            is WebViewUrlRule.HostSuffix -> { put("type", "hostSuffix"); put("suffix", rule.suffix) }
+            is WebViewUrlRule.HostSuffix -> { put("type", "hostSuffix"); put("suffix", rule.suffix); put("scheme", rule.scheme); put("includeRoot", rule.includeRoot); put("rejectUserInfo", rule.rejectUserInfo) }
         }
     } })
 
@@ -175,7 +175,7 @@ object WebViewWire {
         when (rule.requiredString("type")) {
             "contains" -> WebViewUrlRule.Contains(rule.requiredString("value"), rule.boolean("ignoreCase", false))
             "exactHost" -> WebViewUrlRule.ExactHost(rule.requiredString("host"))
-            "hostSuffix" -> WebViewUrlRule.HostSuffix(rule.requiredString("suffix"))
+            "hostSuffix" -> WebViewUrlRule.HostSuffix(rule.requiredString("suffix"), rule.stringOrNull("scheme"), rule.boolean("includeRoot", true), rule.boolean("rejectUserInfo", false))
             else -> error("Unsupported URL rule")
         }
     } ?: emptyList()

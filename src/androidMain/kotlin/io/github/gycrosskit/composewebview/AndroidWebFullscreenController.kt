@@ -52,6 +52,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
+import org.json.JSONArray
 
 /**
  * Android H5 全屏内核。它只控制 Chromium 的媒体 View，不依赖宿主业务主题、资源或播放器模型。
@@ -76,7 +77,12 @@ internal class AndroidWebFullscreenController(
     private var playing by mutableStateOf(true)
     private var currentSeconds by mutableFloatStateOf(0f)
     private var durationSeconds by mutableFloatStateOf(0f)
+    private var fullscreenGeneration = 0L
     private var previousRequestedOrientation: Int? = null
+    private var previousStatusVisible = true
+    private var previousNavigationVisible = true
+    private var previousBarsBehavior = 0
+    private var previousSystemUi = 0
 
     fun attach(target: WebView) {
         webView = target
@@ -91,7 +97,14 @@ internal class AndroidWebFullscreenController(
             customViewCallback.onCustomViewHidden()
             return
         }
+        fullscreenGeneration++
         previousRequestedOrientation = activity.requestedOrientation
+        val decor = activity.window.decorView
+        val insets = ViewCompat.getRootWindowInsets(decor)
+        previousStatusVisible = insets?.isVisible(WindowInsetsCompat.Type.statusBars()) ?: true
+        previousNavigationVisible = insets?.isVisible(WindowInsetsCompat.Type.navigationBars()) ?: true
+        previousSystemUi = decor.systemUiVisibility
+        previousBarsBehavior = WindowInsetsControllerCompat(activity.window, decor).systemBarsBehavior
         callback = customViewCallback
         nativeVideoView = findVideoView(view)
         controlsView = ComposeView(activity).apply {
@@ -138,6 +151,8 @@ internal class AndroidWebFullscreenController(
 
     fun hide(): Boolean {
         val overlay = container ?: return false
+        fullscreenGeneration++
+        val hiddenGeneration = fullscreenGeneration
         pollingJob?.cancel()
         pollingJob = null
         hideControlsJob?.cancel()
@@ -149,10 +164,10 @@ internal class AndroidWebFullscreenController(
         container = null
         val hiddenCallback = callback
         callback = null
-        hiddenCallback?.onCustomViewHidden()
         restoreWindow()
         previousRequestedOrientation = null
-        onVisibilityChanged(false)
+        hiddenCallback?.onCustomViewHidden()
+        if (fullscreenGeneration == hiddenGeneration && container == null) onVisibilityChanged(false)
         return true
     }
 
@@ -165,9 +180,12 @@ internal class AndroidWebFullscreenController(
         if (activity.isDestroyed) return
         activity.requestedOrientation = previousRequestedOrientation
             ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        WindowInsetsControllerCompat(activity.window, activity.window.decorView).show(
-            WindowInsetsCompat.Type.systemBars(),
-        )
+        WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+            systemBarsBehavior = previousBarsBehavior
+            if (previousStatusVisible) show(WindowInsetsCompat.Type.statusBars()) else hide(WindowInsetsCompat.Type.statusBars())
+            if (previousNavigationVisible) show(WindowInsetsCompat.Type.navigationBars()) else hide(WindowInsetsCompat.Type.navigationBars())
+        }
+        activity.window.decorView.systemUiVisibility = previousSystemUi
         ViewCompat.requestApplyInsets(activity.window.decorView)
         activity.window.decorView.requestLayout()
     }
@@ -193,7 +211,10 @@ internal class AndroidWebFullscreenController(
             playing = video.isPlaying
             return
         }
-        webView?.evaluateJavascript(VIDEO_TOGGLE_SCRIPT) { result ->
+        val owner = webView
+        val generation = fullscreenGeneration
+        owner?.evaluateJavascript(VIDEO_TOGGLE_SCRIPT) { result ->
+            if (container == null || owner !== webView || generation != fullscreenGeneration) return@evaluateJavascript
             result?.trim()?.trim('"')?.toBooleanStrictOrNull()?.let { playing = it }
         }
     }
@@ -208,7 +229,10 @@ internal class AndroidWebFullscreenController(
                     playing = video.isPlaying
                 }
                 if (nativeVideoView == null) {
-                    webView?.evaluateJavascript(VIDEO_STATE_SCRIPT) { raw ->
+                    val owner = webView
+                    val generation = fullscreenGeneration
+                    owner?.evaluateJavascript(VIDEO_STATE_SCRIPT) { raw ->
+                        if (container == null || owner !== webView || generation != fullscreenGeneration) return@evaluateJavascript
                         parseVideoState(raw)?.let { state ->
                             currentSeconds = state.currentSeconds
                             durationSeconds = state.durationSeconds
@@ -284,13 +308,14 @@ private data class VideoState(
     val paused: Boolean,
 )
 
-/** evaluateJavascript 的返回值是固定三元数组，轻量解析可避免把 JSON 业务依赖带入基础模块。 */
+/** 只接收系统 JSON 的固定三元镜像，页面改变 getter/toJSON 不能扩大解析输入。 */
 private fun parseVideoState(raw: String?): VideoState? {
-    val values = raw?.trim()?.trim('"')?.removeSurrounding("[", "]")?.split(',') ?: return null
-    if (values.size < 3) return null
-    val current = values[0].trim().toFloatOrNull()?.takeIf(Float::isFinite) ?: 0f
-    val duration = values[1].trim().toFloatOrNull()?.takeIf(Float::isFinite) ?: 0f
-    val paused = values[2].trim().toBooleanStrictOrNull() ?: return null
+    if (raw == null || raw.length > 1024) return null
+    val values = runCatching { JSONArray(raw) }.getOrNull() ?: return null
+    if (values.length() != 3) return null
+    val current = (values.opt(0) as? Number)?.toFloat()?.takeIf(Float::isFinite) ?: return null
+    val duration = (values.opt(1) as? Number)?.toFloat()?.takeIf(Float::isFinite) ?: return null
+    val paused = values.opt(2) as? Boolean ?: return null
     return VideoState(current.coerceAtLeast(0f), duration.coerceAtLeast(0f), paused)
 }
 

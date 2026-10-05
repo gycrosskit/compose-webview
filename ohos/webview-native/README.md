@@ -1,28 +1,28 @@
-> Release HAR `0.2.0-rc.8` 已发布并通过实际下载/干净消费；OHPM 已接受审核，精确版本查询仍 NOTFOUND。
+> 候选 `0.2.0-rc.9` 尚未发布；配套 system-actions-native `0.2.0-rc.4`，本地实际 HAR 验证不代表远程可用。
 
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **0.2.0-rc.8 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.3`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **0.2.0-rc.9 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.4`，后者提供共用窗口执行 owner。
 
 ## 安装与注册
 
-HAR 0.2.0-rc.8 配套 system-actions 0.2.0-rc.3。宿主直接使用系统组件时也选择 rc.3；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。实际 Release HAR 消费已通过；system-actions rc.3 已可从 Registry 安装，Web rc.8 仍审核中。Release HAR 与 Registry 分别验收。rc.5 的既有消费记录保留在历史验收文档中。
+HAR 0.2.0-rc.9 配套 system-actions 0.2.0-rc.4。宿主直接使用系统组件时也选择 rc.4；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。候选远程可用性待发布后分别验证。Release HAR 与 Registry 分别验收。rc.5 的既有消费记录保留在历史验收文档中。
 
 ## 安装
 
-以下为精确 Registry 坐标；Web rc.8 审核通过并可查询后再安装。
+以下为精确 Registry 坐标；Web rc.9 发布、审核通过并可查询后再安装。
 
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.8
+ohpm install @gycrosskit/webview@0.2.0-rc.9
 ```
 
-Registry 审核期间从同版本 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry rc.3。本轮干净消费者确认只有一份窗口 owner。完全离线时下载 Web rc.8 和 system-actions rc.3 的固定 Release HAR、校验各自 SHA，并用 root override 保证同一系统包。文件下载消费与 Registry 安装分开验收。
+Registry 审核期间从同版本 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry rc.4。本地干净消费者核对只有一份窗口 owner。完全离线时下载 Web rc.9 和 system-actions rc.4 的固定 Release HAR、校验各自 SHA，并用 root override 保证同一系统包。文件下载消费与 Registry 安装分开验收。
 
 ```json
 {
   "dependencies": {
     "@gycrosskit/webview": "file:./libs/WebViewNative.har",
-    "@gycrosskit/system-actions-native": "0.2.0-rc.3"
+    "@gycrosskit/system-actions-native": "0.2.0-rc.4"
   },
   "overrides": {
     "@gycrosskit/system-actions-native": "file:./libs/SystemActionsNative.har"
@@ -60,11 +60,11 @@ JavaScript、Bridge、文件 URL、媒体采集默认关闭。TLS 错误调用 `
 | scripts | DOCUMENT_START/DOM_READY 在 document-start 注册；DOM_READY 等待真实 DOMContentLoaded，page-visible/page-end 兜底；DOCUMENT_FINISHED 在 page-end。隐藏仍初始化，每个 id 每文档一次；仅作用 top，JS/可信门禁保留 |
 | Bridge | 主文档独占 MessagePort；appBridge 只允许可信 HTTPS；pageBridge 只允许初始精确 HTTP(S) 同源 |
 | 媒体采集 | CAMERA/MICROPHONE，可信来源与当前主文档精确同源；系统授权后再次校验当前 request 与 generation。其他资源拒绝 |
-| 文件选择 | 可信当前主文档的系统 DocumentViewPicker，单选或最多 10 项多选；不支持 capture，可信且就绪的当前 HTTPS 页面触发时发出 `capabilityUnsupported` / `FILE_CAPTURE`，并以空文件列表完成一次系统结果。系统事件不提供来源 frame；accept 由页面/服务端校验 |
+| 文件选择 | 可信且就绪当前主文档的系统 DocumentViewPicker，单选或最多 10 项多选；capture 使用 CameraPicker 输出 JPEG/MP4，需同时启用媒体采集并授予权限。每项核验 accept/type 和 1 byte～50 MiB 大小。系统事件不提供来源 frame |
 | 全屏 | 单个 owner，保存并恢复原窗口 layoutFullScreen 与方向（包括 UNSPECIFIED）；尺寸为横屏视频时使用 AUTO_ROTATION_LANDSCAPE。宿主使用 fullscreenChanged 调整 Kuikly 页面布局 |
 | 可见性 / 释放 | 隐藏、导航、请求切换、render 退出及 onDestroy 撤销消息端口、系统请求和迟到回调；隐藏停止媒体、onInactive，显示后 onActive 并重新握手，不重载或重复初始化 |
 
-`capabilityUnsupported` 对应 Kotlin `WebViewEvent.CapabilityUnsupported(WebViewCapability.FILE_CAPTURE)`，只表示平台未实现拍摄，不伪装为成功、用户取消、失败或权限拒绝，也不请求拍摄权限。DocumentViewPicker 结果在导航、隐藏、request 切换和销毁时以空列表结算，迟到回调不能给新文档交付 URI。当前 SDK 缺少真实来源 frame 和独立 user-gesture 字段，不能把当前可信页面检查写成来源 frame 证明；拍摄入口需未来实现并获得真实设备文件 URI 后才能宣布可用。
+DocumentViewPicker/CameraPicker 结果在导航、隐藏、request 切换和销毁时以空列表结算；迟到回调不能给新文档交付 URI。拍摄使用本实例沙箱 cache 文件，不自动写系统相册；成功后文件保留到文档撤销，失败/取消立即删除，并核验实际输出 JPEG/MP4 头、大小和系统返回 URI。当前 SDK 缺少真实来源 frame 和独立 user-gesture 字段，不能把当前可信页面检查写成来源 frame 证明。真实设备权限与 H5 上传仍需宿主验收。
 
 支持 DOM Storage、图像访问、zoomAccess、混合内容和 cacheMode、User-Agent suffix。Android 专属缩放按钮、viewport/overview、字体缩放和算法变暗设置不在 HAR 实现范围。内核开启新窗口事件分流并在 onWindowNew 同步取消，避免把 target=_blank 降成当前页而绕过 policy。公开的新窗口/自动开窗开启请求、file/content 本地 URL、每实例第三方 Cookie 开启请求明确拒绝；全局 Cookie 默认由 ArkWeb/宿主管理，HAR 不改其他实例的全局开关。没有实现的设置不作为能力承诺。
 
@@ -98,3 +98,5 @@ Window 的恢复不等待该事件，也不设置超时猜测归属；若 SDK �
 新 request 创建新 Controller/render 时清门禁，旧 token 事件仍被过滤；销毁不会再交付事件或操作新 owner。
 
 HVigor 打入 HAR 的生成 lock 记录构建时的相对 override 缓存路径；包内公开 oh-package manifest 保持精确版本依赖。调用方 root override 指向自己下载并校验的 rc.3 HAR，不依赖发布机器缓存目录。新目录独立消费者 30/30 tasks、actual HAR 契约与唯一 owner realpath 检查通过，迁移结果见闭合记录，设备未验。
+
+rc.9 的 HostSuffix 可声明 `scheme="https"`、`includeRoot=false`、`rejectUserInfo=true`，最后一个条件默认 false 保留旧规则行为；空 `@` 同样拒绝。仅 navigationPolicy 变化保留当前 ArkWeb Controller/DOM 和已授权能力请求；security 变化仍重建，商城规则不授予 Bridge 能力。

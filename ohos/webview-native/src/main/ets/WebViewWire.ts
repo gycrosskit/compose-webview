@@ -65,7 +65,7 @@ export interface WebViewSecurity {
  * @property host exactHost 目标域。
  * @property suffix hostSuffix 目标域及子域。
  */
-export interface WebViewUrlRule { type: string; value?: string; ignoreCase?: boolean; host?: string; suffix?: string; }
+export interface WebViewUrlRule { type: string; value?: string; ignoreCase?: boolean; host?: string; suffix?: string; scheme?: string | null; includeRoot?: boolean; rejectUserInfo?: boolean; }
 /**
  * 主文档脚本声明，输入不可信时应由宿主拒绝而非拼接。
  * @property id 非空稳定脚本标识。
@@ -99,9 +99,13 @@ export interface WebViewRequest {
 /** 规范化 HTTP/HTTPS origin 为显式有效端口；凭据、无效 URL 或端口返回空字符串。 */
 export function origin(value: string): string {
   try {
-    const parsed = new url.URL(value.trim());
+    const raw = value.trim();
+    if (/[\\\u0000-\u0020\u007f]/.test(raw) || raw.split('://')[1]?.split(/[/?#]/)[0].includes('@')) return '';
+    const parsed = new url.URL(raw);
     if (!['https:', 'http:'].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password) return '';
+    if (parsed.hostname.endsWith('..')) return '';
     const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+    if (!host.startsWith('[') && host.split('.').some(label => label.length === 0)) return '';
     const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
     if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) return '';
     return `${parsed.protocol}//${host}:${port}`;
@@ -134,9 +138,13 @@ export function matches(value: string, rule: WebViewUrlRule): boolean {
     return needle.length > 0 && (rule.ignoreCase === true ? value.toLowerCase().includes(needle.toLowerCase()) : value.includes(needle));
   }
   try {
-    const host = new url.URL(value).hostname.toLowerCase().replace(/\.$/, '');
+    const parsed = new url.URL(value);
+    if (rule.type === 'hostSuffix' && rule.rejectUserInfo === true && (!value.includes('://') || /[\u0000-\u0020\u007f\\]/.test(value.trim()) || value.split('://').slice(1).join('://').split(/[/?#]/)[0].includes('@'))) return false;
+    if (rule.type === 'hostSuffix' && rule.scheme && parsed.protocol.toLowerCase() !== `${rule.scheme}:`) return false;
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+    if (!host || host.split('.').some(part => !part)) return false;
     const target = (rule.type === 'exactHost' ? rule.host : rule.suffix || '').toLowerCase().replace(/^\.|\.$/g, '');
-    return target.length > 0 && (host === target || (rule.type === 'hostSuffix' && host.endsWith(`.${target}`)));
+    return target.length > 0 && ((host === target && (rule.type !== 'hostSuffix' || rule.includeRoot !== false)) || (rule.type === 'hostSuffix' && host.endsWith(`.${target}`)));
   } catch (_) { return false; }
 }
 
@@ -161,7 +169,7 @@ export function navigationAllowed(value: string, mainFrame: boolean, request: We
 }
 
 /** 解析并验证完整 JSON 输入，格式或平台不支持的能力抛出 Error；不记录原始正文。 */
-export function decodeRequest(raw: string): WebViewRequest {
+export function decodeRequest(raw: string, checkInitialNavigation: boolean = true): WebViewRequest {
   const request = JSON.parse(raw) as WebViewRequest;
   if (!request || !request.content || !request.settings || !request.security || !request.security.trustedOrigins ||
     !Array.isArray(request.security.trustedOrigins.urls) || !Array.isArray(request.security.trustedOrigins.trustedHostSuffixes) ||
@@ -190,6 +198,10 @@ export function decodeRequest(raw: string): WebViewRequest {
   request.security.trustedOrigins.trustedHostSuffixes.forEach(item => { if (typeof item !== 'string' || !validHost(item)) throw new Error('Invalid trusted suffix'); });
   request.navigationPolicy.allowedSchemes.forEach(item => { if (typeof item !== 'string' || !item) throw new Error('Invalid scheme'); });
   request.navigationPolicy.blockedRules.concat(request.blockedResourceRules).forEach(rule => {
+    if (rule.type === 'hostSuffix' && ((rule.scheme !== undefined && rule.scheme !== null &&
+      (typeof rule.scheme !== 'string' || !/^[a-z][a-z0-9+.-]*$/.test(rule.scheme))) ||
+      (rule.includeRoot !== undefined && typeof rule.includeRoot !== 'boolean') ||
+      (rule.rejectUserInfo !== undefined && typeof rule.rejectUserInfo !== 'boolean'))) throw new Error('Invalid host suffix condition');
     if (!rule || (rule.type === 'contains' ? typeof rule.value !== 'string' || !rule.value || (rule.ignoreCase !== undefined && typeof rule.ignoreCase !== 'boolean') :
       rule.type === 'exactHost' ? typeof rule.host !== 'string' || !validHost(rule.host) :
         rule.type === 'hostSuffix' ? typeof rule.suffix !== 'string' || !validHost(rule.suffix) : true)) throw new Error('Invalid URL rule');
@@ -212,13 +224,13 @@ export function decodeRequest(raw: string): WebViewRequest {
   const content = request.content;
   if (content.type === 'url') {
     if (typeof content.url !== 'string' || !content.url.trim()) throw new Error('Empty URL');
-    if (!navigationAllowed(content.url, true, request)) throw new Error('Initial URL blocked');
+    if (checkInitialNavigation && !navigationAllowed(content.url, true, request)) throw new Error('Initial URL blocked');
   } else if (content.type === 'html') {
     if (typeof content.html !== 'string' || !content.html.trim()) throw new Error('Empty HTML');
     if (content.baseUrl !== undefined && content.baseUrl !== null && typeof content.baseUrl !== 'string') throw new Error('Invalid HTML baseUrl');
     if (content.historyUrl !== undefined && content.historyUrl !== null && typeof content.historyUrl !== 'string') throw new Error('Invalid historyUrl');
-    if (content.baseUrl && !navigationAllowed(content.baseUrl, true, request)) throw new Error('HTML baseUrl blocked');
-    if (content.historyUrl && !navigationAllowed(content.historyUrl, true, request)) throw new Error('HTML historyUrl blocked');
+    if (checkInitialNavigation && content.baseUrl && !navigationAllowed(content.baseUrl, true, request)) throw new Error('HTML baseUrl blocked');
+    if (checkInitialNavigation && content.historyUrl && !navigationAllowed(content.historyUrl, true, request)) throw new Error('HTML historyUrl blocked');
     if (content.mimeType && content.mimeType !== 'text/html') throw new Error('Only text/html is supported');
   } else throw new Error('Unsupported content type');
   if (request.security.appBridgeEnabled || request.security.fileChooserEnabled || request.security.mediaCaptureEnabled) {

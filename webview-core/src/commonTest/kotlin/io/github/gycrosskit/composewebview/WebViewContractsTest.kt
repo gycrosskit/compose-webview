@@ -94,6 +94,7 @@ class WebViewContractsTest {
     fun earlyScriptsAreGuardedScheduledAndIdempotent() {
         val request = WebViewRequest(
             content = WebViewContent.Url("https://safe.example/page"),
+            settings = WebViewSettings(javaScriptEnabled = true),
             security = WebViewSecurity(
                 trustedOrigins = WebViewTrustPolicy(listOf("https://safe.example/page")),
             ),
@@ -103,16 +104,17 @@ class WebViewContractsTest {
         val source = requireNotNull(request.earlyScriptSource())
 
         assertTrue("location.protocol === 'https:'" in source)
-        assertTrue("location.hostname === 'safe.example'" in source)
+        assertTrue("=== 'safe.example'" in source)
         assertTrue("DOMContentLoaded" in source)
         assertTrue("__COMPOSE_WEBVIEW_NATIVE_SCRIPT_IDS__['layout-fix']" in source)
-        assertEquals(setOf("https://safe.example"), request.earlyScriptOriginRules())
+        assertEquals(setOf("https://safe.example", "https://safe.example."), request.earlyScriptOriginRules())
     }
 
     @Test
     fun unrestrictedEarlyScriptUsesWildcardWithoutTrustGate() {
         val request = WebViewRequest(
             content = WebViewContent.Url("https://public.example/page"),
+            settings = WebViewSettings(javaScriptEnabled = true),
             scripts = listOf(
                 WebViewScript(
                     id = "public-script",
@@ -126,6 +128,18 @@ class WebViewContractsTest {
 
         assertFalse("location.protocol === 'https:'" in source)
         assertEquals(setOf("*"), request.earlyScriptOriginRules())
+    }
+
+    @Test
+    fun javascriptDisabledSuppressesDeclaredScriptsAndOversizedBridgeMessages() {
+        val request = WebViewRequest(WebViewContent.Url("https://safe.example"), scripts = listOf(
+            WebViewScript("early", "alert(1)", onlyForTrustedMainFrame = false),
+            WebViewScript("finished", "alert(2)", WebViewScriptInjectionTime.DOCUMENT_FINISHED, false)))
+        assertNull(request.earlyScriptSource())
+        assertTrue(request.earlyScriptOriginRules().isEmpty())
+        assertTrue(request.finishedScriptsAt("https://safe.example").isEmpty())
+        assertNull(parseAppWebBridgeMessage("h\u001F" + "字".repeat(30000)))
+        assertNull(parseAppWebBridgeMessage("h".repeat(81) + "\u001F{}"))
     }
 
     @Test

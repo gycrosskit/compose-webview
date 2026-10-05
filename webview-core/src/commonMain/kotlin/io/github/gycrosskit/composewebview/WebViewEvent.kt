@@ -13,8 +13,9 @@ data class WebViewBridgeMessage(
 
 /** 双端只接受由注入脚本生成的 `handlerName` + 分隔符 + `data` 格式。 */
 fun parseAppWebBridgeMessage(raw: String): WebViewBridgeMessage? {
+    if (raw.length > 65536 || raw.encodeToByteArray().size > 65536) return null
     val separator = raw.indexOf('\u001F')
-    if (separator <= 0) return null
+    if (separator <= 0 || separator > 80) return null
     return WebViewBridgeMessage(raw.substring(0, separator), raw.substring(separator + 1))
 }
 
@@ -112,6 +113,7 @@ sealed interface WebViewEvent {
 
 /** 平台可显式拒绝并由宿主提供替代入口的能力。 */
 enum class WebViewCapability {
+    FILE_CHOOSER,
     FILE_CAPTURE,
 }
 

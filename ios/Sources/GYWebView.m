@@ -1,6 +1,8 @@
 #import "GYWebView.h"
 #import <WebKit/WebKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <AVFoundation/AVFoundation.h>
+#import <arpa/inet.h>
 #import "GYWebViewScripts.inc"
 
 static NSDictionary *GYObject(NSString *value) {
@@ -18,23 +20,73 @@ static NSString *GYQuote(NSString *value) {
     return [array substringWithRange:NSMakeRange(1, array.length - 2)];
 }
 static NSString *GYHost(NSString *host) {
-    return [[host lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"."]];
+    NSString *normalized = [[host lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"."]];
+    if (![normalized hasPrefix:@"["]) return normalized;
+    if (![normalized hasSuffix:@"]"]) return nil;
+    NSString *address = [normalized substringWithRange:NSMakeRange(1, normalized.length - 2)];
+    if ([address containsString:@"."]) {
+        NSArray<NSString *> *parts = [[[address componentsSeparatedByString:@":"] lastObject] componentsSeparatedByString:@"."];
+        if (parts.count != 4) return nil;
+        for (NSString *part in parts) {
+            if (![[NSPredicate predicateWithFormat:@"SELF MATCHES %@", @"0|[1-9][0-9]{0,2}"] evaluateWithObject:part] || part.integerValue > 255) return nil;
+        }
+    }
+    struct in6_addr bytes;
+    if (inet_pton(AF_INET6, address.UTF8String, &bytes) != 1) return nil;
+    // inet_ntop 对 mapped IPv4 保留点分尾段，WebKit hostname 则统一为八组十六进制。
+    NSMutableArray<NSString *> *groups = [NSMutableArray array];
+    NSUInteger bestStart = NSNotFound, bestLength = 1, runStart = 0, runLength = 0;
+    for (NSUInteger i = 0; i < 8; i++) {
+        unsigned value = ((unsigned)bytes.s6_addr[i * 2] << 8) | bytes.s6_addr[i * 2 + 1];
+        [groups addObject:[NSString stringWithFormat:@"%x", value]];
+        if (!value) {
+            if (!runLength) runStart = i;
+            runLength++;
+            if (runLength > bestLength) { bestStart = runStart; bestLength = runLength; }
+        } else runLength = 0;
+    }
+    NSString *result = [groups componentsJoinedByString:@":"];
+    if (bestStart != NSNotFound) result = [NSString stringWithFormat:@"%@::%@",
+        [[groups subarrayWithRange:NSMakeRange(0, bestStart)] componentsJoinedByString:@":"],
+        [[groups subarrayWithRange:NSMakeRange(bestStart + bestLength, 8 - bestStart - bestLength)] componentsJoinedByString:@":"]];
+    return [NSString stringWithFormat:@"[%@]", result];
 }
 static NSDictionary *GYOrigin(NSString *value) {
-    NSURLComponents *url = [NSURLComponents componentsWithString:[value ?: @"" stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]];
+    NSString *raw = [value ?: @"" stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if ([raw containsString:@"\\"] || [raw rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].location != NSNotFound || [raw rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location != NSNotFound) return nil;
+    NSURLComponents *url = [NSURLComponents componentsWithString:raw];
     NSString *scheme = url.scheme.lowercaseString;
     if (!([scheme isEqual:@"https"] || [scheme isEqual:@"http"]) || !url.host.length || url.user != nil || url.password != nil || [url.host hasPrefix:@"."] ||
         (url.port && (url.port.integerValue < 1 || url.port.integerValue > 65535))) return nil;
-    return @{@"scheme": scheme, @"host": GYHost(url.host), @"port": url.port ?: ([scheme isEqual:@"https"] ? @443 : @80)};
+    if ([url.host hasSuffix:@".."] || ([url.host hasPrefix:@"["] && [url.host hasSuffix:@"."])) return nil;
+    NSString *host = GYHost(url.host);
+    if (!host.length || (![host hasPrefix:@"["] && [[host componentsSeparatedByString:@"."] containsObject:@""])) return nil;
+    return @{@"scheme": scheme, @"host": host, @"port": url.port ?: ([scheme isEqual:@"https"] ? @443 : @80)};
 }
+static NSString *GYSourceOrigin(WKSecurityOrigin *source) {
+    NSString *host = source.host;
+    if ([host containsString:@":"] && ![host hasPrefix:@"["]) host = [NSString stringWithFormat:@"[%@]", host];
+    return [NSString stringWithFormat:@"%@://%@:%ld", source.protocol, host, (long)(source.port ?: ([source.protocol isEqual:@"https"] ? 443 : 80))];
+}
+static NSDictionary *GYFrameOrigin(WKFrameInfo *frame) { return GYOrigin(GYSourceOrigin(frame.securityOrigin)); }
 static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if ([rule[@"type"] isEqual:@"contains"]) {
         return [value rangeOfString:rule[@"value"] options:GYBool(rule, @"ignoreCase", NO) ? NSCaseInsensitiveSearch : 0].location != NSNotFound;
     }
-    NSString *host = GYHost([NSURLComponents componentsWithString:value].host);
+    NSString *rawHost = [NSURLComponents componentsWithString:value].host;
+    NSString *dnsHost = [rawHost hasSuffix:@"."] ? [rawHost substringToIndex:rawHost.length - 1] : rawHost;
+    if ([rawHost hasPrefix:@"."] || [rawHost hasSuffix:@".."] || [[dnsHost componentsSeparatedByString:@"."] containsObject:@""]) return NO;
+    NSString *host = GYHost(rawHost);
     if ([rule[@"type"] isEqual:@"exactHost"]) return [host isEqual:GYHost(rule[@"host"])];
+    NSURLComponents *components = [NSURLComponents componentsWithString:value];
+    if (GYBool(rule, @"rejectUserInfo", NO)) {
+        NSString *raw = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (components.user != nil || components.password != nil || ![raw containsString:@"://"] || [raw containsString:@"\\"] || [raw rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].location != NSNotFound || [raw rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location != NSNotFound) return NO;
+    }
     NSString *suffix = GYHost(rule[@"suffix"]);
-    return [host isEqual:suffix] || [host hasSuffix:[@"." stringByAppendingString:suffix]];
+    NSString *scheme = GYString(rule[@"scheme"]);
+    if (scheme && ![[NSURLComponents componentsWithString:value].scheme.lowercaseString isEqual:scheme]) return NO;
+    return (GYBool(rule, @"includeRoot", YES) && [host isEqual:suffix]) || [host hasSuffix:[@"." stringByAppendingString:suffix]];
 }
 
 @class GYWebView;
@@ -42,7 +94,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 @property(nonatomic, weak) GYWebView *owner;
 @end
 
-@interface GYWebView () <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UIDocumentPickerDelegate>
+@interface GYWebView () <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UIDocumentPickerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
 @property(nonatomic, strong) WKWebView *webView;
 @property(nonatomic, copy) NSDictionary *request;
 @property(nonatomic, copy) KuiklyRenderCallback onEvent;
@@ -56,6 +108,12 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 @property(nonatomic, strong) UIDocumentPickerViewController *filePicker;
 @property(nonatomic, copy) void (^filePickerCompletion)(NSArray<NSURL *> *);
 @property(nonatomic, assign) NSUInteger filePickerGeneration;
+@property(nonatomic, assign) NSUInteger filePickerRevision;
+@property(nonatomic, assign) NSUInteger maxFiles;
+@property(nonatomic, strong) UIImagePickerController *capturePicker;
+@property(nonatomic, copy) NSArray<UTType *> *fileTypes;
+@property(nonatomic, copy) NSString *fileOrigin;
+@property(nonatomic, strong) NSMutableArray<NSURL *> *temporaryFiles;
 @end
 
 @implementation GYWebViewMessageHandler
@@ -77,11 +135,22 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     NSString *key = propKey; id value = propValue;
     if ([key isEqual:@"onEvent"]) self.onEvent = value;
     else if ([key isEqual:@"visible"]) {
-        self.pageVisible = [value boolValue]; if (!self.pageVisible) { self.callbackGeneration++; [self cancelFilePicker]; } self.hidden = !self.pageVisible;
+        BOOL visible = [value boolValue];
+        if (self.pageVisible != visible && self.webView) {
+            self.pageVisible = visible;
+            [self prepareDocumentScripts];
+            [self.webView evaluateJavaScript:[self transportScript] completionHandler:nil];
+        } else self.pageVisible = visible;
+        self.hidden = !self.pageVisible;
         [self updateMediaVisibility];
     } else if ([key isEqual:@"request"]) {
         NSDictionary *request = GYObject(value);
         if ([request isEqual:self.request]) return;
+        NSMutableDictionary *oldPage = [self.request mutableCopy], *newPage = [request mutableCopy];
+        [oldPage removeObjectForKey:@"navigationPolicy"]; [newPage removeObjectForKey:@"navigationPolicy"];
+        if (self.webView && [oldPage isEqual:newPage] && [self validRequest:request]) {
+            self.request = request; return;
+        }
         [self releaseWebView]; self.request = nil;
         if (![self validRequest:request]) {
             [self fail:@"LOAD_EXCEPTION" message:@"Invalid WebView request" url:nil code:nil]; return;
@@ -103,6 +172,12 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         NSString *type = GYString(value[@"type"]);
         NSString *text = GYString(value[[type isEqual:@"contains"] ? @"value" : [type isEqual:@"exactHost"] ? @"host" : @"suffix"]);
         if (!text.length || ![@[@"contains", @"exactHost", @"hostSuffix"] containsObject:type]) return NO;
+        if ([type isEqual:@"hostSuffix"]) {
+            id root = value[@"includeRoot"], scheme = value[@"scheme"], userInfo = value[@"rejectUserInfo"];
+            if (userInfo && (![userInfo isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)userInfo) != CFBooleanGetTypeID())) return NO;
+            if (root && (![root isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)root) != CFBooleanGetTypeID())) return NO;
+            if (scheme && scheme != NSNull.null && (!GYString(scheme) || ![[NSPredicate predicateWithFormat:@"SELF MATCHES %@", @"[a-z][a-z0-9+.-]*"] evaluateWithObject:scheme])) return NO;
+        }
     }
     return YES;
 }
@@ -119,6 +194,12 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         id value = security[key];
         if (value && (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID())) return NO;
     }
+    for (NSString *key in @[@"javaScriptEnabled", @"domStorageEnabled", @"allowFileAccess", @"allowContentAccess", @"acceptsThirdPartyCookies", @"supportMultipleWindows", @"javaScriptCanOpenWindowsAutomatically", @"mediaPlaybackRequiresUserGesture", @"loadsImagesAutomatically", @"blockNetworkImage", @"builtInZoomControls", @"displayZoomControls", @"supportZoom", @"useWideViewPort", @"loadWithOverviewMode", @"followSystemFontScale", @"algorithmicDarkeningAllowed"]) {
+        id value = settings[key];
+        if (value && (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID())) return NO;
+    }
+    id newWindows = policy[@"allowNewWindows"];
+    if (newWindows && (![newWindows isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)newWindows) != CFBooleanGetTypeID())) return NO;
     NSDictionary *headers = content[@"additionalHeaders"];
     if (headers) {
         if (![headers isKindOfClass:NSDictionary.class]) return NO;
@@ -140,13 +221,15 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         if (![origins[@"urls"] count] && ![origins[@"trustedHostSuffixes"] count]) return NO;
     }
     if (GYBool(settings, @"allowFileAccess", NO) || GYBool(settings, @"allowContentAccess", NO)) return NO;
-    if (GYBool(security, @"fileChooserEnabled", NO)) { if (@available(iOS 18.4, *)) {} else return NO; }
+    if (GYBool(security, @"fileChooserEnabled", NO)) { if (@available(iOS 18.4, *)) {} else { [self emit:@{@"type": @"capabilityUnsupported", @"capability": @"FILE_CHOOSER"}]; return NO; } }
     id scripts = request[@"scripts"] ?: @[];
     if (![scripts isKindOfClass:NSArray.class]) return NO;
     NSRegularExpression *ids = [NSRegularExpression regularExpressionWithPattern:@"^[\\p{L}\\p{N}_.-]+$" options:0 error:nil];
     for (id script in scripts) {
         if (![script isKindOfClass:NSDictionary.class]) return NO;
         NSString *identifier = GYString(script[@"id"]), *source = GYString(script[@"source"]);
+        id trustedOnly = script[@"onlyForTrustedMainFrame"];
+        if (trustedOnly && (![trustedOnly isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)trustedOnly) != CFBooleanGetTypeID())) return NO;
         if (!identifier.length || !source.length || ![ids firstMatchInString:identifier options:0 range:NSMakeRange(0, identifier.length)]) return NO;
         if (![@[@"DOCUMENT_START", @"DOM_READY", @"DOCUMENT_FINISHED"] containsObject:script[@"injectionTime"] ?: @"DOM_READY"]) return NO;
     }
@@ -193,9 +276,10 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     for (NSString *url in trust[@"urls"]) {
         NSDictionary *origin = GYOrigin(url);
         if (![origin[@"scheme"] isEqual:@"https"]) continue;
-        [parts addObject:[NSString stringWithFormat:@"(location.hostname === %@ && (location.port || '443') === %@)", GYQuote(origin[@"host"]), GYQuote([origin[@"port"] stringValue])]];
+        NSString *host = origin[@"host"];
+        [parts addObject:[NSString stringWithFormat:@"((location.hostname === %@ || location.hostname === %@) && (location.port || '443') === %@)", GYQuote(host), GYQuote([host stringByAppendingString:@"."]), GYQuote([origin[@"port"] stringValue])]];
     }
-    for (NSString *suffix in trust[@"trustedHostSuffixes"]) [parts addObject:[NSString stringWithFormat:@"(location.hostname === %@ || location.hostname.endsWith(%@))", GYQuote(GYHost(suffix)), GYQuote([@"." stringByAppendingString:GYHost(suffix)])]];
+    for (NSString *suffix in trust[@"trustedHostSuffixes"]) [parts addObject:[NSString stringWithFormat:@"(function(h) { var s = %@, n = h.length; if (h[n - 1] === '.') n--; if (n < s.length || (n > s.length && h[n - s.length - 1] !== '.')) return false; for (var i = 0; i < s.length; i++) if (h[n - s.length + i] !== s[i]) return false; return true; })(location.hostname)", GYQuote(GYHost(suffix))]];
     return parts.count ? [NSString stringWithFormat:@"(location.protocol === 'https:' && (%@))", [parts componentsJoinedByString:@" || "]] : @"false";
 }
 - (void)addScript:(NSString *)source start:(BOOL)start {
@@ -232,10 +316,9 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     NSDictionary *settings = self.request[@"settings"], *security = self.request[@"security"];
     self.documentToken = NSUUID.UUID.UUIDString;
     self.callbackGeneration++;
-    [self cancelFilePicker];
+    [self revokeFilePicker];
     [configuration.userContentController removeAllUserScripts];
-    NSString *token = GYQuote(self.documentToken);
-    [self addScript:[NSString stringWithFormat:@"window.__GY_WEBVIEW_BRIDGE_TRANSPORT__={postMessage:function(value){window.webkit.messageHandlers.JSAndroidBridge.postMessage({token:%@,value:value});}};window.__GY_WEBVIEW_EVENT_TRANSPORT__={postMessage:function(value){window.webkit.messageHandlers.ComposeWebViewEvent.postMessage({token:%@,value:value});}};", token, token] start:YES];
+    [self addScript:[self transportScript] start:YES];
     [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:IOS_FILE_CHOOSER_GATE_SCRIPT injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
     if (GYBool(settings, @"javaScriptEnabled", NO)) {
         [self addScript:[IOS_WEB_EVENT_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.ComposeWebViewEvent" withString:@"window.__GY_WEBVIEW_EVENT_TRANSPORT__"] start:YES];
@@ -250,6 +333,10 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         }
     }
 }
+- (NSString *)transportScript {
+    NSString *token = GYQuote(self.documentToken);
+    return [NSString stringWithFormat:@"if((window.__GY_WEBVIEW_TRANSPORT_REVISION__||0)<=%lu){window.__GY_WEBVIEW_TRANSPORT_REVISION__=%lu;window.__GY_WEBVIEW_BRIDGE_TRANSPORT__={postMessage:function(value){if(%@)window.webkit.messageHandlers.JSAndroidBridge.postMessage({token:%@,value:value});}};window.__GY_WEBVIEW_EVENT_TRANSPORT__={postMessage:function(value){window.webkit.messageHandlers.ComposeWebViewEvent.postMessage({token:%@,value:value});}};}", (unsigned long)self.callbackGeneration, (unsigned long)self.callbackGeneration, self.pageVisible ? @"true" : @"false", token, token];
+}
 - (void)installResourceRulesAndLoad {
     NSArray *rules = self.request[@"blockedResourceRules"];
     if (!rules.count) { [self loadContent]; return; }
@@ -258,7 +345,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         NSString *type = rule[@"type"], *filter;
         if ([type isEqual:@"contains"]) filter = [NSString stringWithFormat:@".*%@.*", [NSRegularExpression escapedPatternForString:rule[@"value"]]];
         // WKContentRuleList 不支持 |；用可选路径和末尾锚点保持 host/port 的边界。
-        else filter = [NSString stringWithFormat:@"^[a-zA-Z][a-zA-Z0-9+.-]*://%@%@(?::[0-9]+)?(/.*)?$", [type isEqual:@"hostSuffix"] ? @"(?:[^./]+\\.)*" : @"", [NSRegularExpression escapedPatternForString:GYHost(rule[[type isEqual:@"exactHost"] ? @"host" : @"suffix"])]];
+        else filter = [NSString stringWithFormat:@"^%@://%@%@(:[0-9]+)?(/.*)?$", GYString(rule[@"scheme"]) ?: @"[a-zA-Z][a-zA-Z0-9+.-]*", [type isEqual:@"hostSuffix"] ? (GYBool(rule, @"includeRoot", YES) ? (GYBool(rule, @"rejectUserInfo", NO) ? @"([^./:@]+\\.)*" : @"([^./]+\\.)*") : (GYBool(rule, @"rejectUserInfo", NO) ? @"([^./:@]+\\.)+" : @"([^./]+\\.)+")) : @"", [NSRegularExpression escapedPatternForString:GYHost(rule[[type isEqual:@"exactHost"] ? @"host" : @"suffix"])]];
         [encoded addObject:@{@"trigger": @{@"url-filter": filter, @"url-filter-is-case-sensitive": ([type isEqual:@"contains"] && !GYBool(rule, @"ignoreCase", NO)) ? @YES : @NO}, @"action": @{@"type": @"block"}}];
     }
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:encoded options:0 error:nil] encoding:NSUTF8StringEncoding];
@@ -316,16 +403,19 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (void)webView:(WKWebView *)view didStartProvisionalNavigation:(WKNavigation *)navigation {
     if (view != self.webView) return;
     self.initialHtmlNavigation = NO;
-    self.callbackGeneration++; self.navigationFailed = NO; [self cancelFilePicker];
+    self.callbackGeneration++; self.navigationFailed = NO; [self revokeFilePicker];
     [self emit:@{@"type": @"pageStarted", @"url": view.URL.absoluteString ?: NSNull.null}];
 }
 - (void)webView:(WKWebView *)view didCommitNavigation:(WKNavigation *)navigation { if (view == self.webView) [self emit:@{@"type": @"firstContentVisible", @"url": view.URL.absoluteString ?: NSNull.null}]; }
 - (void)webView:(WKWebView *)view didFinishNavigation:(WKNavigation *)navigation {
     if (view != self.webView || self.navigationFailed) return;
-    [self emit:@{@"type": @"pageFinished", @"url": view.URL.absoluteString ?: NSNull.null}]; [self history];
+    [self emit:@{@"type": @"pageFinished", @"url": view.URL.absoluteString ?: NSNull.null}];
+    if (view != self.webView || self.released) return;
+    [self history];
+    if (view != self.webView || self.released) return;
     BOOL fileAllowed = GYBool(self.request[@"security"], @"fileChooserEnabled", NO) && [self trusted:view.URL.absoluteString];
     [view evaluateJavaScript:[NSString stringWithFormat:@"window.__COMPOSE_WEBVIEW_FILE_CHOOSER_ALLOWED__=%@;", fileAllowed ? @"true" : @"false"] completionHandler:nil];
-    for (NSDictionary *script in self.request[@"scripts"]) if ([script[@"injectionTime"] isEqual:@"DOCUMENT_FINISHED"] && (!GYBool(script, @"onlyForTrustedMainFrame", YES) || [self trusted:view.URL.absoluteString])) [view evaluateJavaScript:script[@"source"] completionHandler:nil];
+    if (GYBool(self.request[@"settings"], @"javaScriptEnabled", NO)) for (NSDictionary *script in self.request[@"scripts"]) if ([script[@"injectionTime"] isEqual:@"DOCUMENT_FINISHED"] && (!GYBool(script, @"onlyForTrustedMainFrame", YES) || [self trusted:view.URL.absoluteString])) [view evaluateJavaScript:script[@"source"] completionHandler:nil];
 }
 - (void)webView:(WKWebView *)view didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error { if (view == self.webView && error.code != NSURLErrorCancelled) [self fail:@"NETWORK" message:error.localizedDescription url:view.URL.absoluteString code:@(error.code)]; }
 - (void)webView:(WKWebView *)view didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error { [self webView:view didFailProvisionalNavigation:navigation withError:error]; }
@@ -337,22 +427,22 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     decision(failed ? WKNavigationResponsePolicyCancel : WKNavigationResponsePolicyAllow);
 }
 - (void)webView:(WKWebView *)view requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision))decision API_AVAILABLE(ios(15.0)) {
-    NSString *url = [NSString stringWithFormat:@"%@://%@:%ld", origin.protocol, origin.host, (long)(origin.port ?: 443)];
+    NSString *url = GYSourceOrigin(origin);
     BOOL allow = view == self.webView && self.pageVisible && frame.isMainFrame && GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO) && [self trusted:url] && [self trusted:view.URL.absoluteString];
     decision(allow ? WKPermissionDecisionPrompt : WKPermissionDecisionDeny);
 }
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
-    if (!message.frameInfo.isMainFrame || controller != self.webView.configuration.userContentController || self.released) return;
+    if (message.webView != self.webView || !message.frameInfo.isMainFrame || controller != self.webView.configuration.userContentController || self.released) return;
     NSDictionary *envelope = [message.body isKindOfClass:NSDictionary.class] ? message.body : nil;
     if (![envelope[@"token"] isEqual:self.documentToken]) return;
     NSString *raw = GYString(envelope[@"value"]);
     if ([message.name isEqual:@"JSAndroidBridge"]) {
         if (!self.pageVisible) return;
         WKSecurityOrigin *origin = message.frameInfo.securityOrigin;
-        NSString *source = [NSString stringWithFormat:@"%@://%@:%ld", origin.protocol, origin.host, (long)(origin.port ?: ([origin.protocol isEqual:@"https"] ? 443 : 80))];
+        NSString *source = GYSourceOrigin(origin);
         if (![self bridgeAllowed:source] || ![self bridgeAllowed:self.webView.URL.absoluteString]) return;
         NSRange separator = [raw rangeOfString:@"\x1F"];
-        if (!raw || separator.location == NSNotFound || separator.location == 0) return;
+        if (!raw || [raw lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 65536 || separator.location == NSNotFound || separator.location == 0 || separator.location > 80) return;
         [self emit:@{@"type": @"bridgeMessage", @"handlerName": [raw substringToIndex:separator.location], @"data": [raw substringFromIndex:separator.location + 1]}];
     } else if ([raw hasPrefix:@"fullscreen:"]) { self.fullscreen = [raw isEqual:@"fullscreen:1"]; [self emit:@{@"type": @"fullscreenChanged", @"isFullscreen": @(self.fullscreen)}]; }
     else if ([raw hasPrefix:@"perf:"]) {
@@ -394,29 +484,120 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (callback) callback(@{@"result": result});
 }
 - (void)webView:(WKWebView *)view runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> *))completion API_AVAILABLE(ios(18.4)) {
-    if (view != self.webView || !self.pageVisible || !frame.isMainFrame || !GYBool(self.request[@"security"], @"fileChooserEnabled", NO) || ![self trusted:frame.request.URL.absoluteString] || ![self trusted:view.URL.absoluteString] || self.filePicker) { completion(nil); return; }
+    if (self.released || view != self.webView || !self.pageVisible || !frame.isMainFrame || parameters.allowsDirectories || !GYBool(self.request[@"security"], @"fileChooserEnabled", NO) || ![self trusted:frame.request.URL.absoluteString] || ![GYFrameOrigin(frame) isEqual:GYOrigin(view.URL.absoluteString)] || ![GYOrigin(frame.request.URL.absoluteString) isEqual:GYOrigin(view.URL.absoluteString)] || self.filePickerCompletion) { completion(nil); return; }
+    self.maxFiles = parameters.allowsMultipleSelection ? 10 : 1;
+    self.filePickerCompletion = completion; self.filePickerGeneration = self.callbackGeneration; self.fileOrigin = view.URL.absoluteString;
+    NSUInteger revision = ++self.filePickerRevision;
+    [view evaluateJavaScript:IOS_FILE_INPUT_SCRIPT completionHandler:^(id value, NSError *error) {
+        if (revision != self.filePickerRevision) return;
+        if (![self filePickerAllowed:view]) { [self cancelFilePicker]; return; }
+        if (!GYString(value) || [value length] > 16384) { [self cancelFilePicker]; return; }
+        NSDictionary *input = GYObject(value);
+        if (error || !input) { [self cancelFilePicker]; return; }
+        NSString *accept = GYString(input[@"accept"]);
+        id capture = input[@"capture"];
+        if (!accept || accept.length > 2048 || !capture || CFGetTypeID((__bridge CFTypeRef)capture) != CFBooleanGetTypeID()) { [self cancelFilePicker]; return; }
+        NSArray *accepts = [accept componentsSeparatedByString:@","];
+        if (accepts.count > 32) { [self cancelFilePicker]; return; }
+        NSMutableArray<UTType *> *types = [NSMutableArray array];
+        for (NSString *part in accepts) {
+            NSString *mime = [part stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet].lowercaseString;
+            if (!mime.length) continue;
+            UTType *type = [mime isEqual:@"*/*"] ? UTTypeItem : [mime isEqual:@"image/*"] ? UTTypeImage : [mime isEqual:@"video/*"] ? UTTypeMovie : [mime hasPrefix:@"."] ? [UTType typeWithFilenameExtension:[mime substringFromIndex:1]] : [UTType typeWithMIMEType:mime];
+            if (!type) { [self cancelFilePicker]; return; }
+            [types addObject:type];
+        }
+        self.fileTypes = types.count ? types : @[UTTypeItem];
+        if (GYBool(input, @"capture", NO)) { [self captureFile:view]; return; }
+        [self presentDocumentPicker:parameters.allowsMultipleSelection];
+    }];
+}
+- (BOOL)filePickerAllowed:(WKWebView *)owner {
+    return owner && owner == self.webView && !self.released && self.pageVisible && self.filePickerCompletion && self.filePickerGeneration == self.callbackGeneration && GYBool(self.request[@"security"], @"fileChooserEnabled", NO) && [self trusted:owner.URL.absoluteString] && [GYOrigin(self.fileOrigin) isEqual:GYOrigin(owner.URL.absoluteString)];
+}
+- (UIViewController *)filePresenter {
     UIViewController *presenter = self.window.rootViewController;
     while (presenter.presentedViewController) presenter = presenter.presentedViewController;
-    if (!presenter) { completion(nil); return; }
-    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeItem] asCopy:YES];
-    picker.allowsMultipleSelection = parameters.allowsMultipleSelection;
+    return presenter;
+}
+- (void)presentDocumentPicker:(BOOL)multiple {
+    UIViewController *presenter = [self filePresenter];
+    if (!presenter) { [self cancelFilePicker]; return; }
+    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:self.fileTypes asCopy:YES];
+    picker.allowsMultipleSelection = multiple;
     picker.delegate = self;
-    self.filePicker = picker; self.filePickerCompletion = completion; self.filePickerGeneration = self.callbackGeneration;
+    self.filePicker = picker;
     [presenter presentViewController:picker animated:YES completion:nil];
+}
+- (void)captureFile:(WKWebView *)owner {
+    BOOL image = [self.fileTypes containsObject:UTTypeItem] || [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeJPEG conformsToType:type]; }] != NSNotFound;
+    BOOL video = !image && [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeQuickTimeMovie conformsToType:type]; }] != NSNotFound;
+    if ((!image && !video) || !GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO) || ![UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera] || ![NSBundle.mainBundle objectForInfoDictionaryKey:@"NSCameraUsageDescription"] || (video && ![NSBundle.mainBundle objectForInfoDictionaryKey:@"NSMicrophoneUsageDescription"])) { [self cancelFilePicker]; return; }
+    NSUInteger generation = self.filePickerGeneration;
+    NSUInteger revision = self.filePickerRevision;
+    void (^present)(void) = ^{
+        if (revision != self.filePickerRevision) return;
+        if (![self filePickerAllowed:owner] || generation != self.filePickerGeneration) { [self cancelFilePicker]; return; }
+        UIViewController *presenter = [self filePresenter];
+        if (!presenter) { [self cancelFilePicker]; return; }
+        UIImagePickerController *picker = [UIImagePickerController new]; picker.sourceType = UIImagePickerControllerSourceTypeCamera;
+        picker.mediaTypes = @[image ? UTTypeImage.identifier : UTTypeMovie.identifier]; picker.videoMaximumDuration = 60; picker.delegate = self;
+        self.capturePicker = picker; [presenter presentViewController:picker animated:YES completion:nil];
+    };
+    void (^authorizeAudio)(void) = ^{
+        if (!video) { present(); return; }
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) { dispatch_async(dispatch_get_main_queue(), ^{ if (revision != self.filePickerRevision) return; if (granted) present(); else [self cancelFilePicker]; }); }];
+    };
+    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) { dispatch_async(dispatch_get_main_queue(), ^{ if (revision != self.filePickerRevision) return; if ([self filePickerAllowed:owner] && generation == self.filePickerGeneration && granted) authorizeAudio(); else [self cancelFilePicker]; }); }];
+}
+- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey,id> *)info {
+    if (picker != self.capturePicker) return;
+    if (![self filePickerAllowed:self.webView]) { [self cancelFilePicker]; return; }
+    NSURL *destination = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:[info[UIImagePickerControllerMediaType] isEqual:UTTypeMovie.identifier] ? @".mov" : @".jpg"]]];
+    BOOL saved = NO;
+    if ([info[UIImagePickerControllerMediaType] isEqual:UTTypeMovie.identifier]) {
+        NSURL *source = [info[UIImagePickerControllerMediaURL] isKindOfClass:NSURL.class] ? info[UIImagePickerControllerMediaURL] : nil;
+        saved = [source.pathExtension.lowercaseString isEqual:@"mov"] && [NSFileManager.defaultManager copyItemAtURL:source toURL:destination error:nil];
+    }
+    else { NSData *data = UIImageJPEGRepresentation(info[UIImagePickerControllerOriginalImage], 0.9); saved = data.length && [data writeToURL:destination atomically:YES]; }
+    if (!self.temporaryFiles) self.temporaryFiles = [NSMutableArray array];
+    if (!saved) [NSFileManager.defaultManager removeItemAtURL:destination error:nil];
+    [self finishFiles:saved ? @[destination] : nil];
+}
+- (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker { if (picker == self.capturePicker) [self cancelFilePicker]; }
+- (void)finishFiles:(NSArray<NSURL *> *)urls {
+    BOOL allowed = [self filePickerAllowed:self.webView] && urls.count > 0 && urls.count <= (self.maxFiles ?: 1);
+    if (allowed) for (NSURL *url in urls) {
+        NSNumber *size, *regular; UTType *type;
+        if (!url.isFileURL || ![url getResourceValue:&regular forKey:NSURLIsRegularFileKey error:nil] || !regular.boolValue || ![url getResourceValue:&size forKey:NSURLFileSizeKey error:nil] || size.longLongValue <= 0 || size.longLongValue > 50 * 1024 * 1024 || ![url getResourceValue:&type forKey:NSURLContentTypeKey error:nil] || [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *accept, NSUInteger index, BOOL *stop) { return [type conformsToType:accept]; }] == NSNotFound) allowed = NO;
+    }
+    if (self.capturePicker) {
+        if (allowed) { if (!self.temporaryFiles) self.temporaryFiles = [NSMutableArray array]; [self.temporaryFiles addObjectsFromArray:urls]; }
+        else for (NSURL *url in urls) [NSFileManager.defaultManager removeItemAtURL:url error:nil];
+    }
+    void (^completion)(NSArray<NSURL *> *) = self.filePickerCompletion; self.filePickerCompletion = nil;
+    self.filePickerRevision++;
+    self.filePicker.delegate = nil; [self.filePicker dismissViewControllerAnimated:NO completion:nil]; self.filePicker = nil;
+    self.capturePicker.delegate = nil; [self.capturePicker dismissViewControllerAnimated:NO completion:nil]; self.capturePicker = nil;
+    if (completion) completion(allowed ? urls : nil);
 }
 - (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if (picker != self.filePicker) return;
-    BOOL allowed = !self.released && self.pageVisible && self.filePickerGeneration == self.callbackGeneration && [self trusted:self.webView.URL.absoluteString];
-    void (^completion)(NSArray<NSURL *> *) = self.filePickerCompletion;
-    self.filePicker = nil; self.filePickerCompletion = nil;
-    if (completion) completion(allowed ? urls : nil);
+    [self finishFiles:urls];
 }
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)picker { if (picker == self.filePicker) [self cancelFilePicker]; }
 - (void)cancelFilePicker {
+    self.filePickerRevision++;
     UIDocumentPickerViewController *picker = self.filePicker; self.filePicker = nil;
     void (^completion)(NSArray<NSURL *> *) = self.filePickerCompletion; self.filePickerCompletion = nil;
     picker.delegate = nil; [picker dismissViewControllerAnimated:NO completion:nil];
+    self.capturePicker.delegate = nil; [self.capturePicker dismissViewControllerAnimated:NO completion:nil]; self.capturePicker = nil;
     if (completion) completion(nil);
+}
+- (void)revokeFilePicker {
+    [self cancelFilePicker];
+    for (NSURL *url in self.temporaryFiles) [NSFileManager.defaultManager removeItemAtURL:url error:nil];
+    [self.temporaryFiles removeAllObjects];
 }
 - (void)exitFullscreen:(KuiklyRenderCallback)callback fallbackToHistory:(BOOL)back {
     WKWebView *owner = self.webView;
@@ -442,7 +623,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (void)releaseWebView {
     self.initialHtmlNavigation = NO;
     self.callbackGeneration++;
-    [self cancelFilePicker];
+    [self revokeFilePicker];
     WKWebView *owner = self.webView; self.webView = nil; self.documentToken = nil; self.fullscreen = NO;
     if (!owner) return;
     for (NSString *key in @[@"estimatedProgress", @"title", @"canGoBack", @"canGoForward"]) [owner removeObserver:self forKeyPath:key];

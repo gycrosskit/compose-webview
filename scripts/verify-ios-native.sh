@@ -20,7 +20,7 @@ int main(void) {
     return 0;
 }
 EOF
-xcrun --sdk iphoneos clang "${flags[@]}" build/native-ios/consumer.m build/native-ios/libGYWebView.a -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework OpenKuiklyIOSRender -ObjC -o build/native-ios/consumer
+xcrun --sdk iphoneos clang "${flags[@]}" build/native-ios/consumer.m build/native-ios/libGYWebView.a -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework AVFoundation -framework OpenKuiklyIOSRender -lc++ -ObjC -o build/native-ios/consumer
 cat > build/native-ios/consumer.swift <<'EOF'
 import UIKit
 let view: any KuiklyRenderViewExportProtocol = GYWebView(frame: .zero)

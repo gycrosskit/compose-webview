@@ -76,7 +76,7 @@ fun main() {
     }
     // queued launch 尚未打开系统页面；新请求复用同一 owner 也不能启动旧请求。
     for (photo in listOf(false, true)) for (replaceOwner in listOf(false, true)) {
-        val activity=ComponentActivity();val owner=WebView()
+        val activity=ComponentActivity();if(photo) activity.contentResolver.mime="image/jpeg";val owner=WebView()
         val chooser=AndroidWebFileChooserController(activity,{WebViewRequest()},{true},AndroidWebPermissionController())
         Build.VERSION.SDK_INT=if(photo)33 else 32
         val old=mutableListOf<Array<Uri>?>();val next=mutableListOf<Array<Uri>?>()
@@ -90,6 +90,27 @@ fun main() {
         check(launcher.launches==1 && old.size==1 && old.single()==null && next.isEmpty()) {"$photo $replaceOwner old queued launch disturbed new request"}
         launcher.deliver(if(photo)Uri("content://new") else ActivityResult(Activity.RESULT_OK,Intent().apply{data=Uri("content://new")}))
         check(next.single()!!.single().value=="content://new")
+        chooser.destroy();cases++
+    }
+    // 驱动真实生产 controller 与真实磁盘文件，RESULT_OK 不能制造空文件成功。
+    for (outcome in listOf("valid", "empty", "wrongMime", "oversize", "cancel")) {
+        val activity=ComponentActivity();val owner=WebView();val permission=AndroidWebPermissionController().apply { granted=true }
+        val chooser=AndroidWebFileChooserController(activity,{WebViewRequest()},{true},permission)
+        Build.VERSION.SDK_INT=32
+        val results=mutableListOf<Array<Uri>?>()
+        chooser.show(owner,ValueCallback { results.add(it) },WebChromeClient.FileChooserParams(arrayOf("image/jpeg"),true))
+        val file=androidx.core.content.FileProvider.lastFile!!
+        if(outcome!="empty") file.writeBytes(if(outcome=="wrongMime") byteArrayOf(0,0,0) else byteArrayOf(0xff.toByte(),0xd8.toByte(),0xff.toByte(),0))
+        if(outcome=="oversize") java.io.RandomAccessFile(file,"rw").use { it.setLength(50L*1024*1024+1) }
+        activity.activityResultRegistry.launchers[0].deliver(ActivityResult(if(outcome=="cancel") 0 else Activity.RESULT_OK,null))
+        check(results.size==1 && (results.single()!=null)==(outcome=="valid")) { "$outcome output validation failed" }
+        if(outcome=="valid") {
+            check(file.exists() && file.readBytes().isNotEmpty()) { "H5 cannot read returned capture" }
+            chooser.show(owner,ValueCallback {},WebChromeClient.FileChooserParams())
+            check(file.exists()) { "A new chooser deleted pending H5 upload" }
+            chooser.release(owner)
+            check(!file.exists()) { "Document revocation retained capture" }
+        } else check(!file.exists()) { "$outcome retained failed capture" }
         chooser.destroy();cases++
     }
     println("PASS $cases actual production controller callback cases (system substitutes; no device)")

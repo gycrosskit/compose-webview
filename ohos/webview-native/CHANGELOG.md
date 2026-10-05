@@ -1,3 +1,10 @@
+# 0.2.0-rc.9（候选，尚未发布）
+
+- CMP/Kuikly 的 Bridge、原生回执和弹窗按当前 owner、文档代次与可见性撤销；禁用 JavaScript 不再注入声明式脚本。
+- iOS15 常规 Web 可用，18.4+ 使用公开原生文件代理；iOS/HarmonyOS capture 复用系统拍摄，核验权限、MIME/大小与临时文件生命周期。
+- Android 拍摄拒绝空/错格式/超限输出；成功文件保留至文档撤销，后续 chooser 取消不会提前删除。
+- HostSuffix 支持协议、排除父域与可选 userinfo 拒绝的组合；仅导航策略变化保留当前 Controller/DOM；system-actions-native 精确依赖 rc.4。
+
 # 0.2.0-rc.8（候选）
 
 - 当前文档隐藏时仍执行初始化脚本，隐藏队列拒绝/清空业务消息；显示先同步 JS 可见状态，再恢复活动状态与 Bridge 端口，不重载页面。
