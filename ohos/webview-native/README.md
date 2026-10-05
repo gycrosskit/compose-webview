@@ -1,22 +1,22 @@
-> 当前 HAR `0.2.0-rc.8` 为候选版本；构建、Release 远程消费与 OHPM Registry 可安装性分别验收。
+> Release HAR `0.2.0-rc.8` 已发布并通过实际下载/干净消费；OHPM 已接受审核，精确版本查询仍 NOTFOUND。
 
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **0.2.0-rc.8 候选版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.3`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **0.2.0-rc.8 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.3`，后者提供共用窗口执行 owner。
 
 ## 安装与注册
 
-候选 HAR 0.2.0-rc.8 配套 system-actions 0.2.0-rc.3。宿主直接使用系统组件时也选择 rc.3；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。本候选的实际 Release HAR 消费尚待验收，正式 Registry 安装需两个精确版本可查询；Release HAR 与 Registry 分别验收。rc.5 的既有消费记录保留在历史验收文档中。
+HAR 0.2.0-rc.8 配套 system-actions 0.2.0-rc.3。宿主直接使用系统组件时也选择 rc.3；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。实际 Release HAR 消费已通过；system-actions rc.3 已可从 Registry 安装，Web rc.8 仍审核中。Release HAR 与 Registry 分别验收。rc.5 的既有消费记录保留在历史验收文档中。
 
 ## 安装
 
-以下为候选精确坐标，须在发布后确认 Registry 可查询再安装。
+以下为精确 Registry 坐标；Web rc.8 审核通过并可查询后再安装。
 
 ```bash
 ohpm install @gycrosskit/webview@0.2.0-rc.8
 ```
 
-候选发布后，离线分发可从同版本 GitHub Release 下载 HAR 并校验 SHA-256；在 Registry 审核期间同时下载 Web rc.8 和 system-actions rc.3 的 Release HAR、校验各自 SHA；root override 保证 Web 传递依赖与宿主直接使用同一系统包。文件下载消费与 Registry 安装分开验收。
+Registry 审核期间从同版本 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry rc.3。本轮干净消费者确认只有一份窗口 owner。完全离线时下载 Web rc.8 和 system-actions rc.3 的固定 Release HAR、校验各自 SHA，并用 root override 保证同一系统包。文件下载消费与 Registry 安装分开验收。
 
 ```json
 {
