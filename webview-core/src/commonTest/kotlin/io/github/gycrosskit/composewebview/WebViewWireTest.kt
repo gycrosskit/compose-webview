@@ -3,6 +3,17 @@ package io.github.gycrosskit.composewebview
 import kotlin.test.*
 
 class WebViewWireTest {
+    @Test fun nativeNavigationFlagsRequireJsonBooleans() {
+        for (blocked in listOf(true, false)) {
+            val event = WebViewWire.decodeEvent("""{"type":"navigation","url":"https://safe.example","isMainFrame":true,"hasUserGesture":false,"blocked":$blocked}""") as WebViewEvent.Navigation
+            assertEquals(blocked, event.blocked)
+        }
+        for (field in listOf("blocked", "isMainFrame", "hasUserGesture")) {
+            for (invalid in listOf("0", "1", "\"true\"", "\"false\"")) {
+                assertFails { WebViewWire.decodeEvent("""{"type":"navigation","url":"https://safe.example","$field":$invalid}""") }
+            }
+        }
+    }
     @Test fun wrongJsonTypesCannotEnableCapabilitiesOrChangeHeaders() {
         val content = """"content":{"type":"url","url":"https://safe.example"}"""
         for (field in listOf(
