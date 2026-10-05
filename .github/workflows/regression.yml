@@ -1,0 +1,70 @@
+name: Source regression
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: regression-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  JAVA_TOOL_OPTIONS: -Djava.security.properties=${{ github.workspace }}/scripts/ci-java.security
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: npm install --prefix "$RUNNER_TEMP/contract-tools" --ignore-scripts --no-audit --no-fund typescript@4.9.5
+      - run: |
+          python3 -c 'import json, pathlib; assert json.loads(pathlib.Path("ohos/webview-native/oh-package.json5").read_text())["dependencies"]["@gycrosskit/system-actions-native"] == "0.2.0-rc.4", "Update the frozen HAR dependency with its declared version"'
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/system-actions.har" https://github.com/gycrosskit/system-actions/releases/download/0.2.0-rc.4/SystemActionsNative.har
+          printf '%s  %s\n' e87ea317422d5f41e796e07f9b9fb30b195f3ef616486b5ab3890962e32648ae "$RUNNER_TEMP/system-actions.har" | shasum -a 256 --check
+          python3 -c 'import pathlib, sys, tarfile; archive=tarfile.open(sys.argv[1]); member=archive.getmember("package/src/main/ets/WindowPolicy.ets"); assert member.isfile(); pathlib.Path(sys.argv[2]).write_bytes(archive.extractfile(member).read()); archive.close()' "$RUNNER_TEMP/system-actions.har" "$RUNNER_TEMP/window-policy.ets"
+      - run: |
+          python3 verification/publication/test_maven_check.py
+          python3 verification/publication/test_metadata.py
+          python3 ios/generate-scripts.py --check
+          TYPESCRIPT_PATH="$RUNNER_TEMP/contract-tools/node_modules/typescript" WEBVIEW_WINDOW_POLICY_SOURCE="$RUNNER_TEMP/window-policy.ets" node ohos/tests/contract.test.cjs
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" testDebugUnitTest :webview-core:testDebugUnitTest :webview-kuikly:testDebugUnitTest compileReleaseKotlinAndroid :webview-kuikly:compileReleaseKotlinAndroid --no-daemon --max-workers=1 --stacktrace --info
+      - run: bash verification/android-callbacks/verify.sh
+      - run: bash verification/early-scripts/verify.sh
+  native:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - run: |
+          ios_test_target=iosSimulatorArm64Test
+          if [[ "$(uname -m)" != arm64 ]]; then ios_test_target=iosX64Test; fi
+          bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" "$ios_test_target" :webview-core:"$ios_test_target" compileKotlinIosArm64 compileKotlinIosX64 :webview-kuikly:compileKotlinIosArm64 :webview-kuikly:compileKotlinIosSimulatorArm64 :webview-kuikly:compileKotlinIosX64 :webview-core:compileKotlinOhosArm64 :webview-kuikly:compileKotlinOhosArm64 --no-daemon --max-workers=1 --stacktrace --info
+          python3 -c 'import pathlib, sys, xml.etree.ElementTree as ET; files=pathlib.Path(".").glob("**/build/test-results/"+sys.argv[1]+"/*.xml"); cases=[case for path in files for case in ET.parse(path).iter("testcase")]; assert any(case.find("skipped") is None for case in cases), "No executed iOS test cases"' "$ios_test_target"
