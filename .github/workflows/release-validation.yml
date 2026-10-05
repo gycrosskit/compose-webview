@@ -1,0 +1,46 @@
+name: Release validation
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable Maven release tag
+        required: true
+        type: string
+permissions:
+  contents: read
+env:
+  VERSION: ${{ github.event.release.tag_name || inputs.version }}
+jobs:
+  release-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: bash scripts/verify-release.sh
+      - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly assembleDebug verifyNoCompose verifyExactComponentVersion --refresh-dependencies --no-daemon --max-workers=1 --stacktrace
+      - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly -PverifyCmp=true assembleDebug verifyNoKuikly verifyExactComponentVersion --refresh-dependencies --no-daemon --max-workers=1 --stacktrace
+  release-native:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: bash scripts/verify-release.sh
+      - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly compileKotlinIosArm64 compileKotlinIosSimulatorArm64 compileKotlinIosX64 compileKotlinOhosArm64 --refresh-dependencies --no-daemon --max-workers=1 --stacktrace
+      - run: |
+          ios_framework_target=IosSimulatorArm64
+          if [[ "$(uname -m)" != arm64 ]]; then ios_framework_target=IosX64; fi
+          bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly -PverifyCmp=true "linkDebugFramework$ios_framework_target" compileKotlinIosArm64 compileKotlinIosX64 --refresh-dependencies --no-daemon --max-workers=1 --stacktrace
