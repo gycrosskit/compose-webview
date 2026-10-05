@@ -39,7 +39,10 @@ kotlin {
                 implementation("org.jetbrains.compose.ui:ui:1.10.3")
             }
         } else null
-        androidMain { cmpMain?.let { dependsOn(it) } }
+        androidMain {
+            if (!verifyCmp) kotlin.srcDir("src/kuiklyAndroidMain/kotlin")
+            cmpMain?.let { dependsOn(it) }
+        }
         val iosMain by creating { dependsOn(cmpMain ?: commonMain.get()) }
         iosArm64Main { dependsOn(iosMain) }
         iosX64Main { dependsOn(iosMain) }
