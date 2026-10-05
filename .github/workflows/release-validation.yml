@@ -1,5 +1,6 @@
 name: Release validation
 on:
+  pull_request:
   release:
     types: [published]
   workflow_dispatch:
@@ -8,10 +9,13 @@ on:
         description: Immutable Maven release tag
         required: true
         type: string
+concurrency:
+  group: release-validation-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 env:
-  VERSION: ${{ github.event.release.tag_name || inputs.version }}
+  VERSION: ${{ github.event.release.tag_name || inputs.version || '0.2.0-rc.9' }}
 jobs:
   release-android:
     runs-on: ubuntu-24.04
