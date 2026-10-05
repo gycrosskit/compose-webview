@@ -5,7 +5,8 @@ package io.github.gycrosskit.composewebview
  *
  * @property url 目标地址。
  * @property isMainFrame 是否为主文档导航。
- * @property hasUserGesture 是否由明确用户手势触发。
+ * @property hasUserGesture 是否由明确用户手势触发；平台无法确认时为 false。
+ * @property target 导航窗口，默认当前窗口。
  */
 data class WebViewNavigationRequest(
     val url: String,

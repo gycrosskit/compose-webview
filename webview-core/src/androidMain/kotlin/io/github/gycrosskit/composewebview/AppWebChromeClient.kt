@@ -8,6 +8,7 @@ import android.webkit.WebView
  *
  * 文件选择、全屏视频等高权限能力不会在这里直接授权；业务 ChromeClient 应在校验页面来源和运行时
  * 权限后自行接管。
+ * @param listener 所属实例 UI 线程上的状态回调；页面释放时由壳层清除 Client 引用。
  */
 open class AppWebChromeClient(
     private val listener: Listener,

@@ -27,13 +27,14 @@ class WebViewCallbacks(
  * commonMain 不公开或持有原生网页 View 的状态与命令入口。
  *
  * 状态只应由 [rememberAppWebViewState] 在当前组合位置持有，不能放入 ViewModel 或跨页面复用。
+ * 所有命令在所属平台 UI 线程调用；实例释放后迟到的脚本结果不再交付。
  */
 @Stable
 expect class AppWebViewState internal constructor() {
     /** 当前主文档的只读状态快照，可直接驱动加载、错误和返回 UI。 */
     val snapshot: WebViewSnapshot
 
-    /** 重新加载当前声明式内容；空内容仍返回 [WebViewErrorKind.EMPTY_CONTENT]。 */
+    /** 刷新当前页面；尚未提交的新声明会重放其内容与请求头，空内容报告 [WebViewErrorKind.EMPTY_CONTENT]。 */
     fun reload()
 
     /** 优先消费网页内部返回。@return true 表示已处理，false 时调用方可退出当前页面。 */
@@ -56,7 +57,15 @@ fun rememberAppWebViewState(): AppWebViewState = remember { AppWebViewState() }
 /** `true` 表示平台网页实例已自行绘制加载进度，shared 不得再叠加 Compose 进度条。 */
 expect val platformWebViewRendersLoadingProgress: Boolean
 
-/** 不暴露平台 Client、原生 View 或释放回调的 CMP WebView 入口。 */
+/**
+ * CMP 网页入口，原生实例随组合位置释放；相等内容不会因重组重复加载。
+ * @param request 内容、设置与能力门禁；安全配置变化可能重建原生实例。
+ * @param visible 是否显示，默认 true；权限与异步操作的撤销由平台生命周期门禁执行。
+ * @param modifier 布局与外观约束。
+ * @param state 仅属于当前组合位置的状态，默认由 remember 创建。
+ * @param callbacks 平台事件与同步导航回调，默认允许基础导航且忽略事件。
+ * @param pageEnteredAtMillis [currentWebViewPerformanceTimeMillis] 同源的毫秒值；null 使用首次组合时刻。
+ */
 @Composable
 fun AppWebView(
     request: WebViewRequest,

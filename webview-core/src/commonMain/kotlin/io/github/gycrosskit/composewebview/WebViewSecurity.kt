@@ -3,7 +3,8 @@ package io.github.gycrosskit.composewebview
 /**
  * Bridge、文件选择和音视频采集的统一安全门禁。
  *
- * 任一高权限能力开启时必须至少配置一个有效 HTTPS 来源；平台仍需在实际请求发生时再次校验当前主框架来源。
+ * appBridge、文件与媒体能力开启时必须配置有效 HTTPS 来源；pageBridge 仅限初始同源主文档。
+ * 平台仍需在实际请求发生时再次校验实例、可见性与来源；所有能力开关默认 false，白名单默认空。
  *
  * @property trustedOrigins 允许使用高权限能力的 HTTPS 来源。
  * @property appBridgeEnabled 是否安装应用 JSBridge。

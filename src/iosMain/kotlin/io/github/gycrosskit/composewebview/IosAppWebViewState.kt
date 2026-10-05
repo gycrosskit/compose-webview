@@ -214,7 +214,7 @@ actual class AppWebViewState actual internal constructor() {
     }
 }
 
-/** 保存声明式首航及一次性恢复预算；成功提交后只允许 WebKit 自己刷新当前文档。 */
+/** 每次新声明都有独立首航与恢复预算；同一声明成功提交后由 WebKit 刷新当前文档，保留站内导航/POST。 */
 internal class IosWebViewLoadState {
     var content: WebViewContent? = null
         private set
@@ -228,6 +228,7 @@ internal class IosWebViewLoadState {
         if (this.content == content) return false
         this.content = content
         this.cachePolicy = cachePolicy
+        hasCommittedPage = false
         initialNetworkRetryUsed = false
         return true
     }

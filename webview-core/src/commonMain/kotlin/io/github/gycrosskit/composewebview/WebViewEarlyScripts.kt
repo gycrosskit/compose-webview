@@ -30,6 +30,7 @@ fun WebViewRequest.earlyScriptSource(): String? {
     }
 }
 
+/** 返回 document-start 注册来源；非可信限定脚本可使用全来源，页面内仍只执行主文档。 */
 fun WebViewRequest.earlyScriptOriginRules(): Set<String> {
     val early = scripts.filter { it.injectionTime != WebViewScriptInjectionTime.DOCUMENT_FINISHED }
     return when {
@@ -39,6 +40,7 @@ fun WebViewRequest.earlyScriptOriginRules(): Set<String> {
     }
 }
 
+/** 筛选文档完成时脚本；可信限定脚本按当前地址重新授权，调用方负责 JavaScript 开关。 */
 fun WebViewRequest.finishedScriptsAt(url: String?): List<WebViewScript> = scripts.filter { script ->
     script.injectionTime == WebViewScriptInjectionTime.DOCUMENT_FINISHED && canInject(script, url)
 }

@@ -3,6 +3,24 @@ package io.github.gycrosskit.composewebview
 import kotlin.test.*
 
 class WebViewWireTest {
+    @Test fun wrongJsonTypesCannotEnableCapabilitiesOrChangeHeaders() {
+        val content = """"content":{"type":"url","url":"https://safe.example"}"""
+        for (field in listOf(
+            """"settings":{"javaScriptEnabled":"true"}""",
+            """"settings":{"minimumTextZoomPercent":"100"}""",
+            """"security":{"pageBridgeEnabled":"true"}""",
+            """"navigationPolicy":{"allowedSchemes":[1]}""",
+        )) {
+            assertFails(message = field) { WebViewWire.decodeRequest("{$content,$field}") }
+        }
+        assertFails { WebViewWire.decodeRequest("""{"content":{"type":"url","url":"https://safe.example","additionalHeaders":{"X-Request":1}}}""") }
+        assertFails { WebViewWire.decodeEvent("""{"type":"progressChanged","progress":"100"}""") }
+        assertFails { WebViewWire.decodeEvent("""{"type":"fullscreenChanged","isFullscreen":"true"}""") }
+        // 省略字段仍保持历史默认值；真实布尔、数字与字符串不受影响。
+        val decoded = WebViewWire.decodeRequest("{$content}")
+        assertEquals(WebViewSettings(), decoded.settings)
+        assertEquals(WebViewSecurity(), decoded.security)
+    }
     @Test fun requestRoundTripAndMalformedSecurityIsRejected() {
         val request = WebViewRequest(
             WebViewContent.Html("<h1>中文</h1>", "https://safe.example/base"),

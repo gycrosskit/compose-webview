@@ -116,6 +116,17 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   for (const allowedOrigins of [null, 'https://trusted.test', ['javascript:evil'], ['https://user@trusted.test/'], ['https://trusted.test:0/'], ['https://trusted.test:65536/'], [5]]) {
     assert.throws(() => wire.decodeRequest(encoded(request({ navigationPolicy: { allowedSchemes: ['https'], allowedOrigins, blockedRules: [] } }))));
   }
+  const guarded = { id: 'contract', source: 'window.executions=(window.executions||0)+1;',
+    injectionTime: 'DOCUMENT_START', onlyForTrustedMainFrame: true };
+  for (const [target, mainFrame, expected] of [
+    ['https://trusted.test/page', true, 1], ['https://trusted.test:444/page', true, 0],
+    ['https://trusted.test.evil/page', true, 0], ['http://trusted.test/page', true, 0],
+    ['https://trusted.test/page', false, 0],
+  ]) {
+    const location = new URL(target); const window = {}; window.top = mainFrame ? window : {};
+    vm.runInNewContext(wire.guardedScript(guarded, standard), { window, location });
+    assert.equal(window.executions || 0, expected, `${target} mainFrame=${mainFrame}`);
+  }
   const { GYWebView } = load('GYWebView.ets');
   // 系统替身执行 HAR 中的真实实现，首航失败必须重建，保留原请求且只提交一次。
   for (const content of [
@@ -244,6 +255,39 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     assert.equal(responses.length, 1, `${revoke} completes FileSelectorResult once`);
     assert.equal(responses[0].length, 0, `${revoke} discards late file URI`); pickerView.onDestroy();
   }
+  // 按当前主文档重新核验权限，不依赖 begin 回调是否已经到达。
+  for (const reason of ['unsupported', 'foreignOrigin', 'originChanged', 'partialGrant', 'settingsDenied']) {
+    const permissionView = new GYWebView(); const permissionEvents = [];
+    permissionView.setProp('onEvent', event => permissionEvents.push(event));
+    permissionView.setProp('request', encoded(mediaPolicy)); permissionView.onControllerAttached();
+    permissionView.onPageVisible('https://trusted.test/page');
+    permission = deferred(); let settledGrants = 0; let settledDenials = 0;
+    permissionView.permissionRequest({
+      getAccessibleResource: () => reason === 'unsupported' ? ['video', 'unknown'] : ['video', 'audio'],
+      getOrigin: () => reason === 'foreignOrigin' ? 'https://foreign.test' : 'https://trusted.test',
+      grant: () => settledGrants++, deny: () => settledDenials++,
+    });
+    if (reason === 'originChanged') permissionView.controller.url = 'https://foreign.test/page';
+    permission.resolve(reason === 'partialGrant' ? { authResults: [0] } : reason === 'settingsDenied' ?
+      { authResults: [-1, 0], dialogShownResults: [false, false] } : { authResults: [0, 0] });
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(settledGrants, 0, `${reason} never grants capture`);
+    assert.equal(settledDenials, 1, `${reason} settles once`);
+    const settingsEvents = permissionEvents.filter(event => event.type === 'permissionSettingsRequired');
+    assert.equal(settingsEvents.length, reason === 'settingsDenied' ? 1 : 0);
+    if (settingsEvents.length) assert.deepEqual(Array.from(settingsEvents[0].permissions), ['CAMERA']);
+    permissionView.onDestroy(); assert.equal(settledDenials, 1, `${reason} is not settled again at destroy`);
+  }
+  // 选择器返回前 URL 已切到异源，尚未收到导航回调也不能暴露文件 URI。
+  const changedPicker = new GYWebView(); const changedFiles = [];
+  changedPicker.setProp('request', encoded(mediaPolicy)); changedPicker.onControllerAttached();
+  changedPicker.onPageVisible('https://trusted.test/page'); selectedFile = deferred();
+  changedPicker.selectFile({ fileSelector: { isCapture: () => false, getMode: () => 0 },
+    result: { handleFileList: files => changedFiles.push(Array.from(files)) } });
+  changedPicker.controller.url = 'https://foreign.test/page';
+  selectedFile.resolve(['file://picked/secret']); await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(changedFiles, [[]]); changedPicker.onDestroy(); assert.equal(changedFiles.length, 1);
+
   const fullscreenView = new GYWebView(); fullscreenView.setProp('request', encoded(standard)); fullscreenView.onControllerAttached();
   const orientations = []; const layouts = [];
   windowObject.getLastWindow = async () => ({ getPreferredOrientation: () => 0, getWindowProperties: () => ({ isLayoutFullScreen: false }),

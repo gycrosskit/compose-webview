@@ -2,6 +2,7 @@ import { KuiklyRenderBaseView } from '@kuikly-open/render';
 import { GYWebView } from './GYWebView';
 import { webview } from '@kit.ArkWeb';
 
+/** 创建与 renderToken 绑定的 ArkUI Web 节点；旧节点的事件在调用平台逻辑前拒绝。 */
 @Builder
 export function createGYWebView(view: KuiklyRenderBaseView) { GYWebViewHost({ renderView: view as GYWebView }) }
 

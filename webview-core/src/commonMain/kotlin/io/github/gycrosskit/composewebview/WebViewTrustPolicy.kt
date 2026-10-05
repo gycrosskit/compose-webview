@@ -7,6 +7,8 @@ import io.ktor.http.Url
  *
  * 精确地址按 scheme、host、有效端口匹配；域后缀允许目标域及其子域，并沿用现有兼容语义，不限制 HTTPS
  * 端口。无效地址和非 HTTPS 地址不会进入白名单。实例不可变，切换页面时应创建新策略。
+ * @param urls 精确 HTTPS 地址，默认空；复制并标准化来源，不保留路径、查询和 fragment。
+ * @param trustedHostSuffixes 域及子域的 HTTPS 授权后缀，默认空；使用最小必要范围。
  */
 class WebViewTrustPolicy(
     urls: Collection<String> = emptyList(),
@@ -19,6 +21,7 @@ class WebViewTrustPolicy(
     val urls: Set<String>
         get() = origins.map { "https://${it.host}" + if (it.port == 443) "" else ":${it.port}" }.toSet()
 
+    /** 已复制并规范化的域后缀；不含前后点，空集合不授权任何域。 */
     val trustedHostSuffixes: Set<String>
         get() = hostSuffixes
 

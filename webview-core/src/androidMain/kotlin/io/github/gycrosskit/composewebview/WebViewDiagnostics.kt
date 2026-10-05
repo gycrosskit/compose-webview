@@ -82,6 +82,7 @@ object WebViewDiagnostics {
         viewStates[view]?.trace?.firstContentVisible(url)
     }
 
+    /** 记录脚本测得的导航指标，duration 单位毫秒；仅保存诊断信息。 */
     fun performanceMetric(
         view: WebView,
         name: WebViewPerformanceMetric,

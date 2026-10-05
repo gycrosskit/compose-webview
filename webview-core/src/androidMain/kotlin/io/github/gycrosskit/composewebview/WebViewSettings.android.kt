@@ -11,6 +11,7 @@ val WebViewSettings.androidMixedContentMode: Int
         WebViewMixedContentPolicy.ALWAYS_ALLOW -> WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
     }
 
+/** 映射中立缓存策略到 Android WebSettings 常量，不修改全局 HTTP 缓存。 */
 val WebViewSettings.androidCacheMode: Int
     get() = when (cachePolicy) {
         WebViewCachePolicy.DEFAULT -> WebSettings.LOAD_DEFAULT

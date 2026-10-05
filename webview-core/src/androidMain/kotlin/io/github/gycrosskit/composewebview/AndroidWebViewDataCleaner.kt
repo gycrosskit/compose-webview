@@ -9,7 +9,11 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
-/** 只清理 WebView 数据；App 账号、图片缓存与清理时机由宿主控制。 */
+/**
+ * 清理进程共享 WebView 数据；App 账号、图片缓存与清理时机由宿主控制。
+ * 挂起入口自动切到 Main；取消等待不能撤销系统已经发起的删除。
+ * @param context 仅保存 applicationContext，不持有 Activity。
+ */
 class AndroidWebViewDataCleaner(context: Context) {
     private val appContext = context.applicationContext
 

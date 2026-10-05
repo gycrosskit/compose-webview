@@ -107,14 +107,42 @@ class IosWebViewLoadStateTest {
     }
 
     @Test
-    fun `committed document keeps native reload ownership across failures and declarations`() {
+    fun `committed document keeps native reload ownership when declaration is unchanged`() {
         val state = initialState()
         state.markCommitted()
 
         assertTrue(state.hasCommittedPage)
         assertFalse(state.takeInitialNetworkRetry(failure()))
-        state.begin(WebViewContent.Url("https://example.test/next"), WebViewCachePolicy.DEFAULT)
+        assertFalse(state.begin(WebViewContent.Url(INITIAL_URL), WebViewCachePolicy.DEFAULT))
         assertTrue(state.hasCommittedPage)
+        assertFalse(state.takeInitialNetworkRetry(failure()))
+    }
+
+    @Test
+    fun `new declaration after committed page owns a fresh initial retry budget`() {
+        val state = initialState()
+        state.markCommitted()
+        val next = WebViewContent.Url("https://example.test/next", mapOf("X-Version" to "2"))
+
+        assertTrue(state.begin(next, WebViewCachePolicy.NO_CACHE))
+        assertFalse(state.hasCommittedPage)
+        assertSame(next, state.content)
+        assertTrue(state.takeInitialNetworkRetry(failure()))
+        assertFalse(state.begin(next.copy(), WebViewCachePolicy.NO_CACHE))
+        assertFalse(state.takeInitialNetworkRetry(failure(-1001)))
+
+        state.markCommitted()
+        assertTrue(state.hasCommittedPage)
+        assertFalse(state.takeInitialNetworkRetry(failure()))
+    }
+
+    @Test
+    fun `committed new declaration cannot consume an unused recovery budget`() {
+        val state = initialState()
+        state.markCommitted()
+        state.begin(WebViewContent.Url("https://example.test/next"), WebViewCachePolicy.DEFAULT)
+        state.markCommitted()
+
         assertFalse(state.takeInitialNetworkRetry(failure()))
     }
 

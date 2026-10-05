@@ -5,13 +5,16 @@ import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
-/** 在首个 load 前安装性能采集和业务早期脚本，并在实例释放时解除消息入口。 */
+/** 在首个 load 前安装性能采集和业务早期脚本，并在实例释放时解除消息入口。
+ * @param onMetric 在 UI 回调中接收指标，第三个参数为非负导航耗时毫秒。
+ */
 class AndroidEarlyScriptInstaller(
     private val onMetric: (WebView, WebViewPerformanceMetric, Long) -> Unit,
 ) {
     private val handlers = mutableMapOf<WebView, List<ScriptHandler>>()
     private val messageListeners = mutableSetOf<WebView>()
 
+    /** UI 线程注册 document-start 与性能消息；旧内核通过完成回调兜底，每个原生实例安装一次并在释放时 remove。 */
     fun install(view: WebView, request: WebViewRequest) {
         if (!request.settings.javaScriptEnabled) return
         val installedHandlers = mutableListOf<ScriptHandler>()
@@ -51,6 +54,7 @@ class AndroidEarlyScriptInstaller(
         handlers[view] = installedHandlers
     }
 
+    /** UI 线程撤销此实例的脚本与消息监听；释放/重建时调用。 */
     fun remove(view: WebView) {
         handlers.remove(view).orEmpty().forEach { handler -> runCatching(handler::remove) }
         if (messageListeners.remove(view) &&
