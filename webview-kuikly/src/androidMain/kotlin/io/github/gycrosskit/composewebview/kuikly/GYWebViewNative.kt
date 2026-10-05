@@ -35,6 +35,7 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
     private var callbackGeneration = 0L
     private var documentToken = UUID.randomUUID().toString()
     private var pageVisible = true
+    private var finishedScriptsInjected = false
     private var fullscreen: View? = null
     private var fullscreenSystemUiVisibility: Int? = null
     private var fullscreenBarsVisible: Boolean? = null
@@ -128,6 +129,7 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
         owner.webViewClient = object : AppWebViewClient(object : AppWebViewClient.Listener {
             override fun onPageLoadStarted(url: String?) { if (owner !== webView || destroyed) return;
                 initialHtmlNavigation = false
+                finishedScriptsInjected = false
                 callbackGeneration++; documentToken = UUID.randomUUID().toString(); capabilities?.release(owner)
                 emit(WebViewEvent.PageStarted(url)); history(owner) }
             override fun onPageLoadFinished(url: String?) { if (owner !== webView || destroyed) return; emit(WebViewEvent.PageFinished(url)); history(owner) }
@@ -211,14 +213,18 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
 
     private fun inject(owner: WebView, finished: Boolean) {
         val current = request ?: return
-        if (owner !== webView || destroyed || crashed || !pageVisible) return
+        if (owner !== webView || destroyed || crashed || !current.settings.javaScriptEnabled) return
+        // 初始化属于当前文档；隐藏只撤销业务消息、权限和显式 JS 的异步回执。
         if (current.canUseAppBridgeAt(owner.url)) {
             owner.evaluateJavascript("window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = ${JSONObject.quote(documentToken)};", null)
             owner.injectAppWebBridge()
         }
-        if (current.settings.javaScriptEnabled) owner.evaluateJavascript(WEB_VIEW_PERFORMANCE_SCRIPT, null)
+        owner.evaluateJavascript(WEB_VIEW_PERFORMANCE_SCRIPT, null)
         current.earlyScriptSource()?.let { owner.evaluateJavascript(it, null) }
-        if (finished) current.finishedScriptsAt(owner.url).forEach { owner.evaluateJavascript(it.source, null) }
+        if (finished && !finishedScriptsInjected) {
+            finishedScriptsInjected = true
+            current.finishedScriptsAt(owner.url).forEach { owner.evaluateJavascript(it.source, null) }
+        }
     }
 
     private fun history(owner: WebView) {
@@ -249,6 +255,7 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
     private fun releaseWebView() {
         callbackGeneration++
         initialHtmlNavigation = false
+        finishedScriptsInjected = false
         exitFullscreen()
         val owner = webView ?: return
         webView = null

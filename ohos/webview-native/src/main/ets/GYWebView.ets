@@ -44,8 +44,9 @@ export interface WebEvent {
 // 端口只由原生发送给主文档；不使用注册到所有 iframe 的 JavaScriptProxy。
 const BRIDGE_BOOTSTRAP: string = `(function(){
 if(window!==window.top||window.GYWebViewBridge)return;
-let port=null,queue=[],bytes=0;
+let port=null,queue=[],bytes=0,active=window.__GY_WEBVIEW_VISIBLE__!==false;
 const bridge=Object.freeze({postMessage:function(handlerName,data){
+ if(!active)return false;
  if(typeof handlerName!=='string'||!handlerName||handlerName.length>80)return false;
  let raw,size;try{const payload=typeof data==='string'?data:JSON.stringify(data==null?{}:data);if(typeof payload!=='string')return false;raw=JSON.stringify({handlerName:handlerName,data:payload});size=new TextEncoder().encode(raw).byteLength}catch(e){return false}
  if(size>65536)return false;
@@ -56,10 +57,11 @@ Object.defineProperty(window,'GYWebViewBridge',{value:bridge,configurable:false,
 if(!window.JSAndroidBridge)Object.defineProperty(window,'JSAndroidBridge',{value:Object.freeze({handleJSBridgeMessage:bridge.postMessage}),writable:false});
 if(!window.WebViewJavascriptBridge)Object.defineProperty(window,'WebViewJavascriptBridge',{value:Object.freeze({callHandler:bridge.postMessage,registerHandler:function(){}}),writable:false});
 window.addEventListener('message',function(event){
- if(!event.isTrusted||event.source!==null||event.data!=='GYWebViewChannel'||!event.ports||event.ports.length!==1)return;
+ if(!active||!event.isTrusted||event.source!==null||event.data!=='GYWebViewChannel'||!event.ports||event.ports.length!==1)return;
  if(port)port.close();port=event.ports[0];const pending=queue;queue=[];bytes=0;
  pending.forEach(function(raw){try{port.postMessage(raw)}catch(e){}});
 });
+window.addEventListener('GYWebViewVisibility',function(){active=window.__GY_WEBVIEW_VISIBLE__===true;if(port)port.close();port=null;queue=[];bytes=0});
 window.addEventListener('pagehide',function(){if(port)port.close();port=null;queue=[];bytes=0});
 })();`;
 
@@ -82,6 +84,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   /** 当前渲染节点列表，仅含当前身份，用于 ArkUI 替换旧 Controller。 */
   renderTokens: number[] = [0];
   private documentReady: boolean = false;
+  private bridgeVisibilityPending: boolean = false;
   private renderFailed: boolean = false;
   private eventCallback: KuiklyRenderCallback | null = null;
   private attached: boolean = false;
@@ -106,12 +109,27 @@ export class GYWebView extends KuiklyRenderBaseView {
     if (this.lifetime.disposed) return true;
     if (key === 'onEvent') { this.eventCallback = value as KuiklyRenderCallback; return true; }
     if (key === 'visible') {
+      const changed = this.visible !== (value === true);
       this.visible = value === true;
       this.revokePending();
       if (this.attached) {
         try {
-          if (this.visible) { this.controller.onActive(); this.installBridge(); }
+          if (this.visible) this.controller.onActive();
           else { this.exitFullscreen(); this.controller.stopAllMedia(); this.controller.onInactive(); }
+          if (this.settings().javaScriptEnabled === true) {
+            const controller = this.controller;
+            const generation = this.lifetime.generation;
+            this.bridgeVisibilityPending = true;
+            // JS 状态只丢弃隐藏队列；授权仍由 native visible/origin/generation 决定。
+            const script = this.bridgeVisibilityScript(changed);
+            controller.runJavaScript(script).then(() => {
+              if (!this.lifetime.current(generation) || controller !== this.controller) return;
+              this.bridgeVisibilityPending = false;
+              if (this.visible) this.installBridge();
+            }).catch(() => {
+              if (this.lifetime.current(generation) && controller === this.controller) this.fail('LOAD_EXCEPTION', 'Bridge visibility update failed');
+            });
+          }
         } catch (_) { this.fail('LOAD_EXCEPTION', 'ArkWeb visibility update failed'); }
       }
       return true;
@@ -123,6 +141,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.attached = false;
     this.renderFailed = false;
     this.documentReady = false;
+    this.bridgeVisibilityPending = false;
     this.controller = new webview.WebviewController();
     this.request = null;
     this.pendingHtmlNavigation = false;
@@ -238,6 +257,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   onPageEnd(value: string): void {
     this.documentReady = true;
     this.emit({ type: 'pageFinished', url: value });
+    this.runScripts('DOM_READY');
     this.runScripts('DOCUMENT_FINISHED');
     this.installBridge();
     this.emitHistory();
@@ -248,15 +268,16 @@ export class GYWebView extends KuiklyRenderBaseView {
     const request = this.request;
     if (!request || request.settings.javaScriptEnabled !== true) return [];
     const scripts: ScriptItem[] = [];
-    if (request.security.appBridgeEnabled || request.security.pageBridgeEnabled) scripts.push({ script: BRIDGE_BOOTSTRAP, scriptRules: ['*'] });
-    request.scripts.filter(script => script.injectionTime === 'DOCUMENT_START').forEach(script =>
+    if (request.security.appBridgeEnabled || request.security.pageBridgeEnabled) scripts.push({ script: `window.__GY_WEBVIEW_VISIBILITY_REVISION__=${this.lifetime.generation};window.__GY_WEBVIEW_VISIBLE__=${this.visible};${BRIDGE_BOOTSTRAP}`, scriptRules: ['*'] });
+    request.scripts.filter(script => script.injectionTime !== 'DOCUMENT_FINISHED').forEach(script =>
       scripts.push({ script: guardedScript(script, request), scriptRules: ['*'] }));
     return scripts;
   }
 
   private runScripts(time: string): void {
     const request = this.request;
-    if (!request || !this.visible || request.settings.javaScriptEnabled !== true) return;
+    if (!request || !this.attached || !this.isRenderActive(this.renderToken) || request.settings.javaScriptEnabled !== true) return;
+    // 初始化不依赖可见性；端口、权限和显式 evaluateJavascript 仍由 visible 撤销。
     const generation = this.lifetime.generation;
     request.scripts.filter(script => script.injectionTime === time).forEach(script => {
       this.controller.runJavaScript(guardedScript(script, request)).catch(() => {
@@ -273,12 +294,18 @@ export class GYWebView extends KuiklyRenderBaseView {
     return request.security.pageBridgeEnabled === true && !!origin(initial) && origin(initial) === origin(value);
   }
 
+  private bridgeVisibilityScript(changed: boolean): string {
+    return `(function(){const revision=${this.lifetime.generation};if((window.__GY_WEBVIEW_VISIBILITY_REVISION__||0)>revision)return;` +
+      `const changed=${changed}||window.__GY_WEBVIEW_VISIBLE__!==${this.visible};window.__GY_WEBVIEW_VISIBILITY_REVISION__=revision;window.__GY_WEBVIEW_VISIBLE__=${this.visible};` +
+      `if(changed)window.dispatchEvent(new Event('GYWebViewVisibility'));})();`;
+  }
+
   private installBridge(): void {
-    if (!this.attached || !this.documentReady || !this.visible || this.lifetime.disposed || this.ports.length > 0) return;
+    if (!this.attached || !this.documentReady || !this.visible || this.bridgeVisibilityPending || !this.isRenderActive(this.renderToken) || this.ports.length > 0) return;
     const currentUrl = this.currentUrl();
     if (!this.bridgeAllowedAt(currentUrl)) return;
     const generation = this.lifetime.generation;
-    this.controller.runJavaScript(BRIDGE_BOOTSTRAP).then(() => {
+    this.controller.runJavaScript(this.bridgeVisibilityScript(false) + BRIDGE_BOOTSTRAP).then(() => {
       if (!this.lifetime.current(generation) || !this.visible || !this.bridgeAllowedAt(this.currentUrl()) ||
         origin(currentUrl) !== origin(this.currentUrl()) || this.ports.length > 0) return;
       try {
@@ -500,6 +527,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   }
   private closePorts(): void { this.ports.forEach(port => { try { port.close(); } catch (_) {} }); this.ports = []; }
   private revokePending(): void {
+    this.bridgeVisibilityPending = false;
     this.lifetime.invalidate(); this.closePorts();
     this.permissionRequests.forEach(request => { try { request.deny(); } catch (_) {} }); this.permissionRequests.clear();
     this.fileResults.forEach(result => { try { result.handleFileList([]); } catch (_) {} }); this.fileResults.clear();

@@ -240,7 +240,8 @@ export function guardedScript(script: WebViewScript, request: WebViewRequest): s
   const suffixes = JSON.stringify(request.security.trustedOrigins.trustedHostSuffixes.filter(item => /^[a-zA-Z0-9.-]+$/.test(item)));
   const guard = script.onlyForTrustedMainFrame !== false ?
     `location.protocol==='https:'&&(${exact}.includes(location.protocol+'//'+location.hostname.toLowerCase().replace(/\\.$/,'')+':'+(location.port||'443'))||${suffixes}.some(function(s){s=s.toLowerCase().replace(/^\\.|\\.$/g,'');return location.hostname===s||location.hostname.endsWith('.'+s)}))` : 'true';
-  const guarded = `if(window===window.top&&(${guard})){${script.source}\n}`;
+  const id = JSON.stringify(script.id);
+  const guarded = `if(window===window.top&&(${guard})){window.__GY_WEBVIEW_SCRIPT_IDS__=window.__GY_WEBVIEW_SCRIPT_IDS__||Object.create(null);if(!Object.prototype.hasOwnProperty.call(window.__GY_WEBVIEW_SCRIPT_IDS__,${id})){window.__GY_WEBVIEW_SCRIPT_IDS__[${id}]=true;${script.source}\n}}`;
   return script.injectionTime === 'DOM_READY' ?
     `(function(){if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',function(){${guarded}},{once:true})}else{${guarded}}})();` : guarded;
 }

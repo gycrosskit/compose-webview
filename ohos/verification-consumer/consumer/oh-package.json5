@@ -1,6 +1,6 @@
 {
   "name": "@gycrosskit/webview-consumer",
-  "version": "0.2.0-rc.5",
+  "version": "0.2.0-rc.8",
   "main": "Index.ets",
   "dependencies": {
     "@gycrosskit/webview": "file:../../webview-native/build/default/outputs/default/WebViewNative.har",
