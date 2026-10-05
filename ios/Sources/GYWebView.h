@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
  * hrv_callWithMethod:params:callback: 提供 reload/stopLoading/goBack/goForward/exitFullscreen/
  * evaluateJavascript；脚本仅对就绪且获授权的可见主文档执行，旧 generation 的结果不再交付。
  * hrv_removeFromSuperview 负责关闭媒体、清除 WKWebView 代理与监听，组件释放后不可复用。
+ * 事件与命令回执的布尔字段保持 JSON Boolean，不能用数字 0/1 代替。
  * onEvent 和脚本结果可能包含完整 URL、文件 URI 与业务正文；宿主不得直接记录敏感数据。
  */
 @interface GYWebView : UIView <KuiklyRenderViewExportProtocol>

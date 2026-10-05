@@ -115,7 +115,10 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (![type isEqual:@"url"] && ![type isEqual:@"html"]) return NO;
     if (!GYString(content[[type isEqual:@"url"] ? @"url" : @"html"])) return NO;
     if (![self validRules:request[@"blockedResourceRules"]] || ![self validRules:policy[@"blockedRules"]]) return NO;
-    for (NSString *key in @[@"appBridgeEnabled", @"pageBridgeEnabled", @"fileChooserEnabled", @"mediaCaptureEnabled"]) if (security[key] && ![security[key] isKindOfClass:NSNumber.class]) return NO;
+    for (NSString *key in @[@"appBridgeEnabled", @"pageBridgeEnabled", @"fileChooserEnabled", @"mediaCaptureEnabled"]) {
+        id value = security[key];
+        if (value && (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID())) return NO;
+    }
     NSDictionary *headers = content[@"additionalHeaders"];
     if (headers) {
         if (![headers isKindOfClass:NSDictionary.class]) return NO;
@@ -180,7 +183,8 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     }
     if (mainFrame) for (NSDictionary *rule in policy[@"blockedRules"]) if (GYRuleMatches(rule, url)) allow = NO;
     if (mainFrame && (GYBool(security, @"appBridgeEnabled", NO) || GYBool(security, @"pageBridgeEnabled", NO)) && ![self bridgeAllowed:url]) allow = NO;
-    [self emit:@{@"type": @"navigation", @"url": url ?: @"", @"isMainFrame": @(mainFrame), @"hasUserGesture": @(gesture), @"target": newWindow ? @"NEW_WINDOW" : @"CURRENT_WINDOW", @"blocked": @(!allow)}];
+    // Objective-C 的 ! / && / 比较表达式是 int，直接 @() 会生成 JSON 0/1，而 wire 要求真正的 Boolean。
+    [self emit:@{@"type": @"navigation", @"url": url ?: @"", @"isMainFrame": @(mainFrame), @"hasUserGesture": @(gesture), @"target": newWindow ? @"NEW_WINDOW" : @"CURRENT_WINDOW", @"blocked": allow ? @NO : @YES}];
     return allow && !self.released;
 }
 - (NSString *)trustExpression {
@@ -253,8 +257,9 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     for (NSDictionary *rule in rules) {
         NSString *type = rule[@"type"], *filter;
         if ([type isEqual:@"contains"]) filter = [NSString stringWithFormat:@".*%@.*", [NSRegularExpression escapedPatternForString:rule[@"value"]]];
-        else filter = [NSString stringWithFormat:@"^[a-zA-Z][a-zA-Z0-9+.-]*://%@%@(?::[0-9]+)?(?:/|$)", [type isEqual:@"hostSuffix"] ? @"(?:[^./]+\\.)*" : @"", [NSRegularExpression escapedPatternForString:GYHost(rule[[type isEqual:@"exactHost"] ? @"host" : @"suffix"])]];
-        [encoded addObject:@{@"trigger": @{@"url-filter": filter, @"url-filter-is-case-sensitive": @([type isEqual:@"contains"] && !GYBool(rule, @"ignoreCase", NO))}, @"action": @{@"type": @"block"}}];
+        // WKContentRuleList 不支持 |；用可选路径和末尾锚点保持 host/port 的边界。
+        else filter = [NSString stringWithFormat:@"^[a-zA-Z][a-zA-Z0-9+.-]*://%@%@(?::[0-9]+)?(/.*)?$", [type isEqual:@"hostSuffix"] ? @"(?:[^./]+\\.)*" : @"", [NSRegularExpression escapedPatternForString:GYHost(rule[[type isEqual:@"exactHost"] ? @"host" : @"suffix"])]];
+        [encoded addObject:@{@"trigger": @{@"url-filter": filter, @"url-filter-is-case-sensitive": ([type isEqual:@"contains"] && !GYBool(rule, @"ignoreCase", NO)) ? @YES : @NO}, @"action": @{@"type": @"block"}}];
     }
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:encoded options:0 error:nil] encoding:NSUTF8StringEncoding];
     WKWebView *owner = self.webView;
@@ -364,13 +369,13 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     WKWebView *owner = self.webView;
     if (self.released) return;
     id result = @NO;
-    if ([method isEqual:@"reload"]) { [owner reload]; result = @(owner != nil); }
+    if ([method isEqual:@"reload"]) { [owner reload]; result = owner ? @YES : @NO; }
     else if ([method isEqual:@"goBack"]) {
         if (self.fullscreen) { [self exitFullscreen:callback fallbackToHistory:YES]; return; }
         result = @(owner.canGoBack); if (owner.canGoBack) [owner goBack];
     }
     else if ([method isEqual:@"goForward"]) { result = @(owner.canGoForward); if (owner.canGoForward) [owner goForward]; }
-    else if ([method isEqual:@"stopLoading"]) { [owner stopLoading]; result = @(owner != nil); }
+    else if ([method isEqual:@"stopLoading"]) { [owner stopLoading]; result = owner ? @YES : @NO; }
     else if ([method isEqual:@"exitFullscreen"]) { [self exitFullscreen:callback fallbackToHistory:NO]; return; }
     else if ([method isEqual:@"evaluateJavascript"]) {
         NSString *script = GYString(GYObject(params)[@"script"]);
