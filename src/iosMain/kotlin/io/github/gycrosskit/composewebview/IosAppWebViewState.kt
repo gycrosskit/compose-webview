@@ -34,6 +34,8 @@ actual class AppWebViewState actual internal constructor() {
     private var webView: WKWebView? = null
 
     private var loadState = IosWebViewLoadState()
+    private var callbackGeneration = 0
+    internal var javascriptAllowed: ((WKWebView) -> Boolean)? = null
 
     actual fun reload() {
         val target = webView ?: return
@@ -76,14 +78,17 @@ actual class AppWebViewState actual internal constructor() {
 
     actual fun evaluateJavascript(script: String, callback: ((String?) -> Unit)?) {
         val target = webView ?: return
+        if (target.hidden || javascriptAllowed?.invoke(target) == false) return
+        val generation = callbackGeneration
         target.evaluateJavaScript(script) { result, _ ->
             // 页面离开或安全配置变化会重建 WKWebView；旧实例的异步结果不能回写新页面。
-            if (isAttached(target)) callback?.invoke(result?.toString())
+            if (generation == callbackGeneration && isAttached(target) && !target.hidden && javascriptAllowed?.invoke(target) != false) callback?.invoke(result?.toString())
         }
     }
 
     /** 绑定新实例，并清除只属于上一实例的声明式内容身份。 */
     internal fun attach(target: WKWebView) {
+        callbackGeneration++
         webView = target
         loadState = IosWebViewLoadState()
         mutableSnapshot.value = snapshot.copy(hasVisibleContent = false)
@@ -93,6 +98,8 @@ actual class AppWebViewState actual internal constructor() {
     /** 只解绑匹配实例，避免旧实例迟到释放时误清理已经重建的新实例。 */
     internal fun detach(target: WKWebView) {
         if (!isAttached(target)) return
+        callbackGeneration++
+        javascriptAllowed = null
         webView = null
         loadState = IosWebViewLoadState()
         mutableSnapshot.value = snapshot.copy(
@@ -145,6 +152,7 @@ actual class AppWebViewState actual internal constructor() {
 
     internal fun pageStarted(target: WKWebView) {
         if (!isAttached(target)) return
+        callbackGeneration++
         mutableSnapshot.value = snapshot.copy(
             currentUrl = target.URL?.absoluteString,
             progress = 0,
@@ -205,6 +213,8 @@ actual class AppWebViewState actual internal constructor() {
      * NSObject 的相等语义仍按原生对象身份判断，同时可以拒绝上一实例的迟到回调。
      */
     internal fun isAttached(target: WKWebView): Boolean = webView == target
+
+    internal fun invalidateJavascriptCallbacks() { callbackGeneration++ }
 
     private fun updateNavigation(target: WKWebView) {
         mutableSnapshot.value = snapshot.copy(

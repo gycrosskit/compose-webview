@@ -13,8 +13,14 @@ class IosWebKitContentRuleEncoderTest {
             WebViewUrlRule.HostSuffix(".SHOP.EXAMPLE."),
         ).toWebKitContentRuleList()
 
-        assertTrue("example\\\\.com(?::[0-9]+)?(?:/|$)" in encoded)
-        assertTrue("(?:[^./]+\\\\.)*shop\\\\.example(?::[0-9]+)?(?:/|$)" in encoded)
+        assertTrue("example\\\\.com(:[0-9]+)?(/.*)?$" in encoded)
+        assertTrue("([^./]+\\\\.)*shop\\\\.example(:[0-9]+)?(/.*)?$" in encoded)
+    }
+
+    @Test fun encodesHttpsSubdomainsWithoutUnsupportedAlternation() {
+        val encoded = listOf(WebViewUrlRule.HostSuffix("jd.com", "https", false)).toWebKitContentRuleList()
+        assertTrue("^https://([^./]+\\\\.)+jd\\\\.com(:[0-9]+)?(/.*)?$" in encoded)
+        assertFalse('|' in encoded)
     }
 
     @Test

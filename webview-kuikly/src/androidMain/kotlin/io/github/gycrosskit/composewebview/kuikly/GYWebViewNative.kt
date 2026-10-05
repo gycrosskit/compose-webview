@@ -5,11 +5,6 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Message
 import android.view.View
-import android.view.ViewGroup
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -25,7 +20,11 @@ import org.json.JSONObject
 import java.util.UUID
 
 /** Kuikly 原生生命周期持有系统 WebView，完全不依赖 Compose 状态或运行时。 */
-class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderViewExport {
+class GYWebViewNative @JvmOverloads constructor(
+    context: Context,
+    private val fullscreenOrientation: Int? = null,
+    private val fullscreenControlsFactory: ((Context, AndroidWebFullscreenActions) -> AndroidWebFullscreenControls)? = null,
+) : FrameLayout(context), IKuiklyRenderViewExport {
     private var request: WebViewRequest? = null
     private var onEvent: KuiklyRenderCallback? = null
     private var webView: WebView? = null
@@ -36,11 +35,7 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
     private var documentToken = UUID.randomUUID().toString()
     private var pageVisible = true
     private var finishedScriptsInjected = false
-    private var fullscreen: View? = null
-    private var fullscreenSystemUiVisibility: Int? = null
-    private var fullscreenBarsVisible: Boolean? = null
-    private var fullscreenBarsBehavior: Int? = null
-    private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
+    private var fullscreenHost: AndroidWebFullscreenHost? = null
     private var capabilities: AndroidWebCapabilities? = null
     private var popupRouter: AndroidPopupRouter? = null
     private val earlyScripts = AndroidEarlyScriptInstaller { owner, metric, duration ->
@@ -52,9 +47,14 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
             try {
                 val next = WebViewWire.decodeRequest(propValue as String)
                 if (next != request && !destroyed) {
-                    releaseWebView()
-                    request = next
-                    createWebView(next)
+                    val previous = request
+                    if (webView != null && !crashed && previous?.copy(navigationPolicy = next.navigationPolicy) == next) {
+                        request = next
+                    } else {
+                        releaseWebView()
+                        request = next
+                        createWebView(next)
+                    }
                 }
             } catch (error: Exception) {
                 releaseWebView()
@@ -64,8 +64,14 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
             true
         }
         "visible" -> {
-            pageVisible = propValue as? Boolean ?: false
-            if (!pageVisible) { callbackGeneration++; webView?.let { capabilities?.release(it) } }
+            val visible = propValue as? Boolean ?: false
+            if (visible != pageVisible) {
+                documentToken = UUID.randomUUID().toString()
+                val owner = webView
+                if (request?.settings?.javaScriptEnabled == true && request?.canUseAppBridgeAt(owner?.url) == true) owner?.evaluateJavascript("window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = ${JSONObject.quote(documentToken)};", null)
+            }
+            pageVisible = visible
+            if (!pageVisible) { callbackGeneration++; webView?.let { capabilities?.release(it) }; popupRouter?.release() }
             visibility = if (pageVisible) View.VISIBLE else View.INVISIBLE
             if (pageVisible) webView?.onResume() else { exitFullscreen(); webView?.onPause() }
             true
@@ -128,9 +134,10 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
             resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES, Color.TRANSPARENT)
         owner.webViewClient = object : AppWebViewClient(object : AppWebViewClient.Listener {
             override fun onPageLoadStarted(url: String?) { if (owner !== webView || destroyed) return;
+                exitFullscreen()
                 initialHtmlNavigation = false
                 finishedScriptsInjected = false
-                callbackGeneration++; documentToken = UUID.randomUUID().toString(); capabilities?.release(owner)
+                callbackGeneration++; documentToken = UUID.randomUUID().toString(); capabilities?.release(owner); popupRouter?.release()
                 emit(WebViewEvent.PageStarted(url)); history(owner) }
             override fun onPageLoadFinished(url: String?) { if (owner !== webView || destroyed) return; emit(WebViewEvent.PageFinished(url)); history(owner) }
             override fun onPageCommitVisible(url: String?) { if (owner !== webView || destroyed) return; emit(WebViewEvent.FirstContentVisible(url)) }
@@ -142,13 +149,13 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
                 }
                 emit(WebViewEvent.LoadFailed(error))
             }
-        }) {
+        }, isOwner = { it === owner && owner === webView && !destroyed }) {
             override fun shouldOverrideUrlLoading(view: WebView, navigation: WebResourceRequest): Boolean =
-                route(WebViewNavigationRequest(navigation.url.toString(), navigation.isForMainFrame, navigation.hasGesture()))
+                if (view !== owner || owner !== webView || destroyed) true else route(WebViewNavigationRequest(navigation.url.toString(), navigation.isForMainFrame, navigation.hasGesture()))
             @Deprecated("Deprecated in Java")
-            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean = route(WebViewNavigationRequest(url, true, false))
+            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean = if (view !== owner || owner !== webView || destroyed) true else route(WebViewNavigationRequest(url, true, false))
             override fun shouldInterceptRequest(view: WebView, resource: WebResourceRequest): WebResourceResponse? =
-                if (request?.blockedResourceRules?.any { it.matches(resource.url.toString()) } == true)
+                if (view !== owner || owner !== webView || destroyed) null else if (request?.blockedResourceRules?.any { it.matches(resource.url.toString()) } == true)
                     WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0))) else null
             override fun onPageCommitVisible(view: WebView, url: String?) { super.onPageCommitVisible(view, url); inject(view, false) }
             override fun onPageFinished(view: WebView, url: String?) { super.onPageFinished(view, url); inject(view, true) }
@@ -156,37 +163,32 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
         owner.webChromeClient = object : AppWebChromeClient(object : AppWebChromeClient.Listener {
             override fun onProgressChanged(progress: Int) { if (owner === webView) emit(WebViewEvent.ProgressChanged(progress)) }
             override fun onReceivedTitle(title: String?, url: String?) { if (owner === webView) emit(WebViewEvent.TitleChanged(title)) }
-        }) {
+        }, isOwner = { it === owner && owner === webView && !destroyed }) {
             override fun onShowFileChooser(view: WebView?, callback: android.webkit.ValueCallback<Array<android.net.Uri>>?, params: FileChooserParams?): Boolean {
+                if (view !== owner || owner !== webView || destroyed) { callback?.onReceiveValue(null); return true }
                 val current = capabilities
                 if (current != null) return current.showFileChooser(view, callback, params)
                 callback?.onReceiveValue(null)
                 return true
             }
             override fun onPermissionRequest(value: PermissionRequest?) { capabilities?.requestMedia(owner, value) ?: value?.deny() }
-            override fun onPermissionRequestCanceled(value: PermissionRequest?) { capabilities?.cancelMedia(value) }
+            override fun onPermissionRequestCanceled(value: PermissionRequest?) { if (owner === webView && !destroyed) capabilities?.cancelMedia(value) }
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean =
-                popupRouter?.createWindow(view, isUserGesture, resultMsg) ?: false
+                view === owner && owner === webView && pageVisible && !destroyed && (popupRouter?.createWindow(view, isUserGesture, resultMsg) ?: false)
             override fun onCloseWindow(window: WebView) { popupRouter?.close(window) }
             override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
                 if (view == null || callback == null) return
-                exitFullscreen()
-                val parent = activity?.window?.decorView as? ViewGroup
-                if (parent == null || !pageVisible) { callback.onCustomViewHidden(); return }
-                fullscreen = view; fullscreenCallback = callback
-                val window = activity?.window
-                fullscreenSystemUiVisibility = parent.systemUiVisibility
-                fullscreenBarsVisible = ViewCompat.getRootWindowInsets(parent)?.isVisible(WindowInsetsCompat.Type.systemBars())
-                if (window != null) {
-                    val controller = WindowCompat.getInsetsController(window, parent)
-                    fullscreenBarsBehavior = controller.systemBarsBehavior
-                    controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                    controller.hide(WindowInsetsCompat.Type.systemBars())
+                if (owner !== webView || destroyed) { callback.onCustomViewHidden(); return }
+                val generation = callbackGeneration
+                val host = fullscreenHost ?: activity?.let { target ->
+                    AndroidWebFullscreenHost(target, fullscreenOrientation, fullscreenControlsFactory) {
+                        if (owner === webView && !destroyed) emit(WebViewEvent.FullscreenChanged(it))
+                    }.also { fullscreenHost = it }
                 }
-                parent.addView(view, ViewGroup.LayoutParams(-1, -1))
-                emit(WebViewEvent.FullscreenChanged(true))
+                if (host == null) callback.onCustomViewHidden()
+                else host.show(owner, view, callback) { owner === webView && pageVisible && !destroyed && !crashed && generation == callbackGeneration && WebViewDiagnostics.isActive(owner) }
             }
-            override fun onHideCustomView() { exitFullscreen() }
+            override fun onHideCustomView() { if (owner === webView && !destroyed) exitFullscreen() }
         }
         earlyScripts.install(owner, current)
         if (current.canUseAppBridgeAt(origin)) owner.installAppWebBridge({ requireNotNull(request) }, { documentToken }) { handler, data ->
@@ -233,30 +235,14 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
 
     private fun emit(event: WebViewEvent) { if (!destroyed) onEvent?.invoke(WebViewWire.eventValues(event)) }
 
-    private fun exitFullscreen(): Boolean {
-        val view = fullscreen ?: return false
-        fullscreen = null
-        val parent = view.parent as? ViewGroup
-        parent?.removeView(view)
-        val window = activity?.window
-        if (parent != null && window != null) {
-            val controller = WindowCompat.getInsetsController(window, parent)
-            fullscreenBarsBehavior?.let { controller.systemBarsBehavior = it }
-            if (fullscreenBarsVisible == true) controller.show(WindowInsetsCompat.Type.systemBars())
-            fullscreenSystemUiVisibility?.let { parent.systemUiVisibility = it }
-        }
-        fullscreenSystemUiVisibility = null; fullscreenBarsVisible = null; fullscreenBarsBehavior = null
-        val callback = fullscreenCallback; fullscreenCallback = null
-        callback?.onCustomViewHidden()
-        emit(WebViewEvent.FullscreenChanged(false))
-        return true
-    }
+    private fun exitFullscreen(): Boolean = fullscreenHost?.hide() ?: false
 
     private fun releaseWebView() {
         callbackGeneration++
         initialHtmlNavigation = false
         finishedScriptsInjected = false
         exitFullscreen()
+        fullscreenHost = null
         val owner = webView ?: return
         webView = null
         popupRouter?.release(); popupRouter = null
@@ -282,4 +268,8 @@ class GYWebViewNative(context: Context) : FrameLayout(context), IKuiklyRenderVie
 }
 
 /** 在宿主 registerExternalRenderView 中调用。 */
-fun IKuiklyRenderExport.registerGYWebView() = renderViewExport(GYWebView.VIEW_NAME, { GYWebViewNative(it) })
+@JvmOverloads
+fun IKuiklyRenderExport.registerGYWebView(
+    fullscreenOrientation: Int? = null,
+    fullscreenControlsFactory: ((Context, AndroidWebFullscreenActions) -> AndroidWebFullscreenControls)? = null,
+) = renderViewExport(GYWebView.VIEW_NAME, { GYWebViewNative(it, fullscreenOrientation, fullscreenControlsFactory) })

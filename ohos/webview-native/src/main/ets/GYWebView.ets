@@ -6,7 +6,9 @@ import { window } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { FullscreenWindowLease, FullscreenWindowPolicy, WindowPolicyController } from '@gycrosskit/system-actions-native';
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
-import { picker } from '@kit.CoreFileKit';
+import { picker, fileIo, fileUri } from '@kit.CoreFileKit';
+import { camera, cameraPicker } from '@kit.CameraKit';
+import { uniformTypeDescriptor } from '@kit.ArkData';
 import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings } from './WebViewWire';
 import { createGYWebView } from './WebViewComponent';
 
@@ -95,6 +97,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   private ports: webview.WebMessagePort[] = [];
   private permissionRequests: Set<PermissionRequest> = new Set();
   private fileResults: Set<FileSelectorResult> = new Set();
+  private captureFiles: Set<string> = new Set();
   private fullscreenHandler: FullScreenExitHandler | null = null;
   private fullscreenLease: FullscreenWindowLease | null = null;
   private fullscreenRevision: number = 0;
@@ -135,6 +138,17 @@ export class GYWebView extends KuiklyRenderBaseView {
       return true;
     }
     if (key !== 'request') return super.setProp(key, value);
+    if (this.request && !this.renderFailed && typeof value === 'string') {
+      try {
+        const next = decodeRequest(value as string, false);
+        if (JSON.stringify(this.request.navigationPolicy) !== JSON.stringify(next.navigationPolicy) &&
+          JSON.stringify(this.request.content) === JSON.stringify(next.content) &&
+          JSON.stringify(this.request.settings) === JSON.stringify(next.settings) &&
+          JSON.stringify(this.request.security) === JSON.stringify(next.security) &&
+          JSON.stringify(this.request.scripts) === JSON.stringify(next.scripts) &&
+          JSON.stringify(this.request.blockedResourceRules) === JSON.stringify(next.blockedResourceRules)) { this.request.navigationPolicy = next.navigationPolicy; return true; }
+      } catch (_) {}
+    }
     this.revokePending();
     this.exitFullscreen();
     if (this.attached) { try { this.controller.stop(); this.controller.stopAllMedia(); } catch (_) {} }
@@ -357,7 +371,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     }
   }
 
-  /** 接管系统选择器，返回 true；无授权、失败或撤销返回空列表，直接拍摄明确不支持。 */
+  /** 接管原生选择/拍摄；结果只结算一次，拍摄临时文件保留到文档撤销，供内核上传读取。 */
   selectFile(event: OnShowFileSelectorEvent): boolean {
     this.fileResults.add(event.result);
     const complete = (files: string[]): void => {
@@ -373,19 +387,67 @@ export class GYWebView extends KuiklyRenderBaseView {
         !current.security.fileChooserEnabled || !trusted(value, current.security)) {
         complete([]); return true;
       }
-      if (event.fileSelector.isCapture()) {
-        complete([]);
-        this.emit({ type: 'capabilityUnsupported', capability: 'FILE_CAPTURE' });
-        return true;
-      }
       const context = (this.getUIContext() as UIContext).getHostContext() as common.UIAbilityContext;
       const generation = this.lifetime.generation;
+      const valid = (): boolean => this.lifetime.current(generation) && this.visible && this.request === current && this.documentReady &&
+        origin(value) === origin(this.currentUrl()) && trusted(this.currentUrl(), current.security);
+      const accepts = event.fileSelector.getAcceptType().flatMap(type => type.split(',')).map(type => type.trim().toLowerCase()).filter(type => !!type);
+      if (event.fileSelector.isCapture()) {
+        const video = accepts.length > 0 && accepts.every(type => type === 'video/*' || type === 'video/mp4');
+        const mime = video ? 'video/mp4' : 'image/jpeg';
+        if (!current.security.mediaCaptureEnabled || (accepts.length > 0 && !accepts.some(type => type === '*/*' || type === mime || type === (video ? 'video/*' : 'image/*')))) {
+          complete([]); return true;
+        }
+        const permissions: Permissions[] = video ? ['ohos.permission.CAMERA', 'ohos.permission.MICROPHONE'] : ['ohos.permission.CAMERA'];
+        abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, permissions).then(async result => {
+          if (!valid()) { complete([]); return; }
+          if (result.authResults.length !== permissions.length || result.authResults.some(state => state !== 0)) {
+            const denied = permissions.filter((_permission, index) => result.authResults[index] === -1 && result.dialogShownResults?.[index] === false);
+            if (denied.length > 0) this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
+            complete([]); return;
+          }
+          const path = `${context.cacheDir}/gy-webview-${util.generateRandomUUID()}${video ? '.mp4' : '.jpg'}`;
+          const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE); fileIo.closeSync(file);
+          this.captureFiles.add(path);
+          const uri = fileUri.getUriFromPath(path);
+          const mediaType = video ? cameraPicker.PickerMediaType.VIDEO : cameraPicker.PickerMediaType.PHOTO;
+          try {
+            const result = await cameraPicker.pick(context, [mediaType], { cameraPosition: camera.CameraPosition.CAMERA_POSITION_BACK, saveUri: uri, videoDuration: 60 });
+            if (!valid()) { this.captureFiles.delete(path); try { fileIo.unlinkSync(path); } catch (_) {} complete([]); return; }
+            const size = fileIo.statSync(path).size;
+            const output = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
+            const header = new ArrayBuffer(12);
+            let bytesRead = 0;
+            try { bytesRead = fileIo.readSync(output.fd, header); } finally { fileIo.closeSync(output); }
+            const bytes = new Uint8Array(header);
+            const mediaMatches = video ? bytesRead >= 12 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70 :
+              bytesRead >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+            const accepted = valid() && result.resultCode === 0 && result.resultUri === uri && result.mediaType === mediaType && mediaMatches && size > 0 && size <= 50 * 1024 * 1024;
+            if (!accepted) { this.captureFiles.delete(path); try { fileIo.unlinkSync(path); } catch (_) {} }
+            complete(accepted ? [uri] : []);
+          } catch (_) { this.captureFiles.delete(path); try { fileIo.unlinkSync(path); } catch (_) {} complete([]); }
+        }).catch(() => complete([]));
+        return true;
+      }
       const options = new picker.DocumentSelectOptions();
-      options.maxSelectNumber = event.fileSelector.getMode() === FileSelectorMode.FileOpenMultipleMode ? 10 : 1;
+      const maxFiles = event.fileSelector.getMode() === FileSelectorMode.FileOpenMultipleMode ? 10 : 1;
+      options.maxSelectNumber = maxFiles;
       new picker.DocumentViewPicker(context).select(options).then(values => {
-        const valid = this.lifetime.current(generation) && this.visible && this.request === current && this.documentReady &&
-          origin(value) === origin(this.currentUrl()) && trusted(this.currentUrl(), current.security);
-        complete(valid ? values : []);
+        if (!valid()) { complete([]); return; }
+        // URI 来自系统 picker；逐个打开核验大小，无法读取的结果不交给内核。
+        const bounded = values.length <= maxFiles && values.every(uri => {
+          const extension = `.${new fileUri.FileUri(uri).name.split('.').pop() || ''}`.toLowerCase();
+          let mimeMatches = accepts.length === 0 || accepts.includes('*/*') || accepts.includes(extension);
+          if (!mimeMatches) {
+            const descriptor = uniformTypeDescriptor.getTypeDescriptor(uniformTypeDescriptor.getUniformDataTypeByFilenameExtension(extension));
+            mimeMatches = accepts.some(type => descriptor.mimeTypes.some(mime =>
+              type.endsWith('/*') ? mime.startsWith(type.slice(0, -1)) : mime === type));
+          }
+          const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+          try { const size = fileIo.statSync(file.fd).size; return mimeMatches && size > 0 && size <= 50 * 1024 * 1024; }
+          finally { fileIo.closeSync(file); }
+        });
+        complete(valid() && bounded ? values : []);
       }).catch(() => complete([]));
       return true;
     } catch (_) {
@@ -531,6 +593,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.lifetime.invalidate(); this.closePorts();
     this.permissionRequests.forEach(request => { try { request.deny(); } catch (_) {} }); this.permissionRequests.clear();
     this.fileResults.forEach(result => { try { result.handleFileList([]); } catch (_) {} }); this.fileResults.clear();
+    this.captureFiles.forEach(path => { try { fileIo.unlinkSync(path); } catch (_) {} }); this.captureFiles.clear();
   }
   onDestroy(): void {
     this.revokePending(); this.lifetime.dispose(); this.eventCallback = null; this.exitFullscreen();

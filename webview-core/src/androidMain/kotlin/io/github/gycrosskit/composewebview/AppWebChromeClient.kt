@@ -9,9 +9,11 @@ import android.webkit.WebView
  * 文件选择、全屏视频等高权限能力不会在这里直接授权；业务 ChromeClient 应在校验页面来源和运行时
  * 权限后自行接管。
  * @param listener 所属实例 UI 线程上的状态回调；页面释放时由壳层清除 Client 引用。
+ * @param isOwner 回执发生时复核当前 owner；默认仍拒绝已释放实例。
  */
 open class AppWebChromeClient(
     private val listener: Listener,
+    private val isOwner: (WebView) -> Boolean = { it.isActiveAppWebView() },
 ) : WebChromeClient() {
 
     /** WebView 壳层关心的 Chrome 事件，默认实现均不改变行为。 */
@@ -24,11 +26,13 @@ open class AppWebChromeClient(
     }
 
     override fun onProgressChanged(view: WebView?, newProgress: Int) {
+        if (view == null || !view.isActiveAppWebView() || !isOwner(view)) return
         listener.onProgressChanged(newProgress.coerceIn(0, 100))
         super.onProgressChanged(view, newProgress)
     }
 
     override fun onReceivedTitle(view: WebView?, title: String?) {
+        if (view == null || !view.isActiveAppWebView() || !isOwner(view)) return
         listener.onReceivedTitle(title, view?.url)
         super.onReceivedTitle(view, title)
     }

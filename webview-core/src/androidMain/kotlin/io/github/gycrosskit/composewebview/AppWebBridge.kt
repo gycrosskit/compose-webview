@@ -31,7 +31,7 @@ fun WebView.installAppWebBridge(
     WebViewDiagnostics.bridge(event = "install", view = this)
     WebViewCompat.addWebMessageListener(this, APP_WEB_BRIDGE_TRANSPORT, setOf("*")) {
         sourceView, message, sourceOrigin, isMainFrame, _ ->
-        if (!sourceView.isActiveAppWebView() ||
+        if (sourceView !== this || !sourceView.isActiveAppWebView() ||
             !request().canReceiveAppBridgeMessage(sourceOrigin.toString(), isMainFrame) ||
             message.type != WebMessageCompat.TYPE_STRING
         ) return@addWebMessageListener

@@ -7,7 +7,7 @@ internal const val FILE_CHOOSER_ALLOWED_FLAG = "__COMPOSE_WEBVIEW_FILE_CHOOSER_A
 internal const val WEB_EVENT_FULLSCREEN_ENTER = "fullscreen:1"
 internal const val WEB_EVENT_FULLSCREEN_EXIT = "fullscreen:0"
 
-/** 文件选择默认关闭，只允许主文档完成后由可信来源门禁显式打开。 */
+/** 旧 iOS 的交互兼容限制，不是安全边界；受控上传必须由 iOS18.4+ WKUIDelegate 决定。 */
 internal val IOS_FILE_CHOOSER_GATE_SCRIPT = """
     (function() {
       window.$FILE_CHOOSER_ALLOWED_FLAG = false;
@@ -26,6 +26,11 @@ internal val IOS_FILE_CHOOSER_GATE_SCRIPT = """
       };
     })();
 """.trimIndent()
+
+/** 仅提供 accept/capture UI 提示；来源、能力、可见性和文档代次仍由原生校验。 */
+internal const val IOS_FILE_INPUT_SCRIPT = """
+JSON.stringify((function(){var input=document.activeElement;return input&&input.tagName==='INPUT'&&input.type==='file'?{accept:input.accept||'',capture:input.hasAttribute('capture')}:{};})())
+"""
 
 /** 仅把既有 Android Bridge 兼容协议转发给 WKScriptMessageHandler，不在脚本中解释业务消息。 */
 internal const val IOS_BRIDGE_SCRIPT = """

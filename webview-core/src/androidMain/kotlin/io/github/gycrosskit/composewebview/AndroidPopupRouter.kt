@@ -17,13 +17,13 @@ class AndroidPopupRouter(
 
     /** 接管 Chromium 临时弹窗并在当前页面路由，返回 false 表示拒绝；临时实例由 close/release 销毁。 */
     fun createWindow(parent: WebView, hasUserGesture: Boolean, resultMessage: Message): Boolean {
-        if (!parent.isActiveAppWebView()) return false
+        if (!parent.isActiveAppWebView() || !parent.isShown) return false
         val transport = resultMessage.obj as? WebView.WebViewTransport ?: return false
         lateinit var popup: WebView
         var routed = false
         fun route(url: String?) {
             val target = url?.takeUnless { it.isBlank() || it == "about:blank" } ?: return
-            if (routed) return
+            if (routed || popup !in popups || !parent.isActiveAppWebView() || !parent.isShown) return
             routed = true
             val current = request()
             val trusted =
@@ -37,7 +37,7 @@ class AndroidPopupRouter(
                     target = WebViewNavigationTarget.NEW_WINDOW,
                 ),
             )
-            if (trusted && decision == WebViewNavigationDecision.ALLOW && parent.isActiveAppWebView()) {
+            if (trusted && decision == WebViewNavigationDecision.ALLOW && popup in popups && parent.isActiveAppWebView() && parent.isShown) {
                 parent.loadUrl(target)
             }
             close(popup)

@@ -2,6 +2,10 @@
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
+本轮候选 Maven/HAR/Pod **0.2.0-rc.9**（尚未发布），Web HAR 精确配套 system-actions-native **0.2.0-rc.4**。修复 CMP 隐藏业务 Bridge、文档/owner 回执隔离，接入原生受控选择与拍摄，并补 HTTPS 子域商城组合规则、policy-only 保留 DOM 和 Android Kuikly 原生全屏宿主控制槽。历史远程验收只证明对应旧版本；新候选需分别通过发布与干净远程消费。
+
+iOS 常规网页最低仍为 15.0；受控文件上传通过公开 `WKUIDelegate.runOpenPanelWithParameters`，要求 iOS18.4+。15～18.3 开启 `fileChooserEnabled` 会明确拒绝并发送 `FILE_CHOOSER` Unsupported；关闭能力时的 DOM 兼容拦截无法保证默认 WebKit 上传被原生隔离。需要这种隔离的页面应使用 18.4+。iOS 视频拍摄输出真实 MOV，仅接受 MP4 时拒绝，不做改名转换。见[完整源码审查与平台边界](docs/完整源码审查.md)。
+
 已发布 Maven / Release HAR **0.2.0-rc.8**：Android Kuikly 与 OHOS 当前文档隐藏时仍完成初始化脚本，恢复可见仅恢复活动状态/Bridge，不重载页面；DOM_READY 与 DOCUMENT_FINISHED 每文档执行一次，保留 JS、可信主文档、旧 owner/render/generation 以及隐藏业务消息/权限门禁。iOS 已有 WKUserScript 与完成回调支持隐藏初始化，Native Pod 保持 `0.2.0-rc.7`。源码回归、JitPack 全制品校验、CMP/Kuikly 干净远程消费与实际 Release HAR 消费通过；Web HAR 的 OHPM 审核中，精确版本仍 NOTFOUND。配套 system-actions HAR rc.3 已从 Registry 实际安装。详见 [rc.8 远程发布验收](docs/0.2.0-rc.8远程发布验收.md)，设备验收独立记录。
 
 已发布 Maven **0.2.0-rc.6**：严格校验 Wire JSON 的布尔、整数、header 与字符串数组类型；iOS 新声明内容重置首航提交标记，失败时重试新页面，同一声明保留站内导航与 POST 的归属。补充输入、重试及原生回调契约测试，完善 Kotlin / ArkTS / Objective-C 公共 API 注释。**已发布；JitPack、公开产物校验与干净远程消费通过**。Native Pod `0.2.0-rc.7` 已发布并通过远程 Git Pod 与 UIKit App 最终链接：修复逻辑表达式装箱为数字造成的 iOS 导航回执异常，补齐真实 JSON Boolean、原生安全开关与 WebKit 规则编译回归。Native Pod 独立升级，Maven 版本保持 `0.2.0-rc.6`，HAR 继续使用 `@gycrosskit/webview@0.2.0-rc.5`（配套 `system-actions-native` `0.2.0-rc.3`）；OHPM Registry 可安装性尚未确认。
@@ -23,6 +27,8 @@ flowchart TB
     Kuikly --> Android
     Kuikly --> IOS
     Kuikly --> OHOS["HarmonyOS ArkWeb / HAR"]
+    Android --> Fullscreen["AndroidWebFullscreenHost：原生视频容器/镜像"]
+    Fullscreen --> Controls["宿主 controlsFactory：原有控件与业务状态"]
     OHOS --> Window["system-actions：共用窗口策略 owner"]
 ```
 
@@ -127,15 +133,15 @@ dependencyResolutionManagement {
 
 ```kotlin
 // CMP Android/iOS
-implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.8")
+implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.9")
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.8")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.9")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖，也不适用于 CMP 入口：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.7'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.9'
 ```
 
 HarmonyOS 安装原生 HAR：
@@ -166,13 +172,13 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 
 - JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTPS 来源；TLS 错误拒绝加载。
 - 导航拦截由预先下发的 `navigationPolicy` 同步判断，事件用于报告结果；`allowedOrigins` 精确匹配 scheme、host 和有效端口。
-- iOS 18.4 以下不能开启原生文件选择；HarmonyOS H5 `capture` 拍摄返回 `CapabilityUnsupported(FILE_CAPTURE)`，不伪装成功或取消。
+- iOS 18.4 以下不能开启受控原生文件选择，返回 `CapabilityUnsupported(FILE_CHOOSER)`；旧系统的 DOM 拦截不能保证原生文件隔离。iOS18.4+ 与 HarmonyOS H5 `capture` 复用系统拍摄能力，核验权限、来源、文档代次、MIME 和大小；取消/失败不回传文件，成功临时文件在文档撤销时清理。
 - 导航、隐藏、请求切换和销毁撤销旧消息端口、系统请求与迟到回调。隐藏不取消当前文档初始化：脚本仍受 JavaScript 开关与可信主文档门禁，显示不会重跑副作用脚本或重载页面。应用负责业务脚本输入编码和页面生命周期。
 
 ## 文档与反馈
 
 - [接入、导航、JSBridge 与迁移](docs/接入指南.md)
-- [源码开发与验证](docs/开发与验证.md)、[验证记录](VALIDATION.md)
+- [源码开发与验证](docs/开发与验证.md)、[验证记录](VALIDATION.md)、[完整源码审查](docs/完整源码审查.md)、[rc.9 候选验收](docs/0.2.0-rc.9候选验收.md)
 - [版本发布](https://github.com/gycrosskit/compose-webview/releases)、[问题反馈](https://github.com/gycrosskit/compose-webview/issues)
 
 由 GY CrossKit 维护。反馈请附组件版本、平台/系统版本、最小复现和脱敏日志；修复通过 PR 提交。

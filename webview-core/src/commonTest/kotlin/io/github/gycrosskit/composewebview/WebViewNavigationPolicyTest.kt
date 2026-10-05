@@ -6,6 +6,26 @@ import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 
 class WebViewNavigationPolicyTest {
+    @Test fun mallUserInfoIsAnOptionalStrictCondition() {
+        val rule = WebViewUrlRule.HostSuffix("jd.com", "https", false, rejectUserInfo = true)
+        for (url in listOf("https://user@shop.jd.com/a", "https://user:password@shop.jd.com", "https://@shop.jd.com", "https://:@shop.jd.com", "https://shop.jd.com.evil/a", "https://shop.jd.com..", "https://shop..jd.com", "http://shop.jd.com", "https://jd.com")) assertFalse(rule.matches(url), url)
+        assertTrue(rule.matches("https://shop.jd.com:8443/path"))
+        assertTrue(rule.copy(rejectUserInfo = false).matches("https://user@shop.jd.com/path"))
+        val request = WebViewRequest(WebViewContent.Url("https://safe.example"), navigationPolicy = WebViewNavigationPolicy(blockedRules = listOf(rule)))
+        assertEquals(request, WebViewWire.decodeRequest(WebViewWire.encodeRequest(request)))
+    }
+
+    @Test fun mallSchemeAndSubdomainRuleRoundTripsAndCombinesWithOriginPolicy() {
+        val rule = WebViewUrlRule.HostSuffix("jd.com", scheme = "https", includeRoot = false)
+        val request = WebViewRequest(WebViewContent.Url("https://safe.example"), navigationPolicy = WebViewNavigationPolicy(
+            allowedOrigins = setOf("https://safe.example", "https://shop.jd.com", "https://jd.com"), blockedRules = listOf(rule)))
+        assertEquals(request, WebViewWire.decodeRequest(WebViewWire.encodeRequest(request)))
+        for (url in listOf("https://shop.jd.com/item", "HTTPS://SHOP.JD.COM:443/item", "https://a.b.jd.com/item")) assertTrue(rule.matches(url), url)
+        for (url in listOf("http://shop.jd.com/item", "https://jd.com/item", "https://shop.jd.com.evil/item", "https://eviljd.com/item")) assertFalse(rule.matches(url), url)
+        assertTrue(request.allowsNavigation(WebViewNavigationRequest("https://jd.com/item", true, false)))
+        assertFalse(request.allowsNavigation(WebViewNavigationRequest("https://shop.jd.com/item", true, false)))
+        assertFalse(request.allowsNavigation(WebViewNavigationRequest("https://other.example/item", true, false)))
+    }
     @Test fun navigationOriginsDoNotGrantBridgeAndRemainIndependentOfJavascript() {
         for (javascript in listOf(false, true)) {
             val request = WebViewRequest(

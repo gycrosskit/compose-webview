@@ -18,9 +18,11 @@ import android.webkit.WebViewClient
  * [Listener.onPageLoadFailed] 汇总。一次导航最多派发一次失败，避免多个系统回调重复刷新 UI。
  * UI 线程创建和接收原生回调；所属实例释放后不复用。
  * @property listener 当前原生实例的状态回调，继承实现应继续转发该合同。
+ * @param isOwner 回执发生时复核当前 owner；默认仍拒绝已释放实例。
  */
 open class AppWebViewClient(
     protected val listener: Listener,
+    private val isOwner: (WebView) -> Boolean = { it.isActiveAppWebView() },
 ) : WebViewClient() {
 
     /** 接收主帧加载状态；实现方不应在回调中直接持有 WebView。 */
@@ -40,16 +42,18 @@ open class AppWebViewClient(
 
     /** 系统可能先报告错误再回调 onPageFinished，因此暂存到本轮主框架导航结束。 */
     private var pendingError: WebViewLoadError? = null
+    private var callbackOwner: WebView? = null
     /** SSL、渲染进程和结束回调可能报告同一失败，只允许向状态层派发一次。 */
     private var failureDispatched = false
     /** 极少数旧内核不回调 commit visible，完成时需要补发一次首屏可见。 */
     private var commitVisibleDispatched = false
 
     override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-        if (!view.isActiveAppWebView()) {
+        if (!view.isActiveAppWebView() || !isOwner(view)) {
             WebViewDiagnostics.ignoredCallback(view, "client-page-start")
             return
         }
+        callbackOwner = view
         pendingError = null
         failureDispatched = false
         commitVisibleDispatched = false
@@ -59,7 +63,7 @@ open class AppWebViewClient(
     }
 
     override fun onPageFinished(view: WebView, url: String?) {
-        if (!view.isActiveAppWebView()) {
+        if (!view.isActiveAppWebView() || !isOwner(view)) {
             WebViewDiagnostics.ignoredCallback(view, "client-page-finish")
             return
         }
@@ -75,7 +79,7 @@ open class AppWebViewClient(
     }
 
     override fun onPageCommitVisible(view: WebView, url: String?) {
-        if (!view.isActiveAppWebView()) {
+        if (!view.isActiveAppWebView() || !isOwner(view)) {
             WebViewDiagnostics.ignoredCallback(view, "client-page-commit-visible")
             return
         }
@@ -88,6 +92,7 @@ open class AppWebViewClient(
         request: WebResourceRequest,
         error: WebResourceError,
     ) {
+        if (!view.isActiveAppWebView() || !isOwner(view)) return
         WebViewErrorHelper.fromResourceError(request, error)?.let {
             pendingError = it
             WebViewDiagnostics.loadFailure(view, it)
@@ -100,6 +105,7 @@ open class AppWebViewClient(
         request: WebResourceRequest,
         errorResponse: WebResourceResponse,
     ) {
+        if (!view.isActiveAppWebView() || !isOwner(view)) return
         WebViewErrorHelper.fromHttpError(request, errorResponse)?.let {
             pendingError = it
             WebViewDiagnostics.loadFailure(view, it)
@@ -109,6 +115,7 @@ open class AppWebViewClient(
 
     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
         handler.cancel()
+        if (!view.isActiveAppWebView() || !isOwner(view)) return
         val loadError = WebViewErrorHelper.fromSslError(error.url)
         pendingError = loadError
         WebViewDiagnostics.loadFailure(view, loadError)
@@ -117,6 +124,7 @@ open class AppWebViewClient(
     }
 
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        if (!view.isActiveAppWebView() || !isOwner(view)) return true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val loadError = WebViewErrorHelper.fromRenderProcessGone(detail.didCrash())
             pendingError = loadError
@@ -132,6 +140,7 @@ open class AppWebViewClient(
      * 与系统错误共用单次派发保护，同一轮导航中重复调用只通知一次。
      */
     fun reportFailure(error: WebViewLoadError) {
+        callbackOwner?.let { if (!it.isActiveAppWebView() || !isOwner(it)) return }
         pendingError = error
         dispatchFailure(error)
     }

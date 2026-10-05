@@ -19,6 +19,10 @@ class Intent(val action:String?=null) {
 }
 class ClipData(val values:List<Uri>) { val itemCount get()=values.size; fun getItemAt(index:Int)=Item(values[index]);data class Item(val uri:Uri) }
 ''',
+ 'ContentResolver.kt': '''package android.content
+class ContentResolver { var mime="application/pdf";var size=16L;fun getType(uri:android.net.Uri)=mime;fun openFileDescriptor(uri:android.net.Uri,mode:String)=Descriptor(size) }
+class Descriptor(val statSize:Long):java.io.Closeable { override fun close(){} }
+''',
 'Build.kt': '''package android.os
 object Build { object VERSION { var SDK_INT=32 } }
 object Environment { const val DIRECTORY_MOVIES="Movies";const val DIRECTORY_PICTURES="Pictures" }
@@ -55,6 +59,7 @@ import java.io.File
 import androidx.activity.result.Registry
 class ComponentActivity:android.app.Activity() {
  val activityResultRegistry=Registry();val ui=ArrayDeque<()->Unit>();var queueUi=false
+ val contentResolver=android.content.ContentResolver()
  val cacheDir=File("build/remote-library-review/capture");val packageName="fixture"
  fun getExternalFilesDir(value:String):File?=null
  fun runOnUiThread(action:()->Unit) { if(queueUi) ui.add(action) else action() }
@@ -64,7 +69,7 @@ class ComponentActivity:android.app.Activity() {
 'FileProvider.kt': '''package androidx.core.content
 import java.io.File
 import android.net.Uri
-object FileProvider { fun getUriForFile(context:Any,authority:String,file:File)=Uri("content://capture") }
+object FileProvider { var lastFile:File?=null;fun getUriForFile(context:Any,authority:String,file:File):Uri {lastFile=file;return Uri("content://capture")} }
 ''',
 'ContractBoundary.kt': '''package io.github.gycrosskit.composewebview
 class WebViewRequest(val security:Security=Security())

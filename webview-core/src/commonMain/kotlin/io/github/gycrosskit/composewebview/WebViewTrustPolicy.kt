@@ -1,7 +1,5 @@
 package io.github.gycrosskit.composewebview
 
-import io.ktor.http.Url
-
 /**
  * 高权限能力的 HTTPS 来源白名单，路径、查询参数和 fragment 不参与授权。
  *
@@ -37,20 +35,15 @@ class WebViewTrustPolicy(
         }
     }
 
-    /** AndroidX WebKit document-start API 可表达的 HTTPS 来源规则。 */
-    internal fun documentStartOriginRules(): Set<String> = buildSet {
-        origins.forEach { origin ->
-            add(
-                if (origin.port == HTTPS_DEFAULT_PORT) {
-                    "$HTTPS_SCHEME://${origin.host}"
-                } else {
-                    "$HTTPS_SCHEME://${origin.host}:${origin.port}"
-                },
-            )
-        }
-        hostSuffixes.forEach { suffix ->
-            add("$HTTPS_SCHEME://$suffix")
-            add("$HTTPS_SCHEME://*.$suffix")
+    /** AndroidX 省略端口只匹配443，域后缀不限端口时使用全来源包装，业务体仍先检查主帧和可信 HTTPS。 */
+    internal fun documentStartOriginRules(): Set<String> {
+        if (hostSuffixes.isNotEmpty()) return setOf("*")
+        return buildSet {
+            origins.forEach { origin ->
+                val port = if (origin.port == HTTPS_DEFAULT_PORT) "" else ":${origin.port}"
+                add("$HTTPS_SCHEME://${origin.host}$port")
+                if (!origin.host.startsWith('[')) add("$HTTPS_SCHEME://${origin.host}.$port")
+            }
         }
     }
 
@@ -58,11 +51,15 @@ class WebViewTrustPolicy(
     internal fun javascriptTrustExpression(): String {
         val exact = origins.joinToString(" || ") { origin ->
             val port = origin.port.toString()
-            "(location.hostname === '${origin.host}' && " +
+            "((location.hostname === '${origin.host}' || location.hostname === '${origin.host}.') && " +
                 "(location.port || '$HTTPS_DEFAULT_PORT') === '$port')"
         }
         val suffixes = hostSuffixes.joinToString(" || ") { suffix ->
-            "(location.hostname === '$suffix' || location.hostname.endsWith('.$suffix'))"
+            // 页面可改写 String.prototype；晚于页面脚本的兼容注入不能信任这些方法。
+            "(function(h) { var s = '$suffix', n = h.length; if (h[n - 1] === '.') n--; " +
+                "if (n < s.length || (n > s.length && h[n - s.length - 1] !== '.')) return false; " +
+                "for (var i = 0; i < s.length; i++) if (h[n - s.length + i] !== s[i]) return false; " +
+                "return true; })(location.hostname)"
         }
         val hostExpression = listOf(exact, suffixes).filter(String::isNotBlank).joinToString(" || ")
         return if (hostExpression.isBlank()) {
@@ -81,11 +78,10 @@ class WebViewTrustPolicy(
         "WebViewTrustPolicy(origins=${origins.size}, hostSuffixes=${hostSuffixes.size})"
 
     private fun originOf(value: String): WebViewOrigin? = runCatching {
-        val parsed = Url(value.trim())
-        val scheme = parsed.protocol.name.lowercase()
-        val host = parsed.host.lowercase().trimEnd('.')
-        if (scheme != HTTPS_SCHEME || host.isBlank()) return null
-        WebViewOrigin(scheme = scheme, host = host, port = parsed.port)
+        val parsed = value.toHttpOrigin() ?: return null
+        if (parsed.scheme != HTTPS_SCHEME || (normalizeHostSuffix(parsed.host) == null &&
+            !(parsed.host.contains(':') && parsed.host.matches(Regex("\\[[0-9a-f:.]+]"))))) return null
+        WebViewOrigin(scheme = parsed.scheme, host = parsed.host, port = parsed.port)
     }.getOrNull()
 
     private fun normalizeHostSuffix(value: String): String? = value

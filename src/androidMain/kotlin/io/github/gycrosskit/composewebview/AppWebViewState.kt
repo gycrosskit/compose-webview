@@ -36,6 +36,8 @@ actual class AppWebViewState actual internal constructor() {
     private var backInterceptor: (() -> Boolean)? = null
     /** 标记因渲染进程退出而失效的实例，释放时据此避开不安全的平台调用。 */
     private var renderProcessGoneWebView: WebView? = null
+    private var callbackGeneration = 0
+    internal var javascriptAllowed: ((WebView) -> Boolean)? = null
 
     /**
      * 重新加载当前内容。渲染进程崩溃时会重建 WebView，其余情况调用实例的 `reload()`。
@@ -77,14 +79,16 @@ actual class AppWebViewState actual internal constructor() {
      */
     actual fun evaluateJavascript(script: String, callback: ((String?) -> Unit)?) {
         val target = webView ?: return
-        if (!target.isActiveAppWebView()) return
+        if (!target.isActiveAppWebView() || target.visibility != android.view.View.VISIBLE || javascriptAllowed?.invoke(target) == false) return
+        val generation = callbackGeneration
         target.evaluateJavascript(script) { result ->
-            if (webView === target && target.isActiveAppWebView()) callback?.invoke(result)
+            if (generation == callbackGeneration && webView === target && target.isActiveAppWebView() && target.visibility == android.view.View.VISIBLE && javascriptAllowed?.invoke(target) != false) callback?.invoke(result)
         }
     }
 
     /** 绑定新建实例并重置仅属于上一个实例的内容加载记录。 */
     internal fun attach(target: WebView) {
+        callbackGeneration++
         webView = target
         defaultUserAgent = target.settings.userAgentString
         appliedConfig = null
@@ -116,6 +120,8 @@ actual class AppWebViewState actual internal constructor() {
     internal fun detach(target: WebView) {
         if (renderProcessGoneWebView === target) renderProcessGoneWebView = null
         if (webView !== target) return
+        callbackGeneration++
+        javascriptAllowed = null
         webView = null
         defaultUserAgent = null
         appliedConfig = null
@@ -125,6 +131,7 @@ actual class AppWebViewState actual internal constructor() {
 
     /** 新主框架导航开始时清空上一页标题和错误，但保留声明式内容身份。 */
     internal fun onLoadStarted(url: String?) {
+        callbackGeneration++
         if (renderProcessGoneWebView === webView) renderProcessGoneWebView = null
         mutableSnapshot = snapshot.copy(
             title = null,
@@ -184,6 +191,8 @@ actual class AppWebViewState actual internal constructor() {
     internal fun installBackInterceptor(interceptor: (() -> Boolean)?) {
         backInterceptor = interceptor
     }
+
+    internal fun invalidateJavascriptCallbacks() { callbackGeneration++ }
 
     /** 释放端据此避开已经失效的 Chromium 进程调用。 */
     internal fun isRenderProcessGone(target: WebView): Boolean =

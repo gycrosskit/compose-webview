@@ -59,6 +59,27 @@ class IosWebViewNavigationTest {
         assertEquals(1, fixture.blocked)
     }
 
+    @Test fun `only accepted current main documents revoke old tokens before native allow`() {
+        var tokens = 0
+        var active = true
+        fun decide(url: String, main: Boolean = true, blocked: Boolean = false) = completeIosWebNavigation(
+            WebViewNavigationRequest(url, main, false), blocked, { active },
+            { WebViewNavigationDecision.ALLOW }, {}, {}, { tokens++ },
+        )
+        // 首次内部 HTML、同源跳转、重定向和 reload 都经过同一提交点。
+        for (url in listOf("about:blank", "https://safe.test/page", "https://safe.test/redirect", "https://safe.test/redirect")) {
+            val before = tokens
+            assertEquals(WebViewNavigationDecision.ALLOW, decide(url))
+            assertEquals(before + 1, tokens)
+        }
+        assertEquals(WebViewNavigationDecision.ALLOW, decide("https://safe.test/frame", main = false))
+        assertEquals(4, tokens)
+        assertEquals(WebViewNavigationDecision.BLOCK, decide("https://foreign.test", blocked = true))
+        active = false
+        assertEquals(WebViewNavigationDecision.BLOCK, decide("https://safe.test/late"))
+        assertEquals(4, tokens)
+    }
+
     private fun assertDiscarded(invalidate: NavigationFixture.() -> Unit) {
         val fixture = NavigationFixture()
         // 对应 evaluateJavaScript 已发起但其 completion 尚未执行的窗口。
