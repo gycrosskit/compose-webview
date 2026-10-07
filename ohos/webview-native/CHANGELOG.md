@@ -1,3 +1,10 @@
+# 0.2.0-rc.11
+
+- 业务脚本允许明确 pageBridge 的初始 HTTP(S) 同源主文档，保留 frame、nonce 和文档代次门禁，不授予文件/媒体高权限。
+- 增加 navigationPolicy.allowedUrls 完整 URL 原字符串白名单，与 scheme、origin、blockedRules 同步组合，不影响子资源。
+- 补齐 CMP/Kuikly iOS 与 OHOS 原生透明背景，保留 rc.10 的 OhosWebViewDataCleaner。
+- Maven、Native Git Pod 与 HAR 统一 rc.11；system-actions-native 仍精确 rc.4。
+
 # 0.2.0-rc.10（候选，尚未发布）
 
 - 导出无状态 `OhosWebViewDataCleaner`：资源缓存与网站数据分别清理；等待 Cookie 删除回执，保留系统异常。
