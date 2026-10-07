@@ -96,6 +96,7 @@ internal actual fun PlatformAppWebView(
         bridgeToken[0] = UUID.randomUUID().toString()
         state.webView?.evaluateJavascript("window.__GY_WEBVIEW_DOCUMENT_TOKEN__='${bridgeToken[0]}';", null)
         if (!visible) {
+            state.pageMessageChannels?.revoke()
             state.webView?.let { capabilities?.release(it) }
             popupRouter.release()
             fullscreenController?.hide()
@@ -111,7 +112,9 @@ internal actual fun PlatformAppWebView(
     }
 
     // 高权限来源集合变化时重建实例，保证旧页面的 Bridge/Client 不继续服务新安全边界。
-    key(request.security, request.scripts, request.settings.javaScriptEnabled, request.navigationPolicy) {
+    key(request.security, request.scripts, request.settings.javaScriptEnabled, request.navigationPolicy,
+        request.pageMessageChannels, request.content.takeIf { request.pageMessageChannels.isNotEmpty() }) {
+        val channelOwners = remember { mutableMapOf<WebView, AndroidPageMessageChannels>() }
         AppWebView(
             content = request.content,
             visible = visible,
@@ -131,6 +134,7 @@ internal actual fun PlatformAppWebView(
                         popupRouter.release()
                     },
                     documentToken = { bridgeToken[0] },
+                    pageMessageChannels = { channelOwners[owner] },
                     isOwner = { it === owner && state.isAttached(owner) },
                     isOwnerCallback = { state.isAttached(owner) },
                 )
@@ -195,6 +199,15 @@ internal actual fun PlatformAppWebView(
                 state.javascriptAllowed = { currentRequest.canEvaluateJavascriptAt(it.url) }
                 fullscreenController?.attach(this)
                 earlyScriptInstaller.install(this, currentRequest)
+                if (currentRequest.pageMessageChannels.isNotEmpty()) {
+                    val owner = this
+                    val session = AndroidPageMessageChannels(
+                        owner, { currentRequest }, { currentVisible && state.isAttached(owner) },
+                    ) { currentCallbacks.onEvent(it) }
+                    channelOwners[owner] = session
+                    state.pageMessageChannels = session
+                    if (!currentVisible) session.revoke()
+                }
                 if (currentRequest.canUseAppBridgeAt(currentRequest.content.initialOrigin())) {
                     val owner = this
                     installAppWebBridge(request = { currentRequest }, documentToken = { bridgeToken[0] }) { handlerName, data ->
@@ -206,6 +219,10 @@ internal actual fun PlatformAppWebView(
                 }
             },
             onRelease = {
+                channelOwners.remove(it)?.revoke()
+                if (state.webView === it) {
+                    state.pageMessageChannels = null
+                }
                 capabilities?.release(it)
                 fullscreenController?.hide()
                 fullscreenController?.detach(it)
@@ -223,6 +240,7 @@ private fun commonWebViewClient(
     callbacks: () -> WebViewCallbacks,
     onDocumentChanged: (WebView) -> Unit,
     documentToken: () -> String,
+    pageMessageChannels: () -> AndroidPageMessageChannels?,
     isOwner: (WebView) -> Boolean,
     isOwnerCallback: () -> Boolean,
 ) = object : AppWebViewClient(
@@ -247,6 +265,7 @@ private fun commonWebViewClient(
 
         override fun onPageLoadFailed(error: WebViewLoadError) {
             if (!isOwnerCallback()) return
+            pageMessageChannels()?.revoke()
             listener.onPageLoadFailed(error)
             callbacks().onEvent(WebViewEvent.LoadFailed(error))
         }
@@ -257,6 +276,7 @@ private fun commonWebViewClient(
 
     override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
         if (!isOwner(view)) return
+        pageMessageChannels()?.onPageStarted(url)
         initialHtmlNavigation = false
         onDocumentChanged(view)
         super.onPageStarted(view, url, favicon)
@@ -267,6 +287,7 @@ private fun commonWebViewClient(
         val internalHtmlLoad = initialHtmlNavigation && navigation.isInternalHtmlInitialNavigation()
         if (navigation.isMainFrame) initialHtmlNavigation = false
         val blocked = shouldBlockNavigation(navigation, request(), callbacks(), internalHtmlLoad)
+        if (!blocked && navigation.isMainFrame && !internalHtmlLoad && isOwner(view)) pageMessageChannels()?.revoke()
         if (!blocked && navigation.isMainFrame && isOwner(view)) onDocumentChanged(view)
         return blocked || !isOwner(view)
     }

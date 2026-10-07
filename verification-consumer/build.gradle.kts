@@ -9,6 +9,7 @@ val renderFrameworkDir = providers.gradleProperty("renderFrameworkDir").orNull
 val simRenderFrameworkDir = providers.gradleProperty("simRenderFrameworkDir").orNull
 val verifyCmp = providers.gradleProperty("verifyCmp").orElse("false").get().toBoolean()
 val verifyNavigation = providers.gradleProperty("verifyNavigation").orElse("false").get().toBoolean()
+val verifyPageChannels = providers.gradleProperty("verifyPageChannels").orElse("false").get().toBoolean()
 if (verifyCmp) apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 kotlin {
     androidTarget { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11) } }
@@ -27,6 +28,10 @@ kotlin {
     }
     ohosArm64 { binaries.sharedLib { baseName = "webview_consumer" } }
     sourceSets {
+        if (verifyPageChannels) {
+            commonMain.get().kotlin.srcDir("src/pageChannelsMain/kotlin")
+            if (!verifyCmp) commonMain.get().kotlin.srcDir("src/pageChannelsKuiklyMain/kotlin")
+        }
         commonMain.dependencies {
             implementation("com.github.gycrosskit.compose-webview:webview-core:$componentVersion")
             if (!verifyCmp) implementation("com.github.gycrosskit.compose-webview:webview-kuikly:$componentVersion")
@@ -35,6 +40,7 @@ kotlin {
         val cmpMain = if (verifyCmp) create("cmpMain") {
             dependsOn(commonMain.get())
             if (verifyNavigation) kotlin.srcDir("src/navigationMain/kotlin")
+            if (verifyPageChannels) kotlin.srcDir("src/pageChannelsCmpMain/kotlin")
             dependencies {
                 implementation("com.github.gycrosskit.compose-webview:compose-webview:$componentVersion")
                 implementation("org.jetbrains.compose.runtime:runtime:1.10.3")

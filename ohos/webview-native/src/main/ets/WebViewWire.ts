@@ -95,6 +95,7 @@ export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: s
 export interface WebViewRequest {
   content: WebViewContent; settings: WebViewSettings; security: WebViewSecurity;
   scripts: WebViewScript[]; blockedResourceRules: WebViewUrlRule[]; navigationPolicy: NavigationPolicy;
+  pageMessageChannels?: string[];
 }
 
 /** 规范化 HTTP/HTTPS origin 为显式有效端口；凭据、无效 URL 或端口返回空字符串。 */
@@ -179,6 +180,22 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
     !request.navigationPolicy || !Array.isArray(request.navigationPolicy.allowedSchemes) ||
     !Array.isArray(request.navigationPolicy.blockedRules) || !Array.isArray(request.scripts) || !Array.isArray(request.blockedResourceRules)) {
     throw new Error('Invalid WebViewRequest');
+  }
+  if (request.pageMessageChannels !== undefined) {
+    if (!Array.isArray(request.pageMessageChannels) || request.pageMessageChannels.some(item => typeof item !== 'string')) {
+      throw new Error('Invalid page message channels');
+    }
+    const reserved = ['window', 'self', 'top', 'parent', 'frames', 'document', 'location', 'navigator', 'webkit',
+      'globalThis', 'console', 'history', 'performance', 'JSON', 'Object', 'Array', 'Function', 'Promise', 'eval',
+      'undefined', 'NaN', 'Infinity', 'onmessage', 'postMessage', 'name', 'constructor', 'prototype',
+      'JSAndroidBridge', 'WebViewJavascriptBridge'];
+    if (request.pageMessageChannels.length > 16 || new Set(request.pageMessageChannels).size !== request.pageMessageChannels.length ||
+      request.pageMessageChannels.some(channel => !/^[a-zA-Z][a-zA-Z0-9_]{0,79}$/.test(channel) ||
+        reserved.includes(channel) || channel.startsWith('ComposeWebView') || channel.startsWith('GYWebView'))) {
+      throw new Error('Invalid page message channels');
+    }
+    const initial = request.content.type === 'url' ? request.content.url || '' : request.content.baseUrl || '';
+    if (request.pageMessageChannels.length > 0 && !origin(initial)) throw new Error('Page message channels require HTTP(S)');
   }
   if (request.navigationPolicy.allowedOrigins !== undefined && !Array.isArray(request.navigationPolicy.allowedOrigins)) throw new Error('Invalid allowed origins');
   request.navigationPolicy.allowedOrigins?.forEach(item => {

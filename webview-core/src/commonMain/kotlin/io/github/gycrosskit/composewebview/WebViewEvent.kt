@@ -68,6 +68,8 @@ sealed interface WebViewEvent {
      * @property value 原始处理器名称与业务正文，可能含敏感字段。
      */
     data class BridgeMessage(val value: WebViewBridgeMessage) : WebViewEvent
+    /** 初始主文档的具名消息；replyId 由组件持有，单次使用且在文档/实例/可见性撤销后失效。 */
+    data class PageMessage(val channel: String, val data: String, val replyId: String) : WebViewEvent
     /**
      * 网页进入或退出 H5 自定义全屏，宿主可同步 Window 与控制层。
      * @property isFullscreen 是否处于全屏。
@@ -115,6 +117,7 @@ sealed interface WebViewEvent {
 enum class WebViewCapability {
     FILE_CHOOSER,
     FILE_CAPTURE,
+    PAGE_MESSAGE_CHANNEL,
 }
 
 /** H5 可以申请、且需要在设置提示中向用户解释的系统能力。 */

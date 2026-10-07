@@ -9,7 +9,9 @@ cache=Path(os.environ.get('GRADLE_USER_HOME',str(Path.home()/'.gradle')))/'cache
 catalog=Path('gradle/libs.versions.toml').read_text()
 kotlin=re.search(r'^kotlin = "([^"]+)"',catalog,re.M).group(1)
 ktor=re.search(r'^ktor = "([^"]+)"',catalog,re.M).group(1)
+serialization=re.search(r'^serialization = "([^"]+)"',catalog,re.M).group(1)
 groups=[('org.jetbrains.kotlin','kotlin-stdlib',kotlin)]+[('io.ktor',name,ktor) for name in ('ktor-http-jvm','ktor-utils-jvm','ktor-io-jvm')]
+groups += [('org.jetbrains.kotlinx', 'kotlinx-serialization-json-jvm', serialization)]
 jars=[]
 seen=set()
 def add_runtime(group,artifact,version):
@@ -37,3 +39,5 @@ java -cp "build/early-scripts:$classpath" ExportScript > build/early-scripts/pro
 node verification/early-scripts/verify.cjs build/early-scripts/production.js
 java -cp "build/early-scripts:$classpath" ExportScript page > build/early-scripts/page.js
 node verification/early-scripts/verify.cjs build/early-scripts/page.js page
+java -cp "build/early-scripts:$classpath" ExportScript channels > build/early-scripts/channels.js
+node verification/early-scripts/page-messages.cjs build/early-scripts/channels.js

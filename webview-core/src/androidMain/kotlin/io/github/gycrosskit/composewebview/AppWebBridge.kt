@@ -4,6 +4,93 @@ import android.webkit.WebView
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import androidx.webkit.JavaScriptReplyProxy
+import java.util.UUID
+
+/** 每个物理 WebView 只服务一次页面加载；撤销后不能同名重装，旧 JS 对象会按名称路由新 listener。 */
+class AndroidPageMessageChannels(
+    private val owner: WebView,
+    private val request: () -> WebViewRequest,
+    private val isOwner: () -> Boolean,
+    private val onEvent: (WebViewEvent) -> Unit,
+) {
+    private val initialRequest = request()
+    private val initialUrl = initialRequest.content.initialOrigin()
+    private val channels = initialRequest.pageMessageChannels.toSet()
+    private val proxies = mutableMapOf<String, JavaScriptReplyProxy>()
+    private val replies = mutableMapOf<String, JavaScriptReplyProxy>()
+    private var active = initialRequest.canUsePageMessageChannelsAt(initialUrl)
+    private var started = false
+    private val installed = mutableSetOf<String>()
+
+    init {
+        if (active && !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            active = false
+            onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL))
+        }
+        if (active) try {
+            val origin = requireNotNull(initialUrl?.toHttpOrigin())
+            val rules = buildSet {
+                add("${origin.scheme}://${origin.host}:${origin.port}")
+                if (!origin.host.startsWith('[')) add("${origin.scheme}://${origin.host}.:${origin.port}")
+            }
+            for (channel in channels) {
+                WebViewCompat.addWebMessageListener(owner, channel, rules) {
+                    view, message, origin, mainFrame, proxy ->
+                    if (view !== owner || !allowed() || !mainFrame ||
+                        initialUrl?.toHttpOrigin() != origin.toString().toHttpOrigin() ||
+                        message.type != WebMessageCompat.TYPE_STRING
+                    ) return@addWebMessageListener
+                    val data = message.data ?: return@addWebMessageListener
+                    if (!isValidPageMessageData(data)) return@addWebMessageListener
+                    val previous = proxies[channel]
+                    // 一个主文档/通道只有一个 proxy；不同 proxy 表示文档身份已改变。
+                    if (previous != null && previous !== proxy) {
+                        revoke()
+                        return@addWebMessageListener
+                    }
+                    if (replies.size >= 128) return@addWebMessageListener
+                    proxies[channel] = proxy
+                    val replyId = UUID.randomUUID().toString()
+                    replies[replyId] = proxy
+                    onEvent(WebViewEvent.PageMessage(channel, data, replyId))
+                }
+                installed += channel
+            }
+        } catch (_: Exception) {
+            revoke()
+            onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL))
+        }
+    }
+
+    private fun allowed(): Boolean {
+        if (!active || !isOwner() || !owner.isActiveAppWebView()) return false
+        val current = request()
+        return current.content == initialRequest.content && current.pageMessageChannels == channels &&
+            current.canUsePageMessageChannelsAt(initialUrl) &&
+            (owner.url == null || current.canUsePageMessageChannelsAt(owner.url))
+    }
+
+    fun reply(replyId: String, data: String): Boolean {
+        if (!allowed() || !isValidPageMessageData(data)) return false
+        val proxy = replies.remove(replyId) ?: return false
+        return runCatching { proxy.postMessage(data); true }.getOrDefault(false)
+    }
+
+    /** 新实例的第一次开始属于声明加载；任何后续开始都关闭本轮通道。 */
+    fun onPageStarted(url: String?) {
+        if (started || (url != null && !initialRequest.canUsePageMessageChannelsAt(url))) revoke()
+        started = true
+    }
+
+    fun revoke() {
+        active = false
+        proxies.clear()
+        replies.clear()
+        for (channel in installed) runCatching { WebViewCompat.removeWebMessageListener(owner, channel) }
+        installed.clear()
+    }
+}
 
 /** 只解析已通过真实 frame 来源校验的消息；业务 handler 留在页面。 */
 internal fun dispatchAppWebBridgeMessage(

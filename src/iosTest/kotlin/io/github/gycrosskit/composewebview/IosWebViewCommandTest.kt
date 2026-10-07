@@ -118,4 +118,92 @@ class IosWebViewCommandTest {
             scope.cancel()
         }
     }
+
+    @Test fun channelReloadRevokesBeforeCancellingFullscreenAndIgnoresLateReply() {
+        val state = AppWebViewState()
+        val owner = view()
+        state.attach(owner)
+        var revoked = false
+        state.pageMessageCancel = { revoked = true }
+        state.rebuildPageMessagesOnReload = true
+        var completion: ((Boolean) -> Unit)? = null
+        state.fullscreenExitHandler = { _, reply -> completion = reply; true }
+        val results = mutableListOf<Boolean>()
+        state.exitFullscreen { result -> assertTrue(revoked); results += result }
+        state.reload()
+        assertEquals(listOf(false), results)
+        assertEquals(1, state.pageMessageInstanceKey)
+        completion!!(true)
+        assertEquals(listOf(false), results)
+    }
+
+    @Test fun channelReloadCancellationCannotRebuildReentrantOwner() {
+        val state = AppWebViewState()
+        val old = view()
+        val current = view()
+        state.attach(old)
+        state.rebuildPageMessagesOnReload = true
+        state.fullscreenExitHandler = { _, _ -> true }
+        state.exitFullscreen {
+            state.attach(current)
+            state.pageFinished(current)
+        }
+        state.reload()
+        assertTrue(state.isAttached(current))
+        assertTrue(state.snapshot.hasVisibleContent)
+        assertEquals(0, state.pageMessageInstanceKey)
+        assertFalse(state.rebuildPageMessagesOnReload)
+    }
+
+    @Test fun staleVisibilityAndReleaseDoNotCancelCurrentOwnerCommand() {
+        val state = AppWebViewState()
+        val old = view()
+        val current = view()
+        val scope = CoroutineScope(Dispatchers.Main)
+        val coordinator = IosWebViewCoordinator(
+            state, { WebViewRequest(WebViewContent.Html("old")) }, { WebViewCallbacks() }, scope, 0L,
+        )
+        try {
+            state.attach(current)
+            var completion: ((Boolean) -> Unit)? = null
+            var result: Boolean? = null
+            state.fullscreenExitHandler = { _, reply -> completion = reply; true }
+            state.exitFullscreen { result = it }
+            coordinator.setVisible(old, false)
+            coordinator.release(old)
+            assertNull(result)
+            completion!!(true)
+            assertEquals(true, result)
+        } finally {
+            state.detach(current)
+            scope.cancel()
+        }
+    }
+
+    @Test fun visibilityCancellationDoesNotContinueAfterReentrantOwnerReplacement() {
+        val state = AppWebViewState()
+        val old = view()
+        val current = view()
+        val scope = CoroutineScope(Dispatchers.Main)
+        val coordinator = IosWebViewCoordinator(
+            state, { WebViewRequest(WebViewContent.Html("old")) }, { WebViewCallbacks() }, scope, 0L,
+        )
+        try {
+            state.attach(old)
+            state.fullscreenExitHandler = { _, _ -> true }
+            state.exitFullscreen { result ->
+                assertFalse(result)
+                state.attach(current)
+                state.pageFinished(current)
+            }
+            coordinator.setVisible(old, false)
+            assertTrue(state.isAttached(current))
+            assertTrue(state.snapshot.hasVisibleContent)
+            assertFalse(old.hidden)
+        } finally {
+            coordinator.release(old)
+            state.detach(current)
+            scope.cancel()
+        }
+    }
 }

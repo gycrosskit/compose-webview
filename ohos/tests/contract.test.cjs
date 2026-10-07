@@ -4,6 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const os = require('node:os');
 const childProcess = require('node:child_process');
+const crypto = require('node:crypto');
 const devEco = process.env.WEBVIEW_DEVECO_HOME || '/Applications/DevEco-Studio.app/Contents';
 const ts = require(process.env.TYPESCRIPT_PATH || path.join(devEco, 'sdk/default/openharmony/ets/build-tools/ets-loader/node_modules/typescript'));
 const harArgument = process.argv.indexOf('--har');
@@ -38,13 +39,16 @@ class Controller {
     dataCleaningCalls.push(['cache', disk]);
     if (dataCleaningFailure === 'cache') throw new Error('cache failed');
   }
+  deletedProxyNames = [];
+  deleteJavaScriptRegister(name) { this.deletedProxyNames.push(name); }
   loads = []; data = []; refreshes = 0; url = 'https://trusted.test/page'; ports = []; deliveries = []; scripts = []; scriptContext = null;
   loadUrl(url, headers) { if (failNextLoad) { failNextLoad = false; throw new Error('first load rejected'); } this.loads.push({ url, headers }); this.url = url; }
   loadData(...args) { if (failNextLoad) { failNextLoad = false; throw new Error('first load rejected'); } this.data.push(args); }
   getUrl() { return this.url; }
+  getLastJavascriptProxyCallingFrameUrl() { return this.callingFrameUrl || this.url; }
   getUserAgent() { return 'ArkWeb'; }
   setCustomUserAgent(value) { this.userAgent = value; }
-  runJavaScript(source) { this.lastScript = source; this.scripts.push(source); const task = nextJavascript; nextJavascript = null; const execute = () => { if (this.scriptContext) vm.runInNewContext(source, this.scriptContext); return 'null'; }; if (task?.deferExecution) return task.promise.then(execute); execute(); return task ? task.promise : Promise.resolve('null'); }
+  runJavaScript(source) { this.lastScript = source; this.scripts.push(source); const task = nextJavascript; nextJavascript = null; const execute = () => { if (this.scriptContext) { const result = vm.runInNewContext(source, this.scriptContext); if (source.includes('__GY_WEBVIEW_PAGE_MESSAGE_REPLY__')) return JSON.stringify(result); } return 'null'; }; if (task?.deferExecution) return task.promise.then(execute); let result; try { result = execute(); } catch (error) { return Promise.reject(error); } return task ? task.promise : Promise.resolve(result); }
   createWebMessagePorts() { const ports = [new Port(), new Port()]; this.ports.push(ports); return ports; }
   postMessage(name, ports, origin) { this.deliveries.push({ name, ports, origin }); }
   accessBackward() { return true; } accessForward() { return false; }
@@ -57,9 +61,10 @@ class BaseView {
 }
 const windowObject = { Orientation: { UNSPECIFIED: 0, AUTO_ROTATION_LANDSCAPE: 1 }, getLastWindow: async () => ({}) };
 const mocks = {
+  '@kit.CryptoArchitectureKit': { cryptoFramework: { createRandom: () => ({ generateRandomSync: size => ({ data: crypto.randomBytes(size) }) }) } },
   '@kit.ArkData': { uniformTypeDescriptor: { getUniformDataTypeByFilenameExtension: value => value, getTypeDescriptor: value => ({ mimeTypes: value === '.pdf' ? ['application/pdf'] : value === '.jpg' ? ['image/jpeg'] : [] }) } },
   '@kit.CameraKit': { camera: { CameraPosition: { CAMERA_POSITION_BACK: 1 } }, cameraPicker: { PickerMediaType: { PHOTO: 'photo', VIDEO: 'video' }, pick: (context, types, profile) => { capture.profile = profile; capture.types = types; return capture.promise; } } },
-  '@kit.ArkTS': { url: { URL }, util: { generateRandomUUID: () => 'test-capture', TextEncoder: class { encodeInto(value) { return new TextEncoder().encode(value); } } } },
+  '@kit.ArkTS': { url: { URL }, util: { generateRandomUUID: secure => secure ? crypto.randomUUID() : 'test-capture', TextEncoder: class { encodeInto(value) { return new TextEncoder().encode(value); } } } },
   '@kuikly-open/render': { KuiklyRenderBaseView: BaseView },
   '@ohos.arkui.node': { ComponentContent: class {} },
   '@kit.ArkWeb': { webview: { WebviewController: Controller,
@@ -129,6 +134,130 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   dataCleaningFailure = null;
 
   const standard = request();
+  assert.equal(wire.decodeRequest(encoded(request({pageMessageChannels: []}))).pageMessageChannels.length, 0);
+  assert.equal(wire.decodeRequest(encoded(request({pageMessageChannels: ['earlyChannel']}))).pageMessageChannels[0], 'earlyChannel');
+  for (const invalid of [true, 'earlyChannel', [1], ['earlyChannel', 'earlyChannel'], ['location'], ['GYWebViewPageMessageNative'], ['bad-name'], Array.from({length: 17}, (_, index) => 'channel' + index)]) {
+    assert.throws(() => wire.decodeRequest(encoded(request({pageMessageChannels: invalid}))), /Invalid page message channels/);
+  }
+  {
+  const ChannelView = load('GYWebView.ets').GYWebView;
+  // 执行生产 component build 方法；替身只隔离 ArkUI Web 属性，不重写 SDK API 分支。
+  const componentSource = fs.readFileSync(path.join(root, 'WebViewComponent.ets'), 'utf8');
+  const componentTail = componentSource.split('struct GYWebViewComponent {')[1];
+  const buildMethod = componentTail.slice(componentTail.indexOf('  build()')).trim().slice(0, -1);
+  const liveMethod = componentTail.match(/  private live\(\): boolean \{[^\n]+/)[0];
+  const factorySource = ts.transpileModule('exports.Direct=class {constructor(view){this.renderView=view;this.renderToken=view.renderToken;this.controller=view.controller;}'+liveMethod+buildMethod+'};', {compilerOptions: {module: ts.ModuleKind.CommonJS,target: ts.ScriptTarget.ES2020}}).outputText;
+  const directExports = {}; let nativeWeb;
+  vm.runInNewContext(factorySource, {exports: directExports, Web: () => nativeWeb});
+  for (const channels of [undefined, [], ['earlyChannel']]) {
+    for (const bad of ["throw new Error('isolated script failure');", "const = ;"]) {
+      const view = new ChannelView(); view.setProp('request', encoded(request({settings: {javaScriptEnabled: true}, pageMessageChannels: channels,
+        security: {...standard.security, pageBridgeEnabled: true}, scripts: [
+          {id: 'failed', source: bad, injectionTime: 'DOCUMENT_START', onlyForTrustedMainFrame: true},
+          {id: 'later', source: 'window.laterInitialization=true;', injectionTime: 'DOCUMENT_START', onlyForTrustedMainFrame: true}
+        ]}))); view.onControllerAttached();
+      const calls = []; let selectedScripts;
+      const direct = new directExports.Direct(view);
+      nativeWeb = {webViewAttributes() {return this;}, javaScriptProxy() {return this;}, javaScriptOnDocumentStart(scripts) {calls.push('legacy');selectedScripts = scripts;return this;}, runJavaScriptOnDocumentStart(scripts) {calls.push('ordered');selectedScripts = scripts;return this;}}; direct.build();
+      assert.deepEqual(calls, [channels?.length ? 'ordered' : 'legacy'], 'exactly one native injection API');
+      const listeners = {}; const page = {addEventListener: (name, callback) => {listeners[name] = callback;}}; page.top = page;
+      page.GYWebViewPageMessageNative = {pageMessageBootstrap: view.pageMessageBootstrap.bind(view), pageMessagePost: view.pageMessagePost.bind(view), pageMessageRevoke: view.pageMessageRevoke.bind(view)};
+      const context = {window: page, location: new URL('https://trusted.test/page'), document: {readyState: 'loading'}, crypto: crypto.webcrypto, Uint8Array, TextEncoder};
+      const nativeScripts = channels?.length ? selectedScripts : [...selectedScripts].sort((a,b) => a.script < b.script ? -1 : a.script > b.script ? 1 : 0);
+      for (const item of nativeScripts) {try {vm.runInNewContext(item.script, context);} catch (_) {}}
+      assert.equal(page.laterInitialization, true, 'independent ScriptItems retain later initialization after throw/syntax error');
+      assert.ok(page.GYWebViewBridge, 'user parse error cannot discard Bridge');
+      if (channels?.length) assert.ok(page.earlyChannel, 'bootstrap remains independent of user parse/error');
+      view.setProp('request', encoded(request())); const staleCalls = []; nativeWeb = {webViewAttributes() {return this;}, javaScriptProxy() {return this;}, javaScriptOnDocumentStart() {staleCalls.push('legacy');return this;}, runJavaScriptOnDocumentStart() {staleCalls.push('ordered');return this;}}; direct.build();
+      assert.equal(staleCalls.length, 0, 'old component cannot inject scripts belonging to a replacement owner'); view.onDestroy();
+    }
+  }
+
+  const channelRequest = request({ settings: { javaScriptEnabled: true }, pageMessageChannels: ['earlyChannel'], scripts: [
+    { id: 'early', source: "window.earlyChannel.postMessage('first');", injectionTime: 'DOCUMENT_START', onlyForTrustedMainFrame: true }
+  ] });
+  function channelPage(view, parent) {
+    const listeners = {}; const page = { addEventListener: (name, callback) => { (listeners[name] ||= []).push(callback); } }; page.top = parent || page;
+    page.GYWebViewPageMessageNative = { pageMessageBootstrap: view.pageMessageBootstrap.bind(view), pageMessagePost: view.pageMessagePost.bind(view), pageMessageRevoke: view.pageMessageRevoke.bind(view) };
+    const context = { window: page, location: new URL('https://trusted.test/page'), document: {readyState: 'loading'}, crypto: crypto.webcrypto,
+      Uint8Array, TextEncoder, addEventListener: page.addEventListener, Event: class { constructor(type) { this.type = type; } } };
+    view.documentStartScripts().forEach(item => vm.runInNewContext(item.script, context)); return {page, context, listeners};
+  }
+  function channelOwner() {
+    const view = new ChannelView(); const events = []; view.setProp('onEvent', event => events.push(event));
+    view.setProp('request', encoded(channelRequest)); view.onControllerAttached(); const document = channelPage(view); view.controller.scriptContext = document.context;
+    return {view, events, ...document};
+  }
+  const messages = events => events.filter(event => event.type === 'pageMessage');
+  const first = channelOwner();
+  assert.equal(first.page.earlyChannel.postMessage.toString().includes(first.view.pageMessageSecret), false, 'facade source does not disclose owner secret');
+  assert.deepEqual(Object.keys(messages(first.events)[0]).sort(), ['channel', 'data', 'replyId', 'type'], 'wire event contains no capability');
+  assert.equal(messages(first.events).length, 1, 'producer facade precedes declared first script and native page-ready');
+  assert.equal(first.view.controller.deletedProxyNames.length, 0, 'initial load preserves registered proxy');
+  first.view.onPageBegin('https://trusted.test/page'); first.view.interceptNavigation(requestForNavigation('https://trusted.test/page', false));
+  assert.equal(first.view.controller.deletedProxyNames.length, 0, 'initial native callbacks preserve proxy');
+  first.page.earlyChannel.postMessage('retained'); assert.equal(messages(first.events).length, 2, 'first native callbacks retain initial document');
+  const iframe = channelPage(first.view, first.page); assert.equal(iframe.page.earlyChannel, undefined);
+  first.view.pageMessagePost('forged', '0'.repeat(64), 'earlyChannel', 'own-iframe'); assert.equal(messages(first.events).length, 2);
+  first.view.controller.callingFrameUrl = 'about:srcdoc'; first.page.earlyChannel.postMessage('parent-facade'); assert.equal(messages(first.events).length, 3, 'parent facade uses parent capability, as Android/WK');
+  for (const params of ['null', 'invalid', '{}', encoded({replyId: 'unknown', data: 'reply'}), encoded({replyId: messages(first.events)[0].replyId, data: '界'.repeat(21846)})]) {
+    const invalid = []; first.view.call('replyPageMessage', params, value => invalid.push(value.result)); assert.deepEqual(invalid, [false]);
+  }
+  const received = []; first.page.earlyChannel.onmessage = event => received.push(event.data); const replyId = messages(first.events)[0].replyId; const replies = [];
+  first.view.call('replyPageMessage', encoded({replyId, data: 'reply'}), value => replies.push(value.result)); await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(received, ['reply']); assert.deepEqual(replies, [true]);
+  first.view.call('replyPageMessage', encoded({replyId, data: 'duplicate'}), value => replies.push(value.result)); assert.deepEqual(replies, [true, false]);
+  first.page.earlyChannel.postMessage('界'.repeat(21846)); assert.equal(messages(first.events).length, 3, '64KiB UTF-8 bound');
+  for (let index = 0; index < 129; index++) first.page.earlyChannel.postMessage('bounded'); assert.equal(messages(first.events).length, 129, '128 pending bound');
+  first.view.setProp('visible', false); assert.deepEqual(first.view.controller.deletedProxyNames, ['GYWebViewPageMessageNative']); first.view.setProp('visible', true); first.page.earlyChannel.postMessage('show'); assert.equal(messages(first.events).length, 129);
+  const oldController = first.view.controller; first.view.call('reload', '{}', null); assert.notEqual(first.view.controller, oldController);
+  first.view.onControllerAttached(); const renewed = channelPage(first.view); first.view.controller.scriptContext = renewed.context; assert.equal(messages(first.events).length, 130);
+  first.page.earlyChannel.postMessage('old-owner'); assert.equal(messages(first.events).length, 130);
+  const sameOwnerReload = channelPage(first.view); sameOwnerReload.page.earlyChannel.postMessage('h5-reload'); assert.equal(messages(first.events).length, 130, 'bootstrap only once on owner');
+  first.view.onPageBegin('https://trusted.test/page'); first.view.onPageBegin('https://trusted.test/page'); renewed.page.earlyChannel.postMessage('after-navigation'); assert.equal(messages(first.events).length, 130); first.view.onDestroy();
+  for (const handler of [null, () => { throw new Error('page handler failure'); }]) {
+    const owner = channelOwner(); owner.page.earlyChannel.onmessage = handler; const accepted = [];
+    owner.view.call('replyPageMessage', encoded({replyId: messages(owner.events)[0].replyId, data: 'queued'}), value => accepted.push(value.result));
+    await Promise.resolve(); await Promise.resolve(); assert.deepEqual(accepted, [true], 'native accepted does not depend on H5 handler/delivery'); owner.view.onDestroy();
+  }
+  for (const action of ['hide', 'stopLoading', 'navigation', 'destroy', 'request']) {
+    const owner = channelOwner(); const oldId = messages(owner.events)[0].replyId;
+    if (action === 'hide') { owner.view.setProp('visible', false); owner.view.setProp('visible', true); }
+    else if (action === 'navigation') owner.view.interceptNavigation(requestForNavigation('https://trusted.test/next'));
+    else if (action === 'destroy') owner.view.onDestroy(); else if (action === 'request') owner.view.setProp('request', encoded(channelRequest)); else owner.view.call(action, '{}', null);
+    const result = []; owner.view.call('replyPageMessage', encoded({replyId: oldId, data: 'old'}), value => result.push(value.result));
+    assert.deepEqual(result, [false], action + ' invalidates old pending capability'); owner.view.onDestroy();
+  }
+  const queued = channelOwner(); const task = deferred(); task.deferExecution = true; nextJavascript = task;
+  const accepted = []; queued.view.call('replyPageMessage', encoded({replyId: messages(queued.events)[0].replyId, data: 'late'}), value => accepted.push(value.result));
+  assert.deepEqual(accepted, [true], 'submission accepted synchronously');
+  const previous = queued.view.controller; queued.view.call('reload', '{}', null); queued.view.onControllerAttached(); const next = channelPage(queued.view);
+  next.page.earlyChannel.onmessage = () => assert.fail('old queued reply cannot enter new document'); previous.scriptContext = next.context;
+  task.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); assert.deepEqual(accepted, [true]); queued.view.onDestroy();
+  const failedQueue = channelOwner(); failedQueue.view.controller.runJavaScript = () => { throw new Error('native queue failed'); };
+  const rejected = []; failedQueue.view.call('replyPageMessage', encoded({replyId: messages(failedQueue.events)[0].replyId, data: 'queue'}), value => rejected.push(value.result));
+  assert.deepEqual(rejected, [false]); failedQueue.view.onDestroy();
+  const policyOwner = channelOwner(); const policyController = policyOwner.view.controller; const policyReply = messages(policyOwner.events)[0].replyId;
+  policyOwner.view.setProp('request', encoded({...channelRequest, navigationPolicy: {...channelRequest.navigationPolicy, allowedUrls: ['https://trusted.test/other']}}));
+  assert.equal(policyOwner.view.controller, policyController, 'policy-only update preserves physical owner');
+  policyOwner.page.earlyChannel.postMessage('policy-denied'); assert.equal(messages(policyOwner.events).length, 1);
+  const policyReplies = []; policyOwner.view.call('replyPageMessage', encoded({replyId: policyReply, data: 'denied'}), value => policyReplies.push(value.result));
+  assert.deepEqual(policyReplies, [false], 'current navigation policy gates replies without consuming an otherwise valid ID');
+  policyOwner.view.setProp('request', encoded(channelRequest)); policyOwner.page.earlyChannel.postMessage('policy-restored'); assert.equal(messages(policyOwner.events).length, 2);
+  policyOwner.view.call('replyPageMessage', encoded({replyId: policyReply, data: 'restored'}), value => policyReplies.push(value.result));
+  assert.deepEqual(policyReplies, [false, true], 'restored policy uses same capability as A/i'); policyOwner.view.onDestroy();
+  const cleanupDefault = new ChannelView(); cleanupDefault.setProp('request', encoded(request())); cleanupDefault.onControllerAttached(); const defaultController = cleanupDefault.controller; cleanupDefault.setProp('visible', false); cleanupDefault.onDestroy(); assert.equal(defaultController.deletedProxyNames.length, 0, 'default never cleans an unregistered page proxy');
+  const cleanupDestroyed = channelOwner(); const cleanupController = cleanupDestroyed.view.controller; cleanupDestroyed.view.onDestroy(); assert.deepEqual(cleanupController.deletedProxyNames, ['GYWebViewPageMessageNative']);
+  const navigationReentry = channelOwner(); const previousController = navigationReentry.view.controller;
+  navigationReentry.view.setProp('onEvent', event => { if (event.type === 'navigation') navigationReentry.view.setProp('request', encoded(channelRequest)); });
+  assert.equal(navigationReentry.view.interceptNavigation(requestForNavigation('https://trusted.test/next')), true);
+  assert.notEqual(navigationReentry.view.controller, previousController); navigationReentry.view.onControllerAttached();
+  const nextPage = channelPage(navigationReentry.view); assert.ok(nextPage.page.earlyChannel); navigationReentry.view.onDestroy();
+  const reentrant = channelOwner(); const oldToken = reentrant.view.renderToken;
+  reentrant.view.setProp('onEvent', event => { if (event.type === 'loadFailed') reentrant.view.setProp('request', encoded(channelRequest)); });
+  reentrant.view.setProp('request', 'invalid'); assert.equal(reentrant.view.renderToken, oldToken + 2); reentrant.view.onControllerAttached();
+  const recovered = channelPage(reentrant.view); assert.ok(recovered.page.earlyChannel); reentrant.view.onDestroy();
+  }
   const strictMallRule = { type: 'hostSuffix', suffix: 'jd.com', scheme: 'https', includeRoot: false, rejectUserInfo: true };
   for (const value of ['https://user@shop.jd.com', 'https://@shop.jd.com', 'https://:@shop.jd.com', 'https://shop.jd.com.evil', 'https://shop.jd.com..', 'https://shop..jd.com', 'http://shop.jd.com', 'https://jd.com']) assert.equal(wire.matches(value, strictMallRule), false, value);
   assert.equal(wire.matches('https://shop.jd.com:8443/item', strictMallRule), true);
@@ -594,7 +723,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(destroyedHandlerExit, 2); assert.equal(layouts.length + orientations.length, afterDestroyWindowCalls);
 
   const componentSource = fs.readFileSync(path.join(root, 'WebViewComponent.ets'), 'utf8');
-  assert.ok(componentSource.includes('nativeFullscreenExited(this.renderToken)'), 'ArkUI exit events carry render ownership into acknowledgment');
+  assert.ok(componentSource.includes('nativeFullscreenExited(token)'), 'ArkUI exit events carry render ownership into acknowledgment');
 
   const barCalls = []; let firstExit = 0; let secondExit = 0;
   const sharedFullscreenWindow = { getPreferredOrientation: () => 0,
@@ -657,5 +786,5 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     assert.equal(delivered.length, 0, 'no pre-hide or hidden message is flushed after show');
     assert.equal(visibilityTop.GYWebViewBridge.postMessage('visible-new', '{}'), true); assert.equal(delivered.length, 1);
   }
-  console.log(`PASS (${harArgument >= 0 ? 'actual HAR' : 'source'}): shared Web data cleanup/order/failures, first-load retry URL/HTML, synchronous origin policy, controlled capture, once-only results, hidden initialization, Bridge and lifecycle`);
+  console.log(`PASS (${harArgument >= 0 ? 'actual HAR' : 'source'}): early page capability/roundtrip/iframe/parent/nonce/64KiB/128/once/native-accepted/revocation/late-owner/reentry,  shared Web data cleanup/order/failures, first-load retry URL/HTML, synchronous origin policy, controlled capture, once-only results, hidden initialization, Bridge and lifecycle`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

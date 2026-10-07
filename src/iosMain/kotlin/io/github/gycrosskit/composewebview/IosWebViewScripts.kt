@@ -3,6 +3,7 @@ package io.github.gycrosskit.composewebview
 /** `JSAndroidBridge` 是既有 H5 协议名；iOS 也必须保留这个兼容入口。 */
 internal const val APP_BRIDGE_HANDLER = "JSAndroidBridge"
 internal const val WEB_EVENT_HANDLER = "ComposeWebViewEvent"
+internal const val PAGE_MESSAGE_HANDLER = "ComposeWebViewPageMessage"
 internal const val FILE_CHOOSER_ALLOWED_FLAG = "__COMPOSE_WEBVIEW_FILE_CHOOSER_ALLOWED__"
 internal const val WEB_EVENT_FULLSCREEN_ENTER = "fullscreen:1"
 internal const val WEB_EVENT_FULLSCREEN_EXIT = "fullscreen:0"

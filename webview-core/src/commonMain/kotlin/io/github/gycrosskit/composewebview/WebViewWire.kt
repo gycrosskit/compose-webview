@@ -30,6 +30,7 @@ object WebViewWire {
             put("id", script.id); put("source", script.source); put("injectionTime", script.injectionTime.name)
             put("onlyForTrustedMainFrame", script.onlyForTrustedMainFrame)
         } }))
+        put("pageMessageChannels", strings(request.pageMessageChannels))
         put("blockedResourceRules", rules(request.blockedResourceRules))
         put("navigationPolicy", buildJsonObject {
             put("allowedSchemes", strings(request.navigationPolicy.allowedSchemes))
@@ -70,6 +71,7 @@ object WebViewWire {
                 policy.strings("allowedOrigins").toSet(),
                 policy.strings("allowedUrls").toSet(),
             ),
+            pageMessageChannels = value.strings("pageMessageChannels").toSet(),
         )
     }
 
@@ -81,6 +83,7 @@ object WebViewWire {
         is WebViewEvent.TitleChanged -> mapOf("type" to "titleChanged", "title" to event.title)
         is WebViewEvent.ProgressChanged -> mapOf("type" to "progressChanged", "progress" to event.progress)
         is WebViewEvent.BridgeMessage -> mapOf("type" to "bridgeMessage", "handlerName" to event.value.handlerName, "data" to event.value.data)
+        is WebViewEvent.PageMessage -> mapOf("type" to "pageMessage", "channel" to event.channel, "data" to event.data, "replyId" to event.replyId)
         is WebViewEvent.FullscreenChanged -> mapOf("type" to "fullscreenChanged", "isFullscreen" to event.isFullscreen)
         is WebViewEvent.LoadFailed -> with(event.error) { mapOf("type" to "loadFailed", "kind" to kind.name, "message" to message, "url" to url, "errorCode" to errorCode, "httpStatus" to httpStatus, "isMainFrame" to isMainFrame) }
         is WebViewEvent.CapabilityUnsupported -> mapOf("type" to "capabilityUnsupported", "capability" to event.capability.name)
@@ -100,6 +103,7 @@ object WebViewWire {
             "titleChanged" -> WebViewEvent.TitleChanged(value.stringOrNull("title"))
             "progressChanged" -> WebViewEvent.ProgressChanged(value.integer("progress", 0))
             "bridgeMessage" -> WebViewEvent.BridgeMessage(WebViewBridgeMessage(value.requiredString("handlerName"), value.requiredString("data")))
+            "pageMessage" -> WebViewEvent.PageMessage(value.requiredString("channel"), value.requiredString("data"), value.requiredString("replyId"))
             "fullscreenChanged" -> WebViewEvent.FullscreenChanged(value.boolean("isFullscreen", false))
             "loadFailed" -> WebViewEvent.LoadFailed(WebViewLoadError(value.enum("kind", WebViewErrorKind.UNKNOWN), value.string("message", ""), value.stringOrNull("url"), value["errorCode"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.int, value["httpStatus"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.int, value.boolean("isMainFrame", true)))
             "capabilityUnsupported" -> WebViewEvent.CapabilityUnsupported(enumValueOf(value.requiredString("capability")))

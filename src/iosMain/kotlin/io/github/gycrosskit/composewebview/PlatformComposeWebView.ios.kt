@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSError
 import platform.Foundation.NSNumber
+import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.NSURLErrorDomain
 import platform.UIKit.UIColor
@@ -79,7 +80,7 @@ internal actual fun PlatformAppWebView(
     val currentCallbacks by rememberUpdatedState(callbacks)
     val scope = rememberCoroutineScope()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    key(request.settings, request.security, request.scripts, request.blockedResourceRules, request.navigationPolicy) {
+    key(request.settings, request.security, request.scripts, request.blockedResourceRules, request.navigationPolicy, request.pageMessageChannels, if (request.pageMessageChannels.isNotEmpty()) request.content else null, state.pageMessageInstanceKey) {
         val coordinator = remember {
             IosWebViewCoordinator(
                 state = state,
@@ -134,6 +135,9 @@ internal actual fun PlatformAppWebView(
                     if (currentRequest.canUseAppBridgeAt(currentRequest.content.initialOrigin())) {
                         userContentController.addScriptMessageHandler(coordinator, APP_BRIDGE_HANDLER)
                     }
+                    if (currentRequest.pageMessageChannels.isNotEmpty()) {
+                        userContentController.addScriptMessageHandler(coordinator, PAGE_MESSAGE_HANDLER)
+                    }
                     userContentController.addScriptMessageHandler(coordinator, WEB_EVENT_HANDLER)
                     state.attach(this)
                     coordinator.attach(this, creationMark.elapsedNow().inWholeMilliseconds)
@@ -154,6 +158,8 @@ internal actual fun PlatformAppWebView(
                     .removeScriptMessageHandlerForName(APP_BRIDGE_HANDLER)
                 target.configuration.userContentController
                     .removeScriptMessageHandlerForName(WEB_EVENT_HANDLER)
+                target.configuration.userContentController
+                    .removeScriptMessageHandlerForName(PAGE_MESSAGE_HANDLER)
                 state.detach(target)
             },
         )
@@ -176,6 +182,9 @@ internal class IosWebViewCoordinator(
     private var released = false
     private var navigationGeneration = 0
     private var documentToken = NSUUID().UUIDString
+    private val pageMessageReplies = mutableMapOf<String, Pair<String, String>>()
+    private var pageMessageRevoked = false
+    private var pageMessageInitialNavigation = true
     private val fileChooser = IosWebFileChooserController()
     private var initialHtmlNavigation = false
     private var mediaTarget: WKWebView? = null
@@ -191,6 +200,9 @@ internal class IosWebViewCoordinator(
     fun attach(webView: WKWebView, creationDurationMillis: Long) {
         if (released || !state.isAttached(webView)) return
         state.javascriptAllowed = { request().canEvaluateJavascriptAt(it.URL?.absoluteString) }
+        state.pageMessageReply = { replyId, data -> replyPageMessage(webView, replyId, data) }
+        state.pageMessageCancel = { pageMessageReplies.clear(); pageMessageRevoked = true }
+        state.rebuildPageMessagesOnReload = request().pageMessageChannels.isNotEmpty()
         mediaTarget = webView
         state.fullscreenExitHandler = ::exitFullscreen
         progress.attach(webView)
@@ -221,10 +233,14 @@ internal class IosWebViewCoordinator(
     }
 
     fun setVisible(webView: WKWebView, visible: Boolean) {
+        if (released || !state.isAttached(webView)) return
         if (visible == webView.hidden) {
             state.invalidateJavascriptCallbacks()
+            if (released || !state.isAttached(webView)) return
             navigationGeneration++
             documentToken = NSUUID().UUIDString
+            pageMessageReplies.clear()
+            if (!visible) pageMessageRevoked = true
             fileChooser.cancel(revokeDocument = true)
             webView.evaluateJavaScript(transportScript(visible), null)
         }
@@ -238,6 +254,7 @@ internal class IosWebViewCoordinator(
 
     private fun prepareDocumentScripts(webView: WKWebView) {
         documentToken = NSUUID().UUIDString
+        pageMessageReplies.clear()
         val controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         fun add(source: String, mainFrame: Boolean = true) {
@@ -249,6 +266,7 @@ internal class IosWebViewCoordinator(
         if (current.settings.javaScriptEnabled) {
             add(WEB_VIEW_PERFORMANCE_SCRIPT.replace("window.webkit.messageHandlers.ComposeWebViewEvent", "window.__GY_WEBVIEW_EVENT_TRANSPORT__"))
             add(IOS_WEB_EVENT_SCRIPT.replace("window.webkit.messageHandlers.ComposeWebViewEvent", "window.__GY_WEBVIEW_EVENT_TRANSPORT__"))
+            if (!pageMessageRevoked) current.pageMessageScript(documentToken)?.let { add(it) }
             current.earlyScriptSource()?.let { add(it) }
             if (current.canUseAppBridgeAt(current.content.initialOrigin())) add(IOS_BRIDGE_SCRIPT.replace("window.webkit.messageHandlers.JSAndroidBridge", "window.__GY_WEBVIEW_BRIDGE_TRANSPORT__"))
         }
@@ -320,7 +338,14 @@ internal class IosWebViewCoordinator(
 
     fun release(webView: WKWebView) {
         released = true
-        if (state.isAttached(webView)) state.invalidateJavascriptCallbacks()
+        pageMessageReplies.clear()
+        pageMessageRevoked = true
+        if (state.isAttached(webView)) {
+            state.pageMessageReply = null
+            state.pageMessageCancel = null
+            state.rebuildPageMessagesOnReload = false
+            state.invalidateJavascriptCallbacks()
+        }
         navigationGeneration++
         fileChooser.cancel(revokeDocument = true)
         suspendMedia(webView, true, "release")
@@ -477,7 +502,9 @@ internal class IosWebViewCoordinator(
                     if (!released && state.isAttached(webView)) {
                         navigationGeneration++
                         fileChooser.cancel(revokeDocument = true)
+                        if (!pageMessageInitialNavigation) pageMessageRevoked = true
                         prepareDocumentScripts(webView)
+                        pageMessageInitialNavigation = false
                     }
                 },
             )
@@ -500,6 +527,27 @@ internal class IosWebViewCoordinator(
         if (released || !state.isAttached(owner) || owner.configuration.userContentController != userContentController) return
         val envelope = didReceiveScriptMessage.body as? Map<*, *> ?: return
         if (envelope["token"] != documentToken) return
+        if (didReceiveScriptMessage.name == PAGE_MESSAGE_HANDLER) {
+            val channel = envelope["channel"] as? String ?: return
+            val data = envelope["data"] as? String ?: return
+            val source = didReceiveScriptMessage.frameInfo.request.URL?.absoluteString ?: return
+            val sourceUrl = NSURL.URLWithString(source) ?: return
+            val frameOrigin = didReceiveScriptMessage.frameInfo.securityOrigin
+            val sourceHost = sourceUrl.host?.removeSurrounding("[", "]")?.trimEnd('.')?.lowercase()
+            val frameHost = frameOrigin.host.removeSurrounding("[", "]").trimEnd('.').lowercase()
+            val port = sourceUrl.port?.intValue ?: if (sourceUrl.scheme == "https") 443 else 80
+            val framePort = frameOrigin.port.takeIf { it > 0 } ?: if (frameOrigin.protocol == "https") 443 else 80
+            if (sourceUrl.scheme != frameOrigin.protocol || sourceHost != frameHost || port.toLong() != framePort) return
+            val current = request()
+            if (owner.hidden || pageMessageRevoked || !didReceiveScriptMessage.frameInfo.mainFrame ||
+                channel !in current.pageMessageChannels || !isValidPageMessageData(data) ||
+                !current.canUsePageMessageChannelsAt(source) || pageMessageReplies.size >= 128
+            ) return
+            val replyId = NSUUID().UUIDString
+            pageMessageReplies[replyId] = channel to source
+            emit(WebViewEvent.PageMessage(channel, data, replyId))
+            return
+        }
         val payload = envelope["value"] as? String ?: return
         if (didReceiveScriptMessage.name == WEB_EVENT_HANDLER) {
             val raw = payload
@@ -532,6 +580,16 @@ internal class IosWebViewCoordinator(
         val raw = payload
         val message = parseAppWebBridgeMessage(raw) ?: return
         emit(WebViewEvent.BridgeMessage(message))
+    }
+
+    private fun replyPageMessage(webView: WKWebView, replyId: String, data: String): Boolean {
+        if (released || !state.isAttached(webView) || webView.hidden || pageMessageRevoked || !isValidPageMessageData(data)) return false
+        val (channel, source) = pageMessageReplies[replyId] ?: return false
+        val current = request()
+        if (channel !in current.pageMessageChannels || !current.canUsePageMessageChannelsAt(source)) return false
+        pageMessageReplies.remove(replyId)
+        webView.evaluateJavaScript(pageMessageReplyScript(documentToken, channel, data), null)
+        return true
     }
 
     @ObjCSignatureOverride
@@ -579,6 +637,8 @@ internal class IosWebViewCoordinator(
             state.navigationCancelled(webView)
             return
         }
+        pageMessageReplies.clear()
+        pageMessageRevoked = true
         val loadError = WebViewLoadError(
             kind = if (error.domain == NSURLErrorDomain) WebViewErrorKind.NETWORK else WebViewErrorKind.UNKNOWN,
             message = error.localizedDescription,
