@@ -21,6 +21,9 @@ env:
 jobs:
   release-android:
     runs-on: ubuntu-24.04
+    env:
+      # 此 runner 的镜像路由不可达；保留原域名 TLS 和制品坐标，限定 IPv4 socket。
+      JAVA_TOOL_OPTIONS: -Djava.security.properties=${{ github.workspace }}/scripts/ci-java.security -Djava.net.preferIPv4Stack=true
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
