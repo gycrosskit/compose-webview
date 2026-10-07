@@ -16,7 +16,7 @@ constants = {
     'WEB_EVENT_FULLSCREEN_EXIT': 'fullscreen:0',
 }
 values = []
-for path, names in [(ios, ['IOS_BRIDGE_SCRIPT', 'IOS_FILE_CHOOSER_GATE_SCRIPT', 'IOS_FILE_INPUT_SCRIPT', 'IOS_WEB_EVENT_SCRIPT']), (common, ['WEB_VIEW_PERFORMANCE_SCRIPT'])]:
+for path, names in [(ios, ['IOS_BRIDGE_SCRIPT', 'IOS_FILE_CHOOSER_GATE_SCRIPT', 'IOS_FILE_INPUT_SCRIPT', 'IOS_WEB_EVENT_SCRIPT', 'IOS_EXIT_FULLSCREEN_SCRIPT']), (common, ['WEB_VIEW_PERFORMANCE_SCRIPT'])]:
     text = path.read_text()
     for name in names:
         source = re.search(r'\b' + name + r' = """(.*?)"""', text, re.S).group(1)

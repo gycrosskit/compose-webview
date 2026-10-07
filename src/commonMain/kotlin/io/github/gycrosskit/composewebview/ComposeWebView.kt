@@ -37,8 +37,17 @@ expect class AppWebViewState internal constructor() {
     /** 刷新当前页面；尚未提交的新声明会重放其内容与请求头，空内容报告 [WebViewErrorKind.EMPTY_CONTENT]。 */
     fun reload()
 
-    /** 优先消费网页内部返回。@return true 表示已处理，false 时调用方可退出当前页面。 */
+    /** 优先退出全屏，再返回网页历史；iOS 全屏时 true 表示异步请求已受理，最终结果用回调重载。 */
     fun goBack(): Boolean
+
+    /** 优先退出全屏，再返回历史；回调至多一次交付最终消费结果；文档更换或释放取消时 false，取消不回退新文档历史。 */
+    fun goBack(callback: (Boolean) -> Unit)
+
+    /** 前进网页历史；未绑定实例或没有历史时返回 false。 */
+    fun goForward(): Boolean
+
+    /** 退出当前全屏，回调至多一次交付原生最终结果；未全屏或文档/owner结束取消时 false，不交付迟到成功。 */
+    fun exitFullscreen(callback: (Boolean) -> Unit = {})
 
     /** 停止当前主文档加载；未绑定原生实例时安全忽略。 */
     fun stopLoading()

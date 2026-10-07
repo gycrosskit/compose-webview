@@ -35,6 +35,8 @@ actual class AppWebViewState actual internal constructor() {
 
     private var loadState = IosWebViewLoadState()
     private var callbackGeneration = 0
+    private val pendingFullscreenReplies = mutableSetOf<() -> Unit>()
+    internal var fullscreenExitHandler: ((WKWebView, (Boolean) -> Unit) -> Boolean)? = null
     internal var javascriptAllowed: ((WKWebView) -> Boolean)? = null
 
     actual fun reload() {
@@ -65,7 +67,57 @@ actual class AppWebViewState actual internal constructor() {
 
     actual fun goBack(): Boolean {
         val target = webView ?: return false
-        if (!target.canGoBack) return false
+        if (requestFullscreenExit(target, { consumed -> if (!consumed) goBackInHistory(target) }, {})) return true
+        return goBackInHistory(target)
+    }
+
+    actual fun goBack(callback: (Boolean) -> Unit) {
+        val target = webView ?: run { callback(false); return }
+        if (requestFullscreenExit(target, { consumed -> callback(consumed || goBackInHistory(target)) }, { callback(false) })) return
+        callback(goBackInHistory(target))
+    }
+
+    actual fun goForward(): Boolean {
+        val target = webView ?: return false
+        if (!target.canGoForward) return false
+        invalidateJavascriptCallbacks()
+        if (!isAttached(target) || !target.canGoForward) return false
+        target.goForward()
+        updateNavigation(target)
+        return true
+    }
+
+    actual fun exitFullscreen(callback: (Boolean) -> Unit) {
+        val target = webView ?: run { callback(false); return }
+        if (!requestFullscreenExit(target, callback, { callback(false) })) callback(false)
+    }
+
+    private fun requestFullscreenExit(
+        target: WKWebView,
+        callback: (Boolean) -> Unit,
+        onCancelled: () -> Unit,
+    ): Boolean {
+        val generation = callbackGeneration
+        var settled = false
+        val cancel = { if (!settled) { settled = true; onCancelled() } }
+        pendingFullscreenReplies += cancel
+        val accepted = fullscreenExitHandler?.invoke(target) { consumed ->
+            if (!settled) {
+                settled = true
+                pendingFullscreenReplies -= cancel
+                // 取消交付 false，但不能作为脚本失败去回退下一份文档的历史。
+                if (isAttached(target) && callbackGeneration == generation) callback(consumed)
+                else onCancelled()
+            }
+        } == true
+        if (!accepted) { settled = true; pendingFullscreenReplies -= cancel }
+        return accepted
+    }
+
+    private fun goBackInHistory(target: WKWebView): Boolean {
+        if (!isAttached(target) || !target.canGoBack) return false
+        invalidateJavascriptCallbacks()
+        if (!isAttached(target) || !target.canGoBack) return false
         target.goBack()
         updateNavigation(target)
         return true
@@ -88,25 +140,30 @@ actual class AppWebViewState actual internal constructor() {
 
     /** 绑定新实例，并清除只属于上一实例的声明式内容身份。 */
     internal fun attach(target: WKWebView) {
-        callbackGeneration++
         webView = target
+        javascriptAllowed = null
+        fullscreenExitHandler = null
         loadState = IosWebViewLoadState()
         mutableSnapshot.value = snapshot.copy(hasVisibleContent = false)
         updateNavigation(target)
+        // 取消回调可能同步绑定另一个 owner；先完成本次状态更新，避免覆盖它。
+        invalidateJavascriptCallbacks()
     }
 
     /** 只解绑匹配实例，避免旧实例迟到释放时误清理已经重建的新实例。 */
     internal fun detach(target: WKWebView) {
         if (!isAttached(target)) return
-        callbackGeneration++
         javascriptAllowed = null
+        fullscreenExitHandler = null
         webView = null
         loadState = IosWebViewLoadState()
         mutableSnapshot.value = snapshot.copy(
             canGoBack = false,
+            canGoForward = false,
             isLoading = false,
             hasVisibleContent = false,
         )
+        invalidateJavascriptCallbacks()
     }
 
     /**
@@ -152,7 +209,8 @@ actual class AppWebViewState actual internal constructor() {
 
     internal fun pageStarted(target: WKWebView) {
         if (!isAttached(target)) return
-        callbackGeneration++
+        invalidateJavascriptCallbacks()
+        if (!isAttached(target)) return
         mutableSnapshot.value = snapshot.copy(
             currentUrl = target.URL?.absoluteString,
             progress = 0,
@@ -171,6 +229,7 @@ actual class AppWebViewState actual internal constructor() {
             isLoading = false,
             hasVisibleContent = true,
             canGoBack = target.canGoBack,
+            canGoForward = target.canGoForward,
             error = null,
         )
     }
@@ -214,12 +273,18 @@ actual class AppWebViewState actual internal constructor() {
      */
     internal fun isAttached(target: WKWebView): Boolean = webView == target
 
-    internal fun invalidateJavascriptCallbacks() { callbackGeneration++ }
+    internal fun invalidateJavascriptCallbacks() {
+        callbackGeneration++
+        val pending = pendingFullscreenReplies.toList()
+        pendingFullscreenReplies.clear()
+        pending.forEach { it() }
+    }
 
     private fun updateNavigation(target: WKWebView) {
         mutableSnapshot.value = snapshot.copy(
             currentUrl = target.URL?.absoluteString,
             canGoBack = target.canGoBack,
+            canGoForward = target.canGoForward,
         )
     }
 }

@@ -29,6 +29,7 @@ jobs:
           printf '%s  %s\n' e87ea317422d5f41e796e07f9b9fb30b195f3ef616486b5ab3890962e32648ae "$RUNNER_TEMP/system-actions.har" | shasum -a 256 --check
           python3 -c 'import pathlib, sys, tarfile; archive=tarfile.open(sys.argv[1]); member=archive.getmember("package/src/main/ets/WindowPolicy.ets"); assert member.isfile(); pathlib.Path(sys.argv[2]).write_bytes(archive.extractfile(member).read()); archive.close()' "$RUNNER_TEMP/system-actions.har" "$RUNNER_TEMP/window-policy.ets"
       - run: |
+          python3 verification/ci/test_fork_host.py
           python3 verification/publication/test_maven_check.py
           python3 verification/publication/test_metadata.py
           python3 ios/generate-scripts.py --check
@@ -45,6 +46,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - run: bash scripts/ci-pin-fork-host.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
@@ -63,6 +65,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - run: bash scripts/ci-pin-fork-host.sh
       - run: |
           ios_test_target=iosSimulatorArm64Test
           if [[ "$(uname -m)" != arm64 ]]; then ios_test_target=iosX64Test; fi

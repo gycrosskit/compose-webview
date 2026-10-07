@@ -89,3 +89,41 @@ internal val IOS_WEB_EVENT_SCRIPT = """
       }, true);
     })();
 """.trimIndent()
+
+/** WebKit 的原生视频与 DOM 全屏均要等待退出后的实际状态，不把脚本发出当作成功。 */
+internal const val IOS_EXIT_FULLSCREEN_SCRIPT = """
+const video=window.__GY_WEBVIEW_FULLSCREEN_VIDEO__;
+const full=()=>Boolean(document.fullscreenElement||document.webkitFullscreenElement);
+let exit, stillFull;
+if(full()){
+  if(document.exitFullscreen) exit=()=>document.exitFullscreen();
+  else if(document.webkitExitFullscreen) exit=()=>document.webkitExitFullscreen();
+  else return false;
+  stillFull=full;
+}else if(video&&video.webkitDisplayingFullscreen&&video.webkitExitFullscreen){
+  exit=()=>video.webkitExitFullscreen();
+  stillFull=()=>Boolean(video.webkitDisplayingFullscreen);
+}else return false;
+return await new Promise(resolve=>{
+  let settled=false, timer;
+  const events=['fullscreenchange','webkitfullscreenchange'];
+  const videoEvents=['webkitendfullscreen','webkitpresentationmodechanged'];
+  function finish(consumed){
+    if(settled) return;
+    settled=true;
+    clearTimeout(timer);
+    events.forEach(name=>document.removeEventListener(name,check,true));
+    if(video) videoEvents.forEach(name=>video.removeEventListener(name,check,true));
+    resolve(consumed);
+  }
+  function check(){if(!stillFull()) finish(true);}
+  events.forEach(name=>document.addEventListener(name,check,true));
+  if(video) videoEvents.forEach(name=>video.addEventListener(name,check,true));
+  timer=setTimeout(()=>finish(!stillFull()),1500);
+  try{
+    const result=exit();
+    if(result&&typeof result.then==='function') result.then(check,()=>finish(false));
+    check();
+  }catch(error){finish(false);}
+});
+"""

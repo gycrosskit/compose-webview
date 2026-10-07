@@ -2,7 +2,7 @@
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
-本版本为 **0.2.0-rc.11**（Maven、Native Git Pod、HAR），配套 system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。补齐低权限页面脚本、完整 URL 导航白名单与 iOS/OHOS 原生透明背景，保留 rc.10 的 OhosWebViewDataCleaner。版本冻结、远程交付与设备验收分别记录。
+本地候选 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.12**：补齐 CMP 前进历史、退出全屏与返回回执，iOS 两种入口共用等待实际退出的脚本。OHOS 原生源码未变，继续配套 Web HAR **0.2.0-rc.11**、system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。候选归档、远程发布与设备验收分别记录，见 [rc.12 候选验收](docs/0.2.0-rc.12候选验收.md)。
 
 iOS 常规网页最低仍为 15.0；受控文件上传通过公开 `WKUIDelegate.runOpenPanelWithParameters`，要求 iOS18.4+。15～18.3 开启 `fileChooserEnabled` 会明确拒绝并发送 `FILE_CHOOSER` Unsupported；关闭能力时的 DOM 兼容拦截无法保证默认 WebKit 上传被原生隔离。需要这种隔离的页面应使用 18.4+。iOS 视频拍摄输出真实 MOV，仅接受 MP4 时拒绝，不做改名转换。见[完整源码审查与平台边界](docs/完整源码审查.md)。
 
@@ -133,15 +133,15 @@ dependencyResolutionManagement {
 
 ```kotlin
 // CMP Android/iOS
-implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.11")
+implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.12")
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.11")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.12")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖，也不适用于 CMP 入口：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.11'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.12'
 ```
 
 HarmonyOS rc.11 OHPM 上架前；从[rc.11 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.11) 下载 `WebViewNative.har`，配套实际 system-actions-native rc.4 HAR，按[HAR 接入指南](ohos/webview-native/README.md)的 root override 安装。不能把审核受理当作 Registry 可安装。
@@ -272,3 +272,7 @@ PR 的远程验收固定使用已发布 `0.2.0-rc.9` 作为回归基线，验证
 公网核验同步组织 `templates/check-public-maven.py`：使用冻结归档给出的完整 publications 清单，核对 JitPack tag/commit、每个公开 POM/Module、全部声明变体字节大小和四类哈希、内部精确版本及 `available-at`；MD5/SHA-1 sidecar 必须匹配。SHA-256/SHA-512 sidecar 的 HTTP 404 单独输出为渠道缺失，不计为校验通过。
 
 OHOS Node 契约使用 manifest 声明的 System Actions `0.2.0-rc.4` Release HAR：下载并核对冻结 SHA-256 后读取真实 WindowPolicy 源文件，避免依赖本机已安装的 `oh_modules`。这只证明源码契约，不等于 HAR 构建或 OHPM Registry 安装。
+
+### CMP 与 Kuikly 的网页命令
+
+两种入口均支持返回、前进、停止、重载和退出全屏。CMP `snapshot.canGoBack/canGoForward` 可驱动历史按钮；`state.goForward()` 无历史时返回 false。返回优先退出全屏再走历史，`state.goBack { consumed -> }` 与 `state.exitFullscreen { consumed -> }` 交付最终消费结果。iOS 需要异步验证 DOM/视频全屏退出；兼容的 `state.goBack(): Boolean` 在全屏时只表示请求受理，需要最终结果时使用回调重载。文档/owner结束时已受理命令以 false 取消一次，迟到原生回执忽略，不会回退新实例的历史。OHOS UI 由 Kuikly/Kuikly Compose 承载，未提供独立 JetBrains CMP OHOS 运行时。

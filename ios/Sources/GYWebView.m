@@ -618,7 +618,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (!owner || !self.fullscreen) { if (callback) callback(@{@"result": @NO}); return; }
     NSUInteger generation = self.callbackGeneration;
     __weak typeof(self) weakSelf = self;
-    NSString *source = @"const full=document.fullscreenElement||document.webkitFullscreenElement; if(full){if(document.exitFullscreen) await document.exitFullscreen(); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); return !(document.fullscreenElement||document.webkitFullscreenElement);} const video=window.__GY_WEBVIEW_FULLSCREEN_VIDEO__; if(video&&video.webkitDisplayingFullscreen&&video.webkitExitFullscreen){video.webkitExitFullscreen(); await new Promise(resolve=>setTimeout(resolve,0)); return !video.webkitDisplayingFullscreen;} return false;";
+    NSString *source = IOS_EXIT_FULLSCREEN_SCRIPT;
     [owner callAsyncJavaScript:source arguments:@{} inFrame:nil inContentWorld:WKContentWorld.pageWorld completionHandler:^(id value, NSError *error) {
         GYWebView *strongSelf = weakSelf;
         if (!strongSelf || strongSelf.released || strongSelf.webView != owner || strongSelf.callbackGeneration != generation) return;

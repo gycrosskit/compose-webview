@@ -172,7 +172,7 @@ private fun AppWebViewState.createWebViewClientListener(target: WebView) = objec
             WebViewDiagnostics.ignoredCallback(target, "page-finish")
             return
         }
-        onLoadFinished(target.url ?: url, target.canGoBack())
+        onLoadFinished(target.url ?: url, target.canGoBack(), target.canGoForward())
     }
 
     override fun onPageCommitVisible(url: String?) {
