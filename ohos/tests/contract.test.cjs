@@ -24,6 +24,9 @@ let captureHeaderValid = true;
 const deletedFiles = [];
 let fileOpens = 0;
 let failNextLoad = false;
+const dataCleaningCalls = [];
+let dataCleaningFailure = null;
+let cookieDeletion = null;
 class Port {
   closed = false;
   close() { this.closed = true; }
@@ -31,6 +34,10 @@ class Port {
   message(message) { this.callback?.(message); }
 }
 class Controller {
+  static removeAllCache(disk) {
+    dataCleaningCalls.push(['cache', disk]);
+    if (dataCleaningFailure === 'cache') throw new Error('cache failed');
+  }
   loads = []; data = []; refreshes = 0; url = 'https://trusted.test/page'; ports = []; deliveries = []; scripts = []; scriptContext = null;
   loadUrl(url, headers) { if (failNextLoad) { failNextLoad = false; throw new Error('first load rejected'); } this.loads.push({ url, headers }); this.url = url; }
   loadData(...args) { if (failNextLoad) { failNextLoad = false; throw new Error('first load rejected'); } this.data.push(args); }
@@ -55,7 +62,10 @@ const mocks = {
   '@kit.ArkTS': { url: { URL }, util: { generateRandomUUID: () => 'test-capture', TextEncoder: class { encodeInto(value) { return new TextEncoder().encode(value); } } } },
   '@kuikly-open/render': { KuiklyRenderBaseView: BaseView },
   '@ohos.arkui.node': { ComponentContent: class {} },
-  '@kit.ArkWeb': { webview: { WebviewController: Controller } },
+  '@kit.ArkWeb': { webview: { WebviewController: Controller,
+    WebCookieManager: { clearAllCookies: () => { dataCleaningCalls.push(['cookies']); return cookieDeletion.promise; } },
+    WebStorage: { deleteAllData: () => { dataCleaningCalls.push(['storage']); if (dataCleaningFailure === 'storage') throw new Error('storage failed'); } },
+  } },
   '@kit.ArkUI': { window: windowObject, FrameCallback: class {} },
   '@kit.AbilityKit': { abilityAccessCtrl: { createAtManager: () => ({ requestPermissionsFromUser: () => permission.promise }) } },
   '@kit.CoreFileKit': { fileIo: { OpenMode: { CREATE: 1, READ_WRITE: 2, READ_ONLY: 0 }, openSync: path => { fileOpens++; return { fd: path }; }, closeSync() {}, statSync: () => ({ size: fileSize }), readSync: (fd, buffer) => { const bytes = new Uint8Array(buffer); if (captureHeaderValid) { if (String(fd).endsWith('.mp4')) { bytes.set([0x66, 0x74, 0x79, 0x70], 4); } else bytes.set([0xff, 0xd8, 0xff]); } return 12; }, unlinkSync: path => deletedFiles.push(path) }, fileUri: { FileUri: class { constructor(uri) { this.name = uri.split('/').at(-1); } }, getUriFromPath: path => 'file://' + path }, picker: { DocumentSelectOptions: class {}, DocumentViewPicker: class { select() { return selectedFile.promise; } } } },
@@ -91,6 +101,33 @@ function request(overrides = {}) {
 const encoded = value => JSON.stringify(value);
 const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => value, isMainFrame: () => true, isRequestGesture: () => gesture });
 (async () => {
+  const { OhosWebViewDataCleaner } = load('OhosWebViewDataCleaner.ets');
+  OhosWebViewDataCleaner.clearResourceCache();
+  assert.deepEqual(dataCleaningCalls.splice(0), [['cache', true]], 'resource cleanup preserves cookies and storage');
+  dataCleaningFailure = 'cache';
+  assert.throws(() => OhosWebViewDataCleaner.clearResourceCache(), /cache failed/);
+  assert.deepEqual(dataCleaningCalls.splice(0), [['cache', true]]);
+  dataCleaningFailure = null;
+  cookieDeletion = deferred();
+  let websiteDeletionFinished = false;
+  const websiteDeletion = OhosWebViewDataCleaner.clearWebsiteData().then(() => { websiteDeletionFinished = true; });
+  assert.deepEqual(dataCleaningCalls, [['cache', true], ['cookies']]);
+  await Promise.resolve();
+  assert.equal(websiteDeletionFinished, false, 'wait for actual cookie completion');
+  cookieDeletion.resolve(); await websiteDeletion;
+  assert.deepEqual(dataCleaningCalls.splice(0), [['cache', true], ['cookies'], ['storage']]);
+  for (const failedStep of ['cache', 'cookies', 'storage']) {
+    dataCleaningFailure = failedStep;
+    cookieDeletion = deferred();
+    const failedDeletion = OhosWebViewDataCleaner.clearWebsiteData();
+    if (failedStep === 'cookies') cookieDeletion.reject(new Error('cookies failed'));
+    else cookieDeletion.resolve();
+    await assert.rejects(failedDeletion, new RegExp(`${failedStep} failed`));
+    const expected = [['cache', true], ['cookies'], ['storage']].slice(0, ['cache', 'cookies', 'storage'].indexOf(failedStep) + 1);
+    assert.deepEqual(dataCleaningCalls.splice(0), expected, 'stop at failed step without claiming completion');
+  }
+  dataCleaningFailure = null;
+
   const standard = request();
   const strictMallRule = { type: 'hostSuffix', suffix: 'jd.com', scheme: 'https', includeRoot: false, rejectUserInfo: true };
   for (const value of ['https://user@shop.jd.com', 'https://@shop.jd.com', 'https://:@shop.jd.com', 'https://shop.jd.com.evil', 'https://shop.jd.com..', 'https://shop..jd.com', 'http://shop.jd.com', 'https://jd.com']) assert.equal(wire.matches(value, strictMallRule), false, value);
@@ -594,5 +631,5 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     assert.equal(delivered.length, 0, 'no pre-hide or hidden message is flushed after show');
     assert.equal(visibilityTop.GYWebViewBridge.postMessage('visible-new', '{}'), true); assert.equal(delivered.length, 1);
   }
-  console.log(`PASS (${harArgument >= 0 ? 'actual HAR' : 'source'}): first-load retry URL/HTML, synchronous origin policy, controlled capture, once-only results, hidden initialization, Bridge and lifecycle`);
+  console.log(`PASS (${harArgument >= 0 ? 'actual HAR' : 'source'}): shared Web data cleanup/order/failures, first-load retry URL/HTML, synchronous origin policy, controlled capture, once-only results, hidden initialization, Bridge and lifecycle`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

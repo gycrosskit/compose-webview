@@ -1,3 +1,9 @@
+# 0.2.0-rc.10（候选，尚未发布）
+
+- 导出无状态 `OhosWebViewDataCleaner`：资源缓存与网站数据分别清理；等待 Cookie 删除回执，保留系统异常。
+- 宿主负责 UI 线程、Web 初始化、清理时机及取消/销毁回执；WebStorage 同步返回不作为持久化或业务退出证明。
+- Maven / HAR 候选统一 rc.10；未修改的 iOS Native Pod 保持 rc.9，system-actions-native rc.4 / Kuikly Render 2.28.0 不变。
+
 # 0.2.0-rc.9（候选，尚未发布）
 
 - CMP/Kuikly 的 Bridge、原生回执和弹窗按当前 owner、文档代次与可见性撤销；禁用 JavaScript 不再注入声明式脚本。
