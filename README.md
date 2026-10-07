@@ -2,7 +2,9 @@
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
-本地候选 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.12**：补齐 CMP 前进历史、退出全屏与返回回执，iOS 两种入口共用等待实际退出的脚本。OHOS 原生源码未变，继续配套 Web HAR **0.2.0-rc.11**、system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。候选归档、远程发布与设备验收分别记录，见 [rc.12 候选验收](docs/0.2.0-rc.12候选验收.md)。
+未发布候选 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.13**：默认关闭的 `pageMessageChannels` 提供初始完整 HTTP(S) 主页面的具名早期双向 string 通道。Android/iOS 每次声明加载与显式 reload 重建物理 owner；隐藏、停止、后续主文档导航和释放同步撤销。OHOS 新 HAR **0.2.0-rc.12** 对非空通道明确拒绝并上报 Unsupported，保留默认空配置的既有行为；配套 system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。详见[早期通道候选验收](docs/早期页面通道候选验收.md)。
+
+已发布 **rc.12** 不包含早期具名通道。其 CMP 前进历史、返回/退出全屏回执、共享异步退出脚本与旧 owner/取消修复在 rc.13 中保留；历史源码验证见 [rc.12 候选验收](docs/0.2.0-rc.12候选验收.md)。
 
 iOS 常规网页最低仍为 15.0；受控文件上传通过公开 `WKUIDelegate.runOpenPanelWithParameters`，要求 iOS18.4+。15～18.3 开启 `fileChooserEnabled` 会明确拒绝并发送 `FILE_CHOOSER` Unsupported；关闭能力时的 DOM 兼容拦截无法保证默认 WebKit 上传被原生隔离。需要这种隔离的页面应使用 18.4+。iOS 视频拍摄输出真实 MOV，仅接受 MP4 时拒绝，不做改名转换。见[完整源码审查与平台边界](docs/完整源码审查.md)。
 
@@ -99,6 +101,8 @@ classDiagram
 ```
 
 源码入口：[请求与安全](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt)、[导航规则](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt)、[CMP 入口与状态](src/commonMain/kotlin/io/github/gycrosskit/composewebview/ComposeWebView.kt)、[Kuikly 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt)、[Android 原生接线](webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt)。`AppWebViewState` 属于当前组合位置，不能放进 ViewModel 或跨页面复用；Kuikly 命令通过异步回调返回。
+
+具名早期双向消息通道目前是**未发布源码候选**：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；入站为 `PageMessage`，宿主用单次 `replyPageMessage` 回复。Android 使用 `WEB_MESSAGE_LISTENER`，不依赖 `DOCUMENT_START_SCRIPT`；iOS 使用闭包文档 nonce。仅限初始完整 HTTP(S) 主页面，隐藏、取消和释放撤销；隐藏后需显式 reload 恢复。OHOS 拒绝非空通道并上报不支持。现有 rc.11 安装坐标尚不含此 API，接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道源码候选)。
 
 ## 平台与模块
 

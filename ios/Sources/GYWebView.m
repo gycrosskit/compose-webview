@@ -101,10 +101,14 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 @property(nonatomic, assign) BOOL pageVisible;
 @property(nonatomic, assign) BOOL released;
 @property(nonatomic, assign) NSUInteger callbackGeneration;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, id> *fullscreenCancellations;
 @property(nonatomic, assign) BOOL navigationFailed;
 @property(nonatomic, assign) BOOL initialHtmlNavigation;
 @property(nonatomic, assign) BOOL fullscreen;
 @property(nonatomic, copy) NSString *documentToken;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *pageMessageReplies;
+@property(nonatomic, assign) BOOL pageMessageRevoked;
+@property(nonatomic, assign) BOOL pageMessageInitialNavigation;
 @property(nonatomic, strong) UIDocumentPickerViewController *filePicker;
 @property(nonatomic, copy) void (^filePickerCompletion)(NSArray<NSURL *> *);
 @property(nonatomic, assign) NSUInteger filePickerGeneration;
@@ -137,9 +141,13 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     else if ([key isEqual:@"visible"]) {
         BOOL visible = [value boolValue];
         if (self.pageVisible != visible && self.webView) {
+            WKWebView *owner = self.webView;
+            NSUInteger generation = self.callbackGeneration + 1;
+            self.pageMessageRevoked = self.pageMessageRevoked || !visible;
             self.pageVisible = visible;
             [self prepareDocumentScripts];
-            [self.webView evaluateJavaScript:[self transportScript] completionHandler:nil];
+            if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
+            [owner evaluateJavaScript:[self transportScript] completionHandler:nil];
         } else self.pageVisible = visible;
         self.hidden = !self.pageVisible;
         [self updateMediaVisibility];
@@ -151,7 +159,10 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         if (self.webView && [oldPage isEqual:newPage] && [self validRequest:request]) {
             self.request = request; return;
         }
-        [self releaseWebView]; self.request = nil;
+        NSUInteger generation = self.callbackGeneration + 1;
+        [self releaseWebView];
+        if (self.released || self.webView || self.callbackGeneration != generation) return;
+        self.request = nil;
         if (![self validRequest:request]) {
             [self fail:@"LOAD_EXCEPTION" message:@"Invalid WebView request" url:nil code:nil]; return;
         }
@@ -162,6 +173,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (void)emit:(NSDictionary *)event { if (!self.released && self.onEvent) self.onEvent(event); }
 - (void)fail:(NSString *)kind message:(NSString *)message url:(NSString *)url code:(NSNumber *)code {
     self.navigationFailed = YES;
+    [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES;
     [self emit:@{@"type": @"loadFailed", @"kind": kind, @"message": message ?: @"", @"url": url ?: NSNull.null, @"errorCode": code ?: NSNull.null, @"isMainFrame": @YES}];
 }
 - (BOOL)validRules:(id)rules {
@@ -223,6 +235,13 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     }
     if (GYBool(settings, @"allowFileAccess", NO) || GYBool(settings, @"allowContentAccess", NO)) return NO;
     if (GYBool(security, @"fileChooserEnabled", NO)) { if (@available(iOS 18.4, *)) {} else { [self emit:@{@"type": @"capabilityUnsupported", @"capability": @"FILE_CHOOSER"}]; return NO; } }
+    id channels = request[@"pageMessageChannels"] ?: @[];
+    if (![channels isKindOfClass:NSArray.class] || [NSSet setWithArray:channels].count > 16) return NO;
+    NSRegularExpression *channelPattern = [NSRegularExpression regularExpressionWithPattern:@"^[a-zA-Z][a-zA-Z0-9_]{0,79}$" options:0 error:nil];
+    NSArray *reservedChannels = @[@"window", @"self", @"top", @"parent", @"frames", @"document", @"location", @"navigator", @"webkit", @"globalThis", @"console", @"history", @"performance", @"JSON", @"Object", @"Array", @"Function", @"Promise", @"eval", @"undefined", @"NaN", @"Infinity", @"onmessage", @"postMessage", @"name", @"constructor", @"prototype", @"JSAndroidBridge", @"WebViewJavascriptBridge"];
+    for (id channel in channels) if (!GYString(channel) || ![channelPattern firstMatchInString:channel options:0 range:NSMakeRange(0, [channel length])] || [reservedChannels containsObject:channel] || [channel hasPrefix:@"ComposeWebView"] || [channel hasPrefix:@"GYWebView"]) return NO;
+    NSString *pageUrl = [content[@"type"] isEqual:@"url"] ? GYString(content[@"url"]) : GYString(content[@"baseUrl"]);
+    if ([channels count] && !GYOrigin(pageUrl)) return NO;
     id scripts = request[@"scripts"] ?: @[];
     if (![scripts isKindOfClass:NSArray.class]) return NO;
     NSRegularExpression *ids = [NSRegularExpression regularExpressionWithPattern:@"^[\\p{L}\\p{N}_.-]+$" options:0 error:nil];
@@ -252,6 +271,30 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     NSString *initial = [content[@"type"] isEqual:@"url"] ? GYString(content[@"url"]) : GYString(content[@"baseUrl"]);
     NSDictionary *origin = GYOrigin(initial);
     return GYBool(security, @"pageBridgeEnabled", NO) && origin && [origin isEqual:GYOrigin(value)];
+}
+- (BOOL)pageMessageAllowed:(NSString *)url {
+    NSDictionary *content = self.request[@"content"], *policy = self.request[@"navigationPolicy"];
+    NSString *initial = [content[@"type"] isEqual:@"url"] ? GYString(content[@"url"]) : GYString(content[@"baseUrl"]);
+    if (![self.request[@"pageMessageChannels"] count] || !GYBool(self.request[@"settings"], @"javaScriptEnabled", NO) || !GYOrigin(initial) || ![initial isEqual:url]) return NO;
+    NSString *scheme = [NSURLComponents componentsWithString:url].scheme.lowercaseString;
+    if (![(policy[@"allowedSchemes"] ?: @[@"http", @"https"]) containsObject:scheme]) return NO;
+    if ([policy[@"allowedUrls"] count] && ![policy[@"allowedUrls"] containsObject:url]) return NO;
+    if ([policy[@"allowedOrigins"] count]) {
+        BOOL allowed = NO;
+        for (NSString *origin in policy[@"allowedOrigins"]) if ([GYOrigin(origin) isEqual:GYOrigin(url)]) allowed = YES;
+        if (!allowed) return NO;
+    }
+    for (NSDictionary *rule in policy[@"blockedRules"]) if (GYRuleMatches(rule, url)) return NO;
+    NSDictionary *security = self.request[@"security"];
+    if ((GYBool(security, @"appBridgeEnabled", NO) || GYBool(security, @"pageBridgeEnabled", NO)) && ![self bridgeAllowed:url]) return NO;
+    return YES;
+}
+- (NSString *)pageMessageScript {
+    NSDictionary *content = self.request[@"content"];
+    NSString *initial = [content[@"type"] isEqual:@"url"] ? GYString(content[@"url"]) : GYString(content[@"baseUrl"]);
+    if (self.pageMessageRevoked || ![self pageMessageAllowed:initial]) return nil;
+    NSString *channels = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:self.request[@"pageMessageChannels"] options:0 error:nil] encoding:NSUTF8StringEncoding];
+    return [[[WEB_VIEW_PAGE_MESSAGE_SCRIPT stringByReplacingOccurrencesOfString:@"__GY_PAGE_TOKEN_JSON__" withString:GYQuote(self.documentToken)] stringByReplacingOccurrencesOfString:@"__GY_PAGE_CHANNELS_JSON__" withString:channels] stringByReplacingOccurrencesOfString:@"__GY_PAGE_URL_JSON__" withString:GYQuote(initial)];
 }
 - (BOOL)allows:(NSString *)url mainFrame:(BOOL)mainFrame newWindow:(BOOL)newWindow gesture:(BOOL)gesture {
     NSDictionary *policy = self.request[@"navigationPolicy"], *security = self.request[@"security"];
@@ -299,11 +342,15 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     [self.webView.configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:source injectionTime:start ? WKUserScriptInjectionTimeAtDocumentStart : WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES]];
 }
 - (void)createWebView {
-    NSDictionary *content = self.request[@"content"], *settings = self.request[@"settings"], *security = self.request[@"security"];
+    NSDictionary *request = self.request;
+    NSUInteger generation = self.callbackGeneration;
+    NSDictionary *content = request[@"content"], *settings = request[@"settings"], *security = request[@"security"];
     NSString *value = GYString(content[[content[@"type"] isEqual:@"url"] ? @"url" : @"html"]);
     NSString *origin = [content[@"type"] isEqual:@"url"] ? value : GYString(content[@"baseUrl"]);
     if (!value.length) { [self fail:@"EMPTY_CONTENT" message:@"" url:origin code:nil]; return; }
     if (origin && ![self allows:origin mainFrame:YES newWindow:NO gesture:NO]) return;
+    // navigation 事件与取消回执可同步替换 owner，旧调用不能继续创建或授权新页面。
+    if (self.released || self.request != request || self.callbackGeneration != generation || self.webView) return;
     WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
     configuration.defaultWebpagePreferences.allowsContentJavaScript = GYBool(settings, @"javaScriptEnabled", NO);
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = GYBool(settings, @"javaScriptCanOpenWindowsAutomatically", NO);
@@ -319,18 +366,28 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     GYWebViewMessageHandler *handler = [GYWebViewMessageHandler new]; handler.owner = self;
     [configuration.userContentController addScriptMessageHandler:handler name:@"JSAndroidBridge"];
     [configuration.userContentController addScriptMessageHandler:handler name:@"ComposeWebViewEvent"];
+    if ([self.request[@"pageMessageChannels"] count]) [configuration.userContentController addScriptMessageHandler:handler name:@"ComposeWebViewPageMessage"];
+    self.pageMessageInitialNavigation = YES;
+    self.pageMessageRevoked = !self.pageVisible;
+    WKWebView *owner = self.webView;
     [self prepareDocumentScripts];
+    if (self.released || self.webView != owner || self.callbackGeneration != generation + 1) return;
     NSString *suffix = GYString(settings[@"userAgentSuffix"]);
     self.webView.configuration.applicationNameForUserAgent = suffix;
     [self installResourceRulesAndLoad];
     [self updateMediaVisibility];
 }
 - (void)prepareDocumentScripts {
-    WKWebViewConfiguration *configuration = self.webView.configuration;
+    WKWebView *owner = self.webView;
+    WKWebViewConfiguration *configuration = owner.configuration;
     NSDictionary *settings = self.request[@"settings"], *security = self.request[@"security"];
     self.documentToken = NSUUID.UUID.UUIDString;
-    self.callbackGeneration++;
+    self.pageMessageReplies = [NSMutableDictionary dictionary];
+    NSUInteger generation = ++self.callbackGeneration;
+    NSArray *cancellations = [self takeFullscreenCancellations];
     [self revokeFilePicker];
+    for (void (^cancel)(void) in cancellations) cancel();
+    if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
     [configuration.userContentController removeAllUserScripts];
     [self addScript:[self transportScript] start:YES];
     [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:IOS_FILE_CHOOSER_GATE_SCRIPT injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
@@ -338,6 +395,8 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         [self addScript:[IOS_WEB_EVENT_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.ComposeWebViewEvent" withString:@"window.__GY_WEBVIEW_EVENT_TRANSPORT__"] start:YES];
         [self addScript:[WEB_VIEW_PERFORMANCE_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.ComposeWebViewEvent" withString:@"window.__GY_WEBVIEW_EVENT_TRANSPORT__"] start:YES];
         if (GYBool(security, @"appBridgeEnabled", NO) || GYBool(security, @"pageBridgeEnabled", NO)) [self addScript:[IOS_BRIDGE_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.JSAndroidBridge" withString:@"window.__GY_WEBVIEW_BRIDGE_TRANSPORT__"] start:YES];
+        NSString *pageMessages = [self pageMessageScript];
+        if (pageMessages) [self addScript:pageMessages start:YES];
         for (NSDictionary *script in self.request[@"scripts"]) {
             NSString *source = script[@"source"];
             if ([script[@"injectionTime"] isEqual:@"DOCUMENT_FINISHED"]) continue;
@@ -402,6 +461,8 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 }
 - (void)history { [self emit:@{@"type": @"historyChanged", @"url": self.webView.URL.absoluteString ?: NSNull.null, @"canGoBack": @(self.webView.canGoBack), @"canGoForward": @(self.webView.canGoForward)}]; }
 - (void)webView:(WKWebView *)view decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:(void (^)(WKNavigationActionPolicy))decision {
+    if (view != self.webView || self.released) { decision(WKNavigationActionPolicyCancel); return; }
+    NSUInteger generation = self.callbackGeneration;
     BOOL popup = action.targetFrame == nil, mainFrame = popup || action.targetFrame.isMainFrame;
     NSString *url = action.request.URL.absoluteString;
     BOOL internalHtmlLoad = self.initialHtmlNavigation && mainFrame && !popup && action.navigationType == WKNavigationTypeOther &&
@@ -409,7 +470,13 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (mainFrame) self.initialHtmlNavigation = NO;
     BOOL allow = view == self.webView && !self.released && (internalHtmlLoad || [self allows:url mainFrame:mainFrame newWindow:popup gesture:action.navigationType == WKNavigationTypeLinkActivated]);
     if (internalHtmlLoad && allow) [self emit:@{@"type": @"navigation", @"url": url, @"isMainFrame": @YES, @"hasUserGesture": @NO, @"target": @"CURRENT_WINDOW", @"blocked": @NO}];
-    if (allow && !popup && mainFrame) [self prepareDocumentScripts];
+    allow = allow && view == self.webView && !self.released && self.callbackGeneration == generation;
+    if (allow && !popup && mainFrame) {
+        if (!self.pageMessageInitialNavigation) self.pageMessageRevoked = YES;
+        self.pageMessageInitialNavigation = NO;
+        [self prepareDocumentScripts];
+        allow = view == self.webView && !self.released && self.callbackGeneration == generation + 1;
+    }
     decision(allow && !popup ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
     if (allow && popup && view == self.webView && !self.released) [view loadRequest:action.request];
 }
@@ -417,7 +484,11 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (void)webView:(WKWebView *)view didStartProvisionalNavigation:(WKNavigation *)navigation {
     if (view != self.webView) return;
     self.initialHtmlNavigation = NO;
-    self.callbackGeneration++; self.navigationFailed = NO; [self revokeFilePicker];
+    NSUInteger generation = ++self.callbackGeneration;
+    NSArray *cancellations = [self takeFullscreenCancellations];
+    self.navigationFailed = NO; [self revokeFilePicker];
+    for (void (^cancel)(void) in cancellations) cancel();
+    if (view != self.webView || self.released || self.callbackGeneration != generation) return;
     [self emit:@{@"type": @"pageStarted", @"url": view.URL.absoluteString ?: NSNull.null}];
 }
 - (void)webView:(WKWebView *)view didCommitNavigation:(WKNavigation *)navigation { if (view == self.webView) [self emit:@{@"type": @"firstContentVisible", @"url": view.URL.absoluteString ?: NSNull.null}]; }
@@ -437,7 +508,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (void)webView:(WKWebView *)view decidePolicyForNavigationResponse:(WKNavigationResponse *)response decisionHandler:(void (^)(WKNavigationResponsePolicy))decision {
     NSHTTPURLResponse *http = [response.response isKindOfClass:NSHTTPURLResponse.class] ? (NSHTTPURLResponse *)response.response : nil;
     BOOL failed = view == self.webView && response.isForMainFrame && http.statusCode >= 400;
-    if (failed) { self.navigationFailed = YES; [self emit:@{@"type": @"loadFailed", @"kind": @"HTTP", @"url": http.URL.absoluteString ?: NSNull.null, @"httpStatus": @(http.statusCode), @"message": @"", @"isMainFrame": @YES}]; }
+    if (failed) { self.navigationFailed = YES; [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES; [self emit:@{@"type": @"loadFailed", @"kind": @"HTTP", @"url": http.URL.absoluteString ?: NSNull.null, @"httpStatus": @(http.statusCode), @"message": @"", @"isMainFrame": @YES}]; }
     decision(failed ? WKNavigationResponsePolicyCancel : WKNavigationResponsePolicyAllow);
 }
 - (void)webView:(WKWebView *)view requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision))decision API_AVAILABLE(ios(15.0)) {
@@ -449,6 +520,14 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (message.webView != self.webView || !message.frameInfo.isMainFrame || controller != self.webView.configuration.userContentController || self.released) return;
     NSDictionary *envelope = [message.body isKindOfClass:NSDictionary.class] ? message.body : nil;
     if (![envelope[@"token"] isEqual:self.documentToken]) return;
+    if ([message.name isEqual:@"ComposeWebViewPageMessage"]) {
+        NSString *channel = GYString(envelope[@"channel"]), *data = GYString(envelope[@"data"]), *source = message.frameInfo.request.URL.absoluteString;
+        if (!self.pageVisible || self.pageMessageRevoked || !channel || !data || data.length > 65536 || ![data canBeConvertedToEncoding:NSUTF8StringEncoding] || [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 65536 || self.pageMessageReplies.count >= 128 || ![self.request[@"pageMessageChannels"] containsObject:channel] || ![self pageMessageAllowed:source] || ![GYFrameOrigin(message.frameInfo) isEqual:GYOrigin(source)]) return;
+        NSString *replyId = NSUUID.UUID.UUIDString;
+        self.pageMessageReplies[replyId] = @{@"channel": channel, @"source": source};
+        [self emit:@{@"type": @"pageMessage", @"channel": channel, @"data": data, @"replyId": replyId}];
+        return;
+    }
     NSString *raw = GYString(envelope[@"value"]);
     if ([message.name isEqual:@"JSAndroidBridge"]) {
         if (!self.pageVisible) return;
@@ -471,16 +550,36 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 }
 - (void)hrv_callWithMethod:(NSString *)method params:(NSString *)params callback:(KuiklyRenderCallback)callback {
     WKWebView *owner = self.webView;
-    if (self.released) return;
+    if (self.released) { if ([@[@"replyPageMessage", @"goBack", @"exitFullscreen"] containsObject:method] && callback) callback(@{@"result": @NO}); return; }
     id result = @NO;
-    if ([method isEqual:@"reload"]) { [owner reload]; result = owner ? @YES : @NO; }
+    if ([method isEqual:@"reload"]) {
+        // 重建具名频道 owner，旧文档不能抢占宿主 reload 的下一次导航授权。
+        if (owner && [self.request[@"pageMessageChannels"] count]) {
+            NSUInteger generation = self.callbackGeneration + 1;
+            [self releaseWebView];
+            if (!self.released && !self.webView && self.callbackGeneration == generation) [self createWebView];
+            result = self.webView ? @YES : @NO;
+        }
+        else { [owner reload]; result = owner ? @YES : @NO; }
+    }
     else if ([method isEqual:@"goBack"]) {
         if (self.fullscreen) { [self exitFullscreen:callback fallbackToHistory:YES]; return; }
-        result = @(owner.canGoBack); if (owner.canGoBack) [owner goBack];
+        result = @(owner.canGoBack); if (owner.canGoBack) { [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES; [owner goBack]; }
     }
-    else if ([method isEqual:@"goForward"]) { result = @(owner.canGoForward); if (owner.canGoForward) [owner goForward]; }
-    else if ([method isEqual:@"stopLoading"]) { [owner stopLoading]; result = owner ? @YES : @NO; }
+    else if ([method isEqual:@"goForward"]) { result = @(owner.canGoForward); if (owner.canGoForward) { [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES; [owner goForward]; } }
+    else if ([method isEqual:@"stopLoading"]) { [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES; [owner stopLoading]; result = owner ? @YES : @NO; }
     else if ([method isEqual:@"exitFullscreen"]) { [self exitFullscreen:callback fallbackToHistory:NO]; return; }
+    else if ([method isEqual:@"replyPageMessage"]) {
+        NSDictionary *value = GYObject(params);
+        NSString *replyId = GYString(value[@"replyId"]), *data = GYString(value[@"data"]);
+        NSDictionary *reply = replyId ? self.pageMessageReplies[replyId] : nil;
+        if (owner && self.pageVisible && !self.pageMessageRevoked && data && data.length <= 65536 && [data canBeConvertedToEncoding:NSUTF8StringEncoding] && [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] <= 65536 && reply && [self.request[@"pageMessageChannels"] containsObject:reply[@"channel"]] && [self pageMessageAllowed:reply[@"source"]]) {
+            [self.pageMessageReplies removeObjectForKey:replyId];
+            NSString *script = [NSString stringWithFormat:@"window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__ && window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__(%@,%@,%@)", GYQuote(self.documentToken), GYQuote(reply[@"channel"]), GYQuote(data)];
+            [owner evaluateJavaScript:script completionHandler:nil];
+            result = @YES;
+        }
+    }
     else if ([method isEqual:@"evaluateJavascript"]) {
         NSString *script = GYString(GYObject(params)[@"script"]);
         if (!owner || !script || !self.pageVisible || !GYBool(self.request[@"settings"], @"javaScriptEnabled", NO) || !([self trusted:owner.URL.absoluteString] || (GYBool(self.request[@"security"], @"pageBridgeEnabled", NO) && [self bridgeAllowed:owner.URL.absoluteString]))) { if (callback) callback(@{@"result": NSNull.null}); return; }
@@ -613,19 +712,34 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     for (NSURL *url in self.temporaryFiles) [NSFileManager.defaultManager removeItemAtURL:url error:nil];
     [self.temporaryFiles removeAllObjects];
 }
+- (NSArray *)takeFullscreenCancellations {
+    NSArray *pending = self.fullscreenCancellations.allValues ?: @[];
+    [self.fullscreenCancellations removeAllObjects];
+    return pending;
+}
 - (void)exitFullscreen:(KuiklyRenderCallback)callback fallbackToHistory:(BOOL)back {
     WKWebView *owner = self.webView;
     if (!owner || !self.fullscreen) { if (callback) callback(@{@"result": @NO}); return; }
     NSUInteger generation = self.callbackGeneration;
     __weak typeof(self) weakSelf = self;
-    NSString *source = IOS_EXIT_FULLSCREEN_SCRIPT;
-    [owner callAsyncJavaScript:source arguments:@{} inFrame:nil inContentWorld:WKContentWorld.pageWorld completionHandler:^(id value, NSError *error) {
+    NSString *identifier = NSUUID.UUID.UUIDString;
+    __block BOOL settled = NO;
+    void (^settle)(BOOL) = ^(BOOL result) {
+        if (settled) return;
+        settled = YES;
+        [weakSelf.fullscreenCancellations removeObjectForKey:identifier];
+        if (callback) callback(@{@"result": @(result)});
+    };
+    if (!self.fullscreenCancellations) self.fullscreenCancellations = [NSMutableDictionary dictionary];
+    self.fullscreenCancellations[identifier] = [^{ settle(NO); } copy];
+    [owner callAsyncJavaScript:IOS_EXIT_FULLSCREEN_SCRIPT arguments:@{} inFrame:nil inContentWorld:WKContentWorld.pageWorld completionHandler:^(id value, NSError *error) {
         GYWebView *strongSelf = weakSelf;
-        if (!strongSelf || strongSelf.released || strongSelf.webView != owner || strongSelf.callbackGeneration != generation) return;
+        if (settled) return;
+        if (!strongSelf || strongSelf.released || strongSelf.webView != owner || strongSelf.callbackGeneration != generation) { settle(NO); return; }
         BOOL consumed = !error && [value boolValue];
         if (consumed) strongSelf.fullscreen = NO;
-        else if (back && owner.canGoBack) { [owner goBack]; consumed = YES; }
-        if (callback) callback(@{@"result": @(consumed)});
+        else if (back && owner.canGoBack) { [strongSelf.pageMessageReplies removeAllObjects]; strongSelf.pageMessageRevoked = YES; [owner goBack]; consumed = YES; }
+        settle(consumed);
     }];
 }
 - (void)updateMediaVisibility {
@@ -637,15 +751,23 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (void)releaseWebView {
     self.initialHtmlNavigation = NO;
     self.callbackGeneration++;
-    [self revokeFilePicker];
+    NSArray *cancellations = [self takeFullscreenCancellations];
+    [self.pageMessageReplies removeAllObjects];
+    self.pageMessageRevoked = YES;
+    self.pageMessageInitialNavigation = NO;
     WKWebView *owner = self.webView; self.webView = nil; self.documentToken = nil; self.fullscreen = NO;
-    if (!owner) return;
+    if (owner) {
     for (NSString *key in @[@"estimatedProgress", @"title", @"canGoBack", @"canGoForward"]) [owner removeObserver:self forKeyPath:key];
     [owner stopLoading]; owner.navigationDelegate = nil; owner.UIDelegate = nil;
     [owner.configuration.userContentController removeAllUserScripts];
     [owner.configuration.userContentController removeScriptMessageHandlerForName:@"JSAndroidBridge"];
     [owner.configuration.userContentController removeScriptMessageHandlerForName:@"ComposeWebViewEvent"];
+    [owner.configuration.userContentController removeScriptMessageHandlerForName:@"ComposeWebViewPageMessage"];
     [owner removeFromSuperview];
+    }
+    [self revokeFilePicker];
+    // 先完成旧 owner 的清理，再交付取消，允许回调同步绑定新 owner。
+    for (void (^cancel)(void) in cancellations) cancel();
 }
 - (void)hrv_removeFromSuperview { self.released = YES; [self releaseWebView]; self.onEvent = nil; self.request = nil; [self removeFromSuperview]; }
 - (void)dealloc { [self releaseWebView]; }

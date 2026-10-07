@@ -57,6 +57,9 @@ expect class AppWebViewState internal constructor() {
      * 调用方只能向可信页面注入固定或经过严格转义的脚本，不能直接拼接外部输入。
      */
     fun evaluateJavascript(script: String, callback: ((String?) -> Unit)? = null)
+
+    /** 消费一次当前可见文档的回执；true 表示原生接受并提交，不能证明 H5 已处理。 */
+    fun replyPageMessage(replyId: String, data: String): Boolean
 }
 
 /** 创建并记住仅属于当前组合位置的网页状态。 */

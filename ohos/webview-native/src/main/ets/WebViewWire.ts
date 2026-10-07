@@ -95,7 +95,10 @@ export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: s
 export interface WebViewRequest {
   content: WebViewContent; settings: WebViewSettings; security: WebViewSecurity;
   scripts: WebViewScript[]; blockedResourceRules: WebViewUrlRule[]; navigationPolicy: NavigationPolicy;
+  pageMessageChannels?: string[];
 }
+
+export const PAGE_MESSAGE_CHANNEL_UNSUPPORTED = 'Page message channels unsupported on OHOS';
 
 /** 规范化 HTTP/HTTPS origin 为显式有效端口；凭据、无效 URL 或端口返回空字符串。 */
 export function origin(value: string): string {
@@ -179,6 +182,13 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
     !request.navigationPolicy || !Array.isArray(request.navigationPolicy.allowedSchemes) ||
     !Array.isArray(request.navigationPolicy.blockedRules) || !Array.isArray(request.scripts) || !Array.isArray(request.blockedResourceRules)) {
     throw new Error('Invalid WebViewRequest');
+  }
+  if (request.pageMessageChannels !== undefined) {
+    if (!Array.isArray(request.pageMessageChannels) || request.pageMessageChannels.some(item => typeof item !== 'string')) {
+      throw new Error('Invalid page message channels');
+    }
+    // ArkWeb 尚未实现同形、具备真实 frame 来源与文档归属的早期通道，不能静默降级。
+    if (request.pageMessageChannels.length > 0) throw new Error(PAGE_MESSAGE_CHANNEL_UNSUPPORTED);
   }
   if (request.navigationPolicy.allowedOrigins !== undefined && !Array.isArray(request.navigationPolicy.allowedOrigins)) throw new Error('Invalid allowed origins');
   request.navigationPolicy.allowedOrigins?.forEach(item => {

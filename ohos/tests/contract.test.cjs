@@ -129,6 +129,21 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   dataCleaningFailure = null;
 
   const standard = request();
+  assert.equal(wire.decodeRequest(encoded(request({pageMessageChannels: []}))).pageMessageChannels.length, 0);
+  assert.throws(() => wire.decodeRequest(encoded(request({pageMessageChannels: ['earlyChannel']}))), /Page message channels unsupported/);
+  for (const invalid of [true, 'earlyChannel', [1]]) {
+    assert.throws(() => wire.decodeRequest(encoded(request({pageMessageChannels: invalid}))), /Invalid page message channels/);
+  }
+  const UnsupportedChannelView = load('GYWebView.ets').GYWebView;
+  const unsupportedChannelView = new UnsupportedChannelView();
+  const unsupportedEvents = [];
+  unsupportedChannelView.setProp('onEvent', value => unsupportedEvents.push(value));
+  unsupportedChannelView.setProp('request', encoded(request({pageMessageChannels: ['earlyChannel']})));
+  assert.equal(unsupportedChannelView.request, null);
+  assert.equal(unsupportedEvents.some(value => value.type === 'capabilityUnsupported' && value.capability === 'PAGE_MESSAGE_CHANNEL'), true);
+  let unsupportedReply;
+  unsupportedChannelView.call('replyPageMessage', '{}', value => { unsupportedReply = value.result; });
+  assert.equal(unsupportedReply, false);
   const strictMallRule = { type: 'hostSuffix', suffix: 'jd.com', scheme: 'https', includeRoot: false, rejectUserInfo: true };
   for (const value of ['https://user@shop.jd.com', 'https://@shop.jd.com', 'https://:@shop.jd.com', 'https://shop.jd.com.evil', 'https://shop.jd.com..', 'https://shop..jd.com', 'http://shop.jd.com', 'https://jd.com']) assert.equal(wire.matches(value, strictMallRule), false, value);
   assert.equal(wire.matches('https://shop.jd.com:8443/item', strictMallRule), true);

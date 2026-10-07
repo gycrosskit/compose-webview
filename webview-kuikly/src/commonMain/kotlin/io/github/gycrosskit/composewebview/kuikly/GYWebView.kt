@@ -30,6 +30,13 @@ class GYWebView : DeclarativeBaseView<GYWebViewAttr, GYWebViewEvent>() {
         command("evaluateJavascript", JSONObject().put("script", script).toString()) { callback(it as? String) }
     }
 
+    /** 单次回复当前可见文档；callback 的 true 表示原生接受并提交，不能证明 H5 已处理。 */
+    fun replyPageMessage(replyId: String, data: String, callback: (Boolean) -> Unit = {}) {
+        command("replyPageMessage", JSONObject().put("replyId", replyId).put("data", data).toString()) {
+            callback(it as? Boolean ?: false)
+        }
+    }
+
     private fun command(method: String, params: String? = null, callback: ((Any?) -> Unit)? = null) {
         performTaskWhenRenderViewDidLoad {
             renderView?.callMethod(method, params) { result -> callback?.invoke((result as? JSONObject)?.opt("result")) }

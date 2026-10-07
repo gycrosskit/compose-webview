@@ -48,6 +48,84 @@ static void CompileRules(id store, SEL selector, NSString *identifier, NSString 
         store, selector, identifier, json, completion);
 }
 
+static void WaitUntil(BOOL (^ready)(void), NSString *message) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while (!ready() && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(ready(), message);
+}
+static id Evaluate(WKWebView *owner, NSString *source) {
+    __block BOOL done = NO; __block id result; __block NSError *failure;
+    [owner evaluateJavaScript:source completionHandler:^(id value, NSError *error) { result = value; failure = error; done = YES; }];
+    WaitUntil(^BOOL { return done; }, @"Real WebKit evaluation timed out");
+    Require(!failure, [NSString stringWithFormat:@"Real WebKit evaluation failed: %@", failure]);
+    return result;
+}
+static NSString *RequestJSON(NSDictionary *request) {
+    return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:request options:0 error:nil] encoding:NSUTF8StringEncoding];
+}
+static void CheckNativeCommandCancellation(NSDictionary *request, NSString *otherURL) {
+    for (NSString *mode in @[@"hide", @"request", @"release", @"reload", @"reentrantHide"]) {
+        GYWebView *view = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
+        [view hrv_setPropWithKey:@"request" propValue:RequestJSON(request)];
+        WKWebView *old = view.webView;
+        NSString *initialURL = request[@"content"][@"url"];
+        WaitUntil(^BOOL { return !old.loading && [old.URL.absoluteString isEqual:initialURL]; }, @"Cancellation fixture initial page failed");
+        [old loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:otherURL]]];
+        WaitUntil(^BOOL { return !old.loading && [old.URL.absoluteString isEqual:otherURL]; }, @"Cancellation fixture history page failed");
+        Require(old.canGoBack, @"Cancellation fixture has no backward history");
+        // 控制真实 WK JS Promise 的完成时机；此用例验证回执生命周期，不声称发生真实全屏 UI。
+        Evaluate(old, @"window.__nativeFullscreen=true;window.__nativeExitEntered=false;window.__nativeExitPromise=new Promise(function(resolve,reject){window.__finishNativeExit=function(success){window.__nativeFullscreen=false;success?resolve():reject(new Error('late failure'));};});Object.defineProperty(document,'fullscreenElement',{configurable:true,get:function(){return window.__nativeFullscreen?document.body:null;}});document.exitFullscreen=function(){window.__nativeExitEntered=true;return window.__nativeExitPromise;};true");
+        view.fullscreen = YES;
+        NSMutableDictionary *replacement = [request mutableCopy];
+        replacement[@"content"] = @{@"type": @"html", @"html": @"<html><body>replacement</body></html>", @"baseUrl": @"https://safe.example/replacement"};
+        __block NSUInteger count = 0;
+        [view hrv_callWithMethod:@"goBack" params:nil callback:^(id result) {
+            count++; RequireBoolean(result[@"result"], NO, @"Cancelled native command result");
+            if ([mode isEqual:@"reentrantHide"]) [view hrv_setPropWithKey:@"request" propValue:RequestJSON(replacement)];
+        }];
+        Require([Evaluate(old, @"window.__nativeExitEntered === true") boolValue], @"Production fullscreen script did not await real WebKit Promise");
+        if ([mode isEqual:@"hide"] || [mode isEqual:@"reentrantHide"]) [view hrv_setPropWithKey:@"visible" propValue:@NO];
+        else if ([mode isEqual:@"request"]) [view hrv_setPropWithKey:@"request" propValue:RequestJSON(replacement)];
+        else if ([mode isEqual:@"reload"]) [view hrv_callWithMethod:@"reload" params:nil callback:nil];
+        else [view hrv_removeFromSuperview];
+        Require(count == 1, @"Owner invalidation must synchronously deliver one false terminal result");
+        WKWebView *current = view.webView;
+        NSString *token = view.documentToken;
+        NSUInteger generation = view.callbackGeneration;
+        if (current && current != old) WaitUntil(^BOOL { return !current.loading && current.URL != nil; }, @"Replacement owner did not finish loading");
+        // pageStarted 对新 owner 合法推进 generation，在晚完成前记录最终新状态。
+        token = view.documentToken; generation = view.callbackGeneration;
+        NSString *currentURL = current.URL.absoluteString;
+        Evaluate(old, [mode isEqual:@"hide"] ? @"window.__finishNativeExit(true);true" : @"window.__finishNativeExit(false);true");
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
+        while (deadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+        Require(count == 1 && [old.URL.absoluteString isEqual:otherURL], @"Late cancelled fullscreen callback repeated result or navigated old history");
+        Require(view.webView == current && view.callbackGeneration == generation && (!token || [token isEqual:view.documentToken]) && (!currentURL || [currentURL isEqual:current.URL.absoluteString]), @"Late cancelled command changed current owner state");
+        [view hrv_removeFromSuperview];
+    }
+}
+static void CheckNavigationOwnerReplacement(NSDictionary *request) {
+    for (NSString *mode in @[@"create", @"delegate"]) {
+        GYWebView *view = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
+        NSMutableDictionary *replacement = [request mutableCopy];
+        replacement[@"content"] = @{@"type": @"html", @"html": @"<html><body>replacement</body></html>", @"baseUrl": @"https://safe.example/reentrant"};
+        __block BOOL replaced = NO; __block NSUInteger messages = 0;
+        __weak GYWebView *weakView = view;
+        [view hrv_setPropWithKey:@"onEvent" propValue:^(id event) {
+            if ([event[@"type"] isEqual:@"pageMessage"]) messages++;
+            if (!replaced && [event[@"type"] isEqual:@"navigation"] && ([mode isEqual:@"create"] || weakView.webView)) {
+                replaced = YES;
+                [weakView hrv_setPropWithKey:@"request" propValue:RequestJSON(replacement)];
+            }
+        }];
+        [view hrv_setPropWithKey:@"request" propValue:RequestJSON(request)];
+        WaitUntil(^BOOL { return replaced && messages > 0 && !view.webView.loading; }, @"Reentrant native navigation event revoked or replaced the new owner's channel");
+        Require([view.webView.URL.absoluteString isEqual:@"https://safe.example/reentrant"] && !view.pageMessageRevoked && messages == 1, @"Old navigation continued against the reentrant owner");
+        [view hrv_removeFromSuperview];
+    }
+}
+
 static void Check(void) {
     for (NSArray *pair in @[@[@"2001:0db8:0000:0:0:0:0:1", @"2001:db8::1"], @[@"::ffff:192.0.2.1", @"::ffff:c000:201"], @[@"0:0:0:0:0:0:0:0", @"::"], @[@"1:0:0:2:0:0:3:4", @"1::2:0:0:3:4"]]) {
         NSString *raw = [NSString stringWithFormat:@"https://[%@]:8443", pair[0]];
@@ -171,6 +249,140 @@ static void Check(void) {
         Require(probe.loaded && !failed, @"WebKit rejected production resource rules");
     }
     method_setImplementation(method, originalRuleCompiler);
+    for (id channels in @[NSNull.null, @"NativeChannel", @[@1], @[@"window"], @[@"_private"], @[@"ComposeWebViewDanger"]]) {
+        Require(![view validRequest:@{@"content": @{@"type": @"url", @"url": @"https://safe.example/page"}, @"pageMessageChannels": channels}], @"Malformed channel wire accepted");
+    }
+    Require(![view validRequest:@{@"content": @{@"type": @"html", @"html": @"empty origin"}, @"pageMessageChannels": @[@"NativeChannel"]}], @"Channel without HTTP(S) document origin accepted");
+    GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
+    __block NSMutableArray<NSDictionary *> *messages = [NSMutableArray array];
+    [page hrv_setPropWithKey:@"onEvent" propValue:^(id value) { if ([value[@"type"] isEqual:@"pageMessage"]) [messages addObject:value]; }];
+    NSDictionary *pageRequest = @{@"content": @{@"type": @"html", @"html": @"<html><body>channel</body></html>", @"baseUrl": @"https://safe.example/page"},
+        @"settings": @{@"javaScriptEnabled": @YES}, @"pageMessageChannels": @[@"NativeChannel"],
+        @"navigationPolicy": @{@"allowedSchemes": @[@"http", @"https", @"about"]},
+        @"scripts": @[@{@"id": @"early", @"source": @"window.NativeChannel.onmessage=function(event){window.replyData=event.data;};window.NativeChannel.postMessage('early');", @"injectionTime": @"DOCUMENT_START", @"onlyForTrustedMainFrame": @NO}]};
+    [page hrv_setPropWithKey:@"request" propValue:[[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:pageRequest options:0 error:nil] encoding:NSUTF8StringEncoding]];
+    NSDate *pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while (!messages.count && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    if (!messages.count) {
+        __block BOOL diagnosed = NO;
+        [page.webView evaluateJavaScript:@"JSON.stringify({href:location.href,channel:typeof window.NativeChannel,reply:typeof window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__})" completionHandler:^(id value, NSError *error) { fprintf(stderr, "Channel diagnosis: %s / %s\n", [value description].UTF8String, error.description.UTF8String); diagnosed = YES; }];
+        NSDate *diagnosisDeadline = [NSDate dateWithTimeIntervalSinceNow:5];
+        while (!diagnosed && diagnosisDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+        fprintf(stderr, "Native channel diagnosis: token=%s URL=%s loading=%d scripts=%lu revoked=%d\n", page.documentToken.UTF8String, page.webView.URL.absoluteString.UTF8String, page.webView.loading, (unsigned long)page.webView.configuration.userContentController.userScripts.count, page.pageMessageRevoked);
+    }
+    Require(messages.count == 1 && [messages[0][@"data"] isEqual:@"early"], @"Document-start channel was not available before business script");
+    [page hrv_callWithMethod:@"goBack" params:nil callback:^(id value) { RequireBoolean(value[@"result"], NO, @"No actual backward history"); }];
+    [page hrv_callWithMethod:@"goForward" params:nil callback:^(id value) { RequireBoolean(value[@"result"], NO, @"No actual forward history"); }];
+    Require(!page.pageMessageRevoked && page.pageMessageReplies.count == 1, @"Missing history revoked an active channel");
+    NSString *firstReply = messages[0][@"replyId"];
+    NSString *replyParams = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"replyId": firstReply, @"data": @"reply\"雪"} options:0 error:nil] encoding:NSUTF8StringEncoding];
+    [page hrv_callWithMethod:@"replyPageMessage" params:replyParams callback:^(id value) { RequireBoolean(value[@"result"], YES, @"page reply accepted"); }];
+    [page hrv_callWithMethod:@"replyPageMessage" params:replyParams callback:^(id value) { RequireBoolean(value[@"result"], NO, @"page reply single use"); }];
+    __block BOOL replied = NO;
+    [page.webView evaluateJavaScript:@"window.replyData" completionHandler:^(id value, NSError *error) { Require(!error && [value isEqual:@"reply\"雪"], @"Reply string did not reach onmessage(event.data)"); replied = YES; }];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while (!replied && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(replied, @"Page reply did not complete");
+    NSString *oldToken = page.documentToken;
+    [page.webView evaluateJavaScript:@"window.NativeChannel.postMessage('before-hide')" completionHandler:nil];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while (messages.count < 2 && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(messages.count == 2, @"Second channel message lost");
+    NSString *hiddenReply = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"replyId": messages[1][@"replyId"], @"data": @"hidden"} options:0 error:nil] encoding:NSUTF8StringEncoding];
+    [page hrv_setPropWithKey:@"visible" propValue:@NO];
+    [page hrv_setPropWithKey:@"visible" propValue:@YES];
+    [page hrv_callWithMethod:@"replyPageMessage" params:hiddenReply callback:^(id value) { RequireBoolean(value[@"result"], NO, @"Hidden document reply remained revoked after show"); }];
+    __block BOOL rejected = NO;
+    NSString *stale = [NSString stringWithFormat:@"window.NativeChannel.postMessage('late');window.webkit.messageHandlers.ComposeWebViewPageMessage.postMessage({token:%@,channel:'NativeChannel',data:'old-token'});true", GYQuote(oldToken)];
+    [page.webView evaluateJavaScript:stale completionHandler:^(id value, NSError *error) { rejected = YES; }];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while (!rejected && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(rejected && messages.count == 2, @"Hidden or old token channel reopened");
+    [page.webView evaluateJavaScript:@"location.reload();true" completionHandler:nil];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
+    while (pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(page.pageMessageRevoked && messages.count == 2, @"H5 reload restored a hidden channel without host authorization");
+    WKWebView *oldOwner = page.webView;
+    [page hrv_callWithMethod:@"reload" params:nil callback:nil];
+    Require(page.webView != oldOwner, @"Explicit channel reload retained the old native owner");
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while (messages.count < 3 && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(messages.count == 3, @"New document did not restore channel");
+    Require(![oldToken isEqual:page.documentToken], @"Reload reused prior document token");
+    [page hrv_callWithMethod:@"replyPageMessage" params:hiddenReply callback:^(id value) { RequireBoolean(value[@"result"], NO, @"Old document reply entered new document"); }];
+    NSUInteger acceptedMessages = messages.count;
+    NSString *iframeMessage = [NSString stringWithFormat:@"parent.iframeAttempted=true;window.webkit.messageHandlers.ComposeWebViewPageMessage.postMessage({token:%@,channel:'NativeChannel',data:'iframe'});", GYQuote(page.documentToken)];
+    NSString *iframeHTML = [NSString stringWithFormat:@"<script>%@</script>", iframeMessage];
+    NSString *rejectSource = [NSString stringWithFormat:@"window.webkit.messageHandlers.ComposeWebViewPageMessage.postMessage({token:%@,channel:'NativeChannel',data:'stale-new-document'});var frame=document.createElement('iframe');frame.srcdoc=%@;document.body.appendChild(frame);true;", GYQuote(oldToken), GYQuote(iframeHTML)];
+    __block BOOL sourceExecuted = NO;
+    [page.webView evaluateJavaScript:rejectSource completionHandler:^(id value, NSError *error) { Require(!error, @"Source rejection probe failed to execute"); sourceExecuted = YES; }];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:2];
+    while (pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    __block BOOL iframeAttempted = NO;
+    [page.webView evaluateJavaScript:@"window.iframeAttempted === true" completionHandler:^(id value, NSError *error) { Require(!error && [value boolValue], @"Real iframe did not attempt its native handler call"); iframeAttempted = YES; }];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:5];
+    while (!iframeAttempted && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(iframeAttempted && sourceExecuted && messages.count == acceptedMessages, @"Old same-origin document token or iframe entered active channel");
+    for (NSString *foreignURL in @[@"https://safe.example/other", @"https://foreign.example/page"]) {
+        [page.webView loadHTMLString:@"<html><body>foreign</body></html>" baseURL:[NSURL URLWithString:foreignURL]];
+        __block BOOL loaded = NO;
+        pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+        while (!loaded && pageDeadline.timeIntervalSinceNow > 0) {
+            [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+            loaded = !page.webView.loading && [page.webView.URL.absoluteString isEqual:foreignURL];
+        }
+        Require(loaded, @"Foreign document did not load");
+        __block BOOL attacked = NO;
+        NSString *attack = [NSString stringWithFormat:@"window.webkit.messageHandlers.ComposeWebViewPageMessage.postMessage({token:%@,channel:'NativeChannel',data:'foreign'});true", GYQuote(page.documentToken)];
+        [page.webView evaluateJavaScript:attack completionHandler:^(id value, NSError *error) { Require(!error, @"Foreign frame attack did not execute"); attacked = YES; }];
+        pageDeadline = [NSDate dateWithTimeIntervalSinceNow:2];
+        while (pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+        Require(attacked && messages.count == acceptedMessages, @"Other same-origin path or foreign origin entered channel");
+    }
+    [page hrv_callWithMethod:@"reload" params:nil callback:nil];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while (messages.count == acceptedMessages && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(messages.count == acceptedMessages + 1, @"Restored document did not create a pending reply");
+    NSString *cancelledReply = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"replyId": messages.lastObject[@"replyId"], @"data": @"cancelled"} options:0 error:nil] encoding:NSUTF8StringEncoding];
+    [page hrv_callWithMethod:@"stopLoading" params:nil callback:nil];
+    [page hrv_callWithMethod:@"replyPageMessage" params:cancelledReply callback:^(id value) { RequireBoolean(value[@"result"], NO, @"Cancelled document reply"); }];
+    NSString *historyURL = NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"];
+    Require(historyURL.length && [historyURL hasPrefix:@"http://127.0.0.1:"], @"Missing loopback-only history fixture");
+    GYWebView *historyPage = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
+    __block NSUInteger historyMessages = 0;
+    [historyPage hrv_setPropWithKey:@"onEvent" propValue:^(id value) { if ([value[@"type"] isEqual:@"pageMessage"]) historyMessages++; }];
+    NSMutableDictionary *historyRequest = [pageRequest mutableCopy];
+    historyRequest[@"content"] = @{@"type": @"url", @"url": historyURL};
+    [historyPage hrv_setPropWithKey:@"request" propValue:[[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:historyRequest options:0 error:nil] encoding:NSUTF8StringEncoding]];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while ((!historyMessages || historyPage.webView.loading) && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(historyMessages == 1, @"Loopback initial document did not publish early channel message");
+    NSString *otherHistoryURL = [historyURL stringByReplacingOccurrencesOfString:@"/page" withString:@"/other"];
+    [historyPage.webView evaluateJavaScript:[NSString stringWithFormat:@"location.href=%@", GYQuote(otherHistoryURL)] completionHandler:nil];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while ((historyPage.webView.loading || ![historyPage.webView.URL.absoluteString isEqual:otherHistoryURL]) && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(historyPage.webView.canGoBack && historyPage.pageMessageRevoked, @"Same-origin self-navigation did not revoke native channel");
+    [historyPage.webView evaluateJavaScript:@"history.back();true" completionHandler:nil];
+    pageDeadline = [NSDate dateWithTimeIntervalSinceNow:20];
+    while ((historyPage.webView.loading || ![historyPage.webView.URL.absoluteString isEqual:historyURL]) && pageDeadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require([historyPage.webView.URL.absoluteString isEqual:historyURL] && historyPage.pageMessageRevoked && historyMessages == 1, @"H5 history restored initial-page channel authorization");
+    // 已有真实历史项，补一个待回复值以核验命令发起导航前就同步清表。
+    historyPage.pageMessageRevoked = NO;
+    historyPage.pageMessageReplies[@"navigation-reply"] = @{@"channel": @"NativeChannel", @"source": historyURL};
+    [historyPage hrv_callWithMethod:@"goForward" params:nil callback:^(id value) { RequireBoolean(value[@"result"], YES, @"Actual forward navigation"); }];
+    Require(historyPage.pageMessageRevoked && historyPage.pageMessageReplies.count == 0, @"Forward navigation left a synchronous reply window");
+    historyPage.pageMessageRevoked = NO;
+    historyPage.pageMessageReplies[@"failed-reply"] = @{@"channel": @"NativeChannel", @"source": historyURL};
+    [historyPage fail:@"NETWORK" message:@"fixture failure" url:historyURL code:@(-1009)];
+    NSString *failedReply = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"replyId": @"failed-reply", @"data": @"late"} options:0 error:nil] encoding:NSUTF8StringEncoding];
+    [historyPage hrv_callWithMethod:@"replyPageMessage" params:failedReply callback:^(id value) { RequireBoolean(value[@"result"], NO, @"Failed document reply"); }];
+    [historyPage hrv_removeFromSuperview];
+    CheckNativeCommandCancellation(historyRequest, otherHistoryURL);
+    CheckNavigationOwnerReplacement(pageRequest);
+    [page hrv_removeFromSuperview];
+    __block BOOL destroyedReply = NO;
+    [page hrv_callWithMethod:@"replyPageMessage" params:hiddenReply callback:^(id value) { RequireBoolean(value[@"result"], NO, @"Destroyed owner reply"); destroyedReply = YES; }];
+    Require(destroyedReply, @"Destroyed page reply did not reject");
     // 上传回执在原生 owner/文档代次门禁之后交付；基础 Foundation/UTType 使用真实实现。
     RuleProbe *upload = [[RuleProbe alloc] initWithFrame:CGRectZero];
     upload.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
@@ -224,7 +436,7 @@ static void Check(void) {
     [upload hrv_removeFromSuperview];
     [probe hrv_removeFromSuperview];
     [view hrv_removeFromSuperview];
-    puts("PASS: Native Boolean wire, navigation, command results and real WebKit rules");
+    puts("PASS: Native Boolean wire, navigation, command results, early page channel document gates and real WebKit rules");
     fflush(stdout);
     exit(0);
 }
@@ -233,11 +445,12 @@ static void Check(void) {
 @property(nonatomic, strong) UIWindow *window;
 @end
 @implementation WireCheckApp
+- (void)runChecks { Check(); }
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     self.window.rootViewController = [UIViewController new];
     [self.window makeKeyAndVisible];
-    dispatch_async(dispatch_get_main_queue(), ^{ Check(); });
+    [self performSelector:@selector(runChecks) withObject:nil afterDelay:0];
     return YES;
 }
 @end

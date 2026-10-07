@@ -38,6 +38,7 @@ class GYWebViewNative @JvmOverloads constructor(
     private var fullscreenHost: AndroidWebFullscreenHost? = null
     private var capabilities: AndroidWebCapabilities? = null
     private var popupRouter: AndroidPopupRouter? = null
+    private var pageMessageChannels: AndroidPageMessageChannels? = null
     private val earlyScripts = AndroidEarlyScriptInstaller { owner, metric, duration ->
         if (owner === webView) emit(WebViewEvent.PerformanceMetric(metric, duration))
     }
@@ -71,7 +72,7 @@ class GYWebViewNative @JvmOverloads constructor(
                 if (request?.settings?.javaScriptEnabled == true && request?.canUseAppBridgeAt(owner?.url) == true) owner?.evaluateJavascript("window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = ${JSONObject.quote(documentToken)};", null)
             }
             pageVisible = visible
-            if (!pageVisible) { callbackGeneration++; webView?.let { capabilities?.release(it) }; popupRouter?.release() }
+            if (!pageVisible) { callbackGeneration++; pageMessageChannels?.revoke(); webView?.let { capabilities?.release(it) }; popupRouter?.release() }
             visibility = if (pageVisible) View.VISIBLE else View.INVISIBLE
             if (pageVisible) webView?.onResume() else { exitFullscreen(); webView?.onPause() }
             true
@@ -84,13 +85,13 @@ class GYWebViewNative @JvmOverloads constructor(
         val owner = webView?.takeUnless { destroyed || crashed }
         val result: Any? = when (method) {
             "reload" -> {
-                if (crashed) { val current = request; releaseWebView(); if (current != null) createWebView(current) }
+                if (crashed || request?.pageMessageChannels?.isNotEmpty() == true) { val current = request; releaseWebView(); if (current != null) createWebView(current) }
                 else owner?.reload()
                 owner != null || webView != null
             }
-            "goBack" -> if (exitFullscreen()) true else owner?.let { if (it.canGoBack()) { it.goBack(); true } else false } ?: false
-            "goForward" -> owner?.let { if (it.canGoForward()) { it.goForward(); true } else false } ?: false
-            "stopLoading" -> { owner?.stopLoading(); owner != null }
+            "goBack" -> if (exitFullscreen()) true else owner?.let { if (it.canGoBack()) { pageMessageChannels?.revoke(); it.goBack(); true } else false } ?: false
+            "goForward" -> owner?.let { if (it.canGoForward()) { pageMessageChannels?.revoke(); it.goForward(); true } else false } ?: false
+            "stopLoading" -> { pageMessageChannels?.revoke(); owner?.stopLoading(); owner != null }
             "exitFullscreen" -> exitFullscreen()
             "evaluateJavascript" -> {
                 val script = runCatching { JSONObject(params ?: "{}").getString("script") }.getOrNull()
@@ -101,6 +102,12 @@ class GYWebViewNative @JvmOverloads constructor(
                     }
                 } else if (!destroyed) callback?.invoke(mapOf("result" to null))
                 return null
+            }
+            "replyPageMessage" -> {
+                val reply = runCatching { JSONObject(params ?: "{}") }.getOrNull()
+                val replyId = reply?.opt("replyId") as? String
+                val data = reply?.opt("data") as? String
+                if (replyId != null && data != null) pageMessageChannels?.reply(replyId, data) == true else false
             }
             else -> return super<IKuiklyRenderViewExport>.call(method, params, callback)
         }
@@ -134,6 +141,7 @@ class GYWebViewNative @JvmOverloads constructor(
             resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES, Color.TRANSPARENT)
         owner.webViewClient = object : AppWebViewClient(object : AppWebViewClient.Listener {
             override fun onPageLoadStarted(url: String?) { if (owner !== webView || destroyed) return;
+                pageMessageChannels?.onPageStarted(url)
                 exitFullscreen()
                 initialHtmlNavigation = false
                 finishedScriptsInjected = false
@@ -143,6 +151,7 @@ class GYWebViewNative @JvmOverloads constructor(
             override fun onPageCommitVisible(url: String?) { if (owner !== webView || destroyed) return; emit(WebViewEvent.FirstContentVisible(url)) }
             override fun onPageLoadFailed(error: WebViewLoadError) {
                 if (owner !== webView || destroyed) return
+                pageMessageChannels?.revoke()
                 if (error.kind == WebViewErrorKind.RENDER_PROCESS) {
                     crashed = true
                     WebViewDiagnostics.markReleased(owner, true)
@@ -191,6 +200,12 @@ class GYWebViewNative @JvmOverloads constructor(
             override fun onHideCustomView() { if (owner === webView && !destroyed) exitFullscreen() }
         }
         earlyScripts.install(owner, current)
+        if (current.pageMessageChannels.isNotEmpty()) {
+            pageMessageChannels = AndroidPageMessageChannels(
+                owner, { requireNotNull(request) }, { owner === webView && pageVisible && !destroyed && !crashed }, ::emit,
+            )
+            if (!pageVisible) pageMessageChannels?.revoke()
+        }
         if (current.canUseAppBridgeAt(origin)) owner.installAppWebBridge({ requireNotNull(request) }, { documentToken }) { handler, data ->
             if (owner === webView && pageVisible && !destroyed && !crashed) emit(WebViewEvent.BridgeMessage(WebViewBridgeMessage(handler, data)))
         }
@@ -209,6 +224,7 @@ class GYWebViewNative @JvmOverloads constructor(
         val internalHtmlLoad = initialHtmlNavigation && navigation.isInternalHtmlInitialNavigation()
         if (navigation.isMainFrame) initialHtmlNavigation = false
         val blocked = (!internalHtmlLoad && request?.allowsNavigation(navigation) != true) || destroyed || crashed
+        if (!blocked && navigation.isMainFrame && !internalHtmlLoad) pageMessageChannels?.revoke()
         emit(WebViewEvent.Navigation(navigation, blocked))
         return blocked
     }
@@ -239,6 +255,8 @@ class GYWebViewNative @JvmOverloads constructor(
 
     private fun releaseWebView() {
         callbackGeneration++
+        pageMessageChannels?.revoke()
+        pageMessageChannels = null
         initialHtmlNavigation = false
         finishedScriptsInjected = false
         exitFullscreen()

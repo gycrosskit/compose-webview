@@ -38,9 +38,24 @@ actual class AppWebViewState actual internal constructor() {
     private val pendingFullscreenReplies = mutableSetOf<() -> Unit>()
     internal var fullscreenExitHandler: ((WKWebView, (Boolean) -> Unit) -> Boolean)? = null
     internal var javascriptAllowed: ((WKWebView) -> Boolean)? = null
+    internal var pageMessageReply: ((String, String) -> Boolean)? = null
+    internal var pageMessageCancel: (() -> Unit)? = null
+    private val mutablePageMessageInstanceKey = mutableStateOf(0)
+    internal val pageMessageInstanceKey: Int get() = mutablePageMessageInstanceKey.value
+    internal var rebuildPageMessagesOnReload = false
+
+    actual fun replyPageMessage(replyId: String, data: String): Boolean =
+        pageMessageReply?.invoke(replyId, data) ?: false
 
     actual fun reload() {
         val target = webView ?: return
+        if (rebuildPageMessagesOnReload) {
+            pageMessageCancel?.invoke()
+            invalidateJavascriptCallbacks()
+            if (!isAttached(target)) return
+            mutablePageMessageInstanceKey.value++
+            return
+        }
         val content = loadState.content ?: return
         if (!loadState.hasCommittedPage || content.isBlankWebViewContent()) {
             // 首航失败可能尚无可 reload 的文档；重放原始声明式请求，保留请求头和缓存策略。
@@ -82,6 +97,7 @@ actual class AppWebViewState actual internal constructor() {
         if (!target.canGoForward) return false
         invalidateJavascriptCallbacks()
         if (!isAttached(target) || !target.canGoForward) return false
+        pageMessageCancel?.invoke()
         target.goForward()
         updateNavigation(target)
         return true
@@ -118,12 +134,14 @@ actual class AppWebViewState actual internal constructor() {
         if (!isAttached(target) || !target.canGoBack) return false
         invalidateJavascriptCallbacks()
         if (!isAttached(target) || !target.canGoBack) return false
+        pageMessageCancel?.invoke()
         target.goBack()
         updateNavigation(target)
         return true
     }
 
     actual fun stopLoading() {
+        pageMessageCancel?.invoke()
         webView?.stopLoading()
         mutableSnapshot.value = snapshot.copy(isLoading = false)
     }
@@ -143,6 +161,9 @@ actual class AppWebViewState actual internal constructor() {
         webView = target
         javascriptAllowed = null
         fullscreenExitHandler = null
+        pageMessageReply = null
+        pageMessageCancel = null
+        rebuildPageMessagesOnReload = false
         loadState = IosWebViewLoadState()
         mutableSnapshot.value = snapshot.copy(hasVisibleContent = false)
         updateNavigation(target)
@@ -155,6 +176,9 @@ actual class AppWebViewState actual internal constructor() {
         if (!isAttached(target)) return
         javascriptAllowed = null
         fullscreenExitHandler = null
+        pageMessageReply = null
+        pageMessageCancel = null
+        rebuildPageMessagesOnReload = false
         webView = null
         loadState = IosWebViewLoadState()
         mutableSnapshot.value = snapshot.copy(

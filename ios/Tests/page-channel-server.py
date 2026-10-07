@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Short-lived loopback pages for the actual WKWebView history check."""
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+import sys
+
+
+class PageHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b"<html><body>page message history fixture</body></html>"
+        self.send_response(200 if self.path in ("/page", "/other") else 404)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+server = HTTPServer(("127.0.0.1", 0), PageHandler)
+Path(sys.argv[1]).write_text(str(server.server_port))
+server.serve_forever()

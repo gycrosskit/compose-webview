@@ -9,7 +9,7 @@ import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { picker, fileIo, fileUri } from '@kit.CoreFileKit';
 import { camera, cameraPicker } from '@kit.CameraKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
-import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings } from './WebViewWire';
+import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings, PAGE_MESSAGE_CHANNEL_UNSUPPORTED } from './WebViewWire';
 import { createGYWebView } from './WebViewComponent';
 
 interface EvalParams { script: string; }
@@ -164,7 +164,12 @@ export class GYWebView extends KuiklyRenderBaseView {
     try {
       if (typeof value !== 'string') throw new Error('request must be a JSON string');
       this.request = decodeRequest(value as string);
-    } catch (_) { this.fail('LOAD_EXCEPTION', 'Invalid or unsupported WebViewRequest'); }
+    } catch (error) {
+      if ((error as Error).message === PAGE_MESSAGE_CHANNEL_UNSUPPORTED) {
+        this.emit({ type: 'capabilityUnsupported', capability: 'PAGE_MESSAGE_CHANNEL' });
+      }
+      this.fail('LOAD_EXCEPTION', 'Invalid or unsupported WebViewRequest');
+    }
     // 新请求拥有独立 Controller / Web 节点。旧文档的同源迟到事件也不能再次授予 Bridge。
     this.renderToken++;
     this.nativeExitPending = false;
@@ -529,6 +534,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   }
 
   call(method: string, params: KRAny, callback: KuiklyRenderCallback | null): KRAny {
+    if (method === 'replyPageMessage') { callback?.({ result: false }); return null; }
     if (this.lifetime.disposed) return null;
     if (!this.attached || !this.request) { callback?.({ result: null }); return null; }
     try {

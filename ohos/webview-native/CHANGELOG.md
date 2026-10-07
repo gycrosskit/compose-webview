@@ -1,3 +1,9 @@
+# 0.2.0-rc.12
+
+- pageMessageChannels 非空请求明确拒绝加载并上报 PAGE_MESSAGE_CHANNEL 不支持；replyPageMessage 返回 false。
+- 默认空通道保留 rc.11 的 Bridge、完整 URL 导航、文件、媒体和全屏行为。
+- 配套 Maven / iOS Git Pod rc.13；OHOS 不声称实现早期双向页面通道，SystemActions Native 仍精确 rc.4。
+
 # 0.2.0-rc.11
 
 - 业务脚本允许明确 pageBridge 的初始 HTTP(S) 同源主文档，保留 frame、nonce 和文档代次门禁，不授予文件/媒体高权限。

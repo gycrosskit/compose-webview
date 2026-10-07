@@ -38,6 +38,7 @@ actual class AppWebViewState actual internal constructor() {
     private var renderProcessGoneWebView: WebView? = null
     private var callbackGeneration = 0
     internal var javascriptAllowed: ((WebView) -> Boolean)? = null
+    internal var pageMessageChannels: AndroidPageMessageChannels? = null
 
     /**
      * 重新加载当前内容。渲染进程崩溃时会重建 WebView，其余情况调用实例的 `reload()`。
@@ -46,6 +47,14 @@ actual class AppWebViewState actual internal constructor() {
     actual fun reload() {
         if (loadedContent?.isBlankWebViewContent() == true) {
             onLoadFailed(WebViewErrorHelper.fromEmptyContent())
+            return
+        }
+        if (pageMessageChannels != null) {
+            // 重组/新实例 attach 尚未发生时，旧 owner 已必须停止接收消息和回复。
+            pageMessageChannels?.revoke()
+            callbackGeneration++
+            mutableSnapshot = snapshot.copy(error = null, hasVisibleContent = false)
+            instanceKey++
             return
         }
         if (snapshot.error?.kind == WebViewErrorKind.RENDER_PROCESS) {
@@ -57,11 +66,15 @@ actual class AppWebViewState actual internal constructor() {
         }
     }
 
+    actual fun replyPageMessage(replyId: String, data: String): Boolean =
+        pageMessageChannels?.reply(replyId, data) ?: false
+
     /** @return true 表示已在网页历史中返回，false 时应由页面退出。 */
     actual fun goBack(): Boolean {
         if (backInterceptor?.invoke() == true) return true
         val target = webView ?: return false
         if (!target.canGoBack()) return false
+        pageMessageChannels?.revoke()
         target.goBack()
         updateNavigation(target)
         return true
@@ -73,6 +86,7 @@ actual class AppWebViewState actual internal constructor() {
         val target = webView ?: return false
         if (!isAttached(target) || !target.canGoForward()) return false
         invalidateJavascriptCallbacks()
+        pageMessageChannels?.revoke()
         target.goForward()
         updateNavigation(target)
         return true
@@ -84,6 +98,7 @@ actual class AppWebViewState actual internal constructor() {
 
     /** 停止当前加载并立即将 [isLoading] 置为 `false`。未绑定实例时安全忽略。 */
     actual fun stopLoading() {
+        pageMessageChannels?.revoke()
         webView?.stopLoading()
         mutableSnapshot = snapshot.copy(isLoading = false)
     }
@@ -138,6 +153,8 @@ actual class AppWebViewState actual internal constructor() {
         if (webView !== target) return
         callbackGeneration++
         javascriptAllowed = null
+        pageMessageChannels?.revoke()
+        pageMessageChannels = null
         webView = null
         defaultUserAgent = null
         appliedConfig = null

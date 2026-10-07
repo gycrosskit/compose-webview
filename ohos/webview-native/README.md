@@ -1,19 +1,19 @@
-> 版本为 `0.2.0-rc.11`，配套 system-actions-native `0.2.0-rc.4`。本地 HAR 检查、远程发布与设备验收分别记录。
+> 当前 `0.2.0-rc.12` 为未发布候选，配套 system-actions-native `0.2.0-rc.4`。非空 pageMessageChannels 明确 Unsupported，不加载请求；replyPageMessage 返回 false。默认空配置保留既有行为。本地 HAR 检查、远程发布与设备验收分别记录。
 
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **0.2.0-rc.11 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.4`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **0.2.0-rc.12 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.4`，后者提供共用窗口执行 owner。
 
 ## 安装与注册
 
-HAR 0.2.0-rc.11 配套 system-actions 0.2.0-rc.4。宿主直接使用系统组件时也选择 rc.4；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+HAR 0.2.0-rc.12 配套 system-actions 0.2.0-rc.4。宿主直接使用系统组件时也选择 rc.4；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 
 以下为本版本精确 Registry 坐标；审核通过并实际可查询、安装后使用。
 
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.11
+ohpm install @gycrosskit/webview@0.2.0-rc.12
 ```
 
 候选阶段从本地 assembleHar 输出安装；发布后，Registry 审核期间可从同版本 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry rc.4。本地干净消费者核对只有一份窗口 owner。完全离线时下载同版本 Web 和 system-actions rc.4 的固定 Release HAR、校验各自 SHA，并用 root override 保证同一系统包。文件下载消费与 Registry 安装分开验收。
