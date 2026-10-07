@@ -2,6 +2,46 @@ import { KuiklyRenderBaseView } from '@kuikly-open/render';
 import { GYWebView } from './GYWebView';
 import { webview } from '@kit.ArkWeb';
 
+// 两个原生 Web 分支共享现有属性和事件；只把注入 API 留在各分支，避免重复事件链。
+@Extend(Web)
+function webViewAttributes(view: GYWebView, token: number) {
+  .backgroundColor(Color.Transparent)
+  .javaScriptAccess(view.settings().javaScriptEnabled === true)
+  .domStorageAccess(view.settings().domStorageEnabled !== false)
+  .fileAccess(false)
+  .onlineImageAccess(view.settings().blockNetworkImage !== true)
+  .imageAccess(view.settings().loadsImagesAutomatically !== false)
+  .zoomAccess(view.settings().supportZoom !== false)
+  .multiWindowAccess(true)
+  .mixedMode(view.settings().mixedContentPolicy === 'ALWAYS_ALLOW' ? MixedMode.All :
+    (view.settings().mixedContentPolicy === 'COMPATIBILITY' ? MixedMode.Compatible : MixedMode.None))
+  .cacheMode(view.settings().cachePolicy === 'NO_CACHE' ? CacheMode.Online :
+    (view.settings().cachePolicy === 'CACHE_ONLY' ? CacheMode.Only :
+      (view.settings().cachePolicy === 'CACHE_ELSE_NETWORK' ? CacheMode.None : CacheMode.Default)))
+  .mediaPlayGestureAccess(view.settings().mediaPlaybackRequiresUserGesture !== false)
+
+  .onControllerAttached(() => { if (view.isRenderActive(token)) view.onControllerAttached(token); })
+  .onWindowNew(event => { if (view.isRenderActive(token)) view.rejectNewWindow(event); else event.handler.setWebController(null!); })
+  .onLoadIntercept(event => view.isRenderActive(token) && event ? view.interceptNavigation(event.data) : true)
+  .onInterceptRequest(event => view.isRenderActive(token) && event ? view.interceptResource(event.request) : null!)
+  .onPageBegin(event => { if (view.isRenderActive(token)) view.onPageBegin(event?.url || ''); })
+  .onPageVisible(event => { if (view.isRenderActive(token)) view.onPageVisible(event?.url || ''); })
+  .onPageEnd(event => { if (view.isRenderActive(token)) view.onPageEnd(event?.url || ''); })
+  .onProgressChange(event => { if (view.isRenderActive(token)) view.emit({ type: 'progressChanged', progress: event?.newProgress || 0 }); })
+  .onTitleReceive(event => { if (view.isRenderActive(token)) view.emit({ type: 'titleChanged', title: event?.title || '' }); })
+  .onErrorReceive(event => { if (view.isRenderActive(token) && event?.request.isMainFrame()) view.fail('NETWORK', event.error.getErrorInfo(), event.error.getErrorCode()); })
+  .onHttpErrorReceive(event => { if (view.isRenderActive(token) && event?.request.isMainFrame()) view.fail('HTTP', 'HTTP load failed', undefined, event.response.getResponseCode()); })
+  .onSslErrorEventReceive(event => { event?.handler.handleCancel(); if (view.isRenderActive(token)) view.fail('SSL', 'TLS certificate rejected'); })
+  .onRenderExited(() => { if (view.isRenderActive(token)) view.renderExited(); })
+  .onPermissionRequest(event => { if (event) { if (view.isRenderActive(token)) view.permissionRequest(event.request); else event.request.deny(); } })
+  .onShowFileSelector(event => { if (!event) return true; if (view.isRenderActive(token)) return view.selectFile(event); event.result.handleFileList([]); return true; })
+  .onFullScreenEnter(event => { if (view.isRenderActive(token)) view.enterFullscreen(event.handler, event.videoWidth || 0, event.videoHeight || 0); else event.handler.exitFullScreen(); })
+  .onFullScreenExit(() => { if (view.isRenderActive(token)) view.nativeFullscreenExited(token); })
+  .onNavigationEntryCommitted(() => { if (view.isRenderActive(token)) view.emitHistory(); })
+  .visibility(view.visible ? Visibility.Visible : Visibility.Hidden)
+  .width('100%').height('100%')
+}
+
 /** 创建与 renderToken 绑定的 ArkUI Web 节点；旧节点的事件在调用平台逻辑前拒绝。 */
 @Builder
 export function createGYWebView(view: KuiklyRenderBaseView) { GYWebViewHost({ renderView: view as GYWebView }) }
@@ -25,41 +65,18 @@ struct GYWebViewComponent {
   controller: webview.WebviewController = new webview.WebviewController();
   private live(): boolean { return this.renderView.isRenderActive(this.renderToken); }
   build() {
-    Web({ src: '', controller: this.controller })
-      .backgroundColor(Color.Transparent)
-      .javaScriptAccess(this.renderView.settings().javaScriptEnabled === true)
-      .domStorageAccess(this.renderView.settings().domStorageEnabled !== false)
-      .fileAccess(false)
-      .onlineImageAccess(this.renderView.settings().blockNetworkImage !== true)
-      .imageAccess(this.renderView.settings().loadsImagesAutomatically !== false)
-      .zoomAccess(this.renderView.settings().supportZoom !== false)
-      .multiWindowAccess(true)
-      .mixedMode(this.renderView.settings().mixedContentPolicy === 'ALWAYS_ALLOW' ? MixedMode.All :
-        (this.renderView.settings().mixedContentPolicy === 'COMPATIBILITY' ? MixedMode.Compatible : MixedMode.None))
-      .cacheMode(this.renderView.settings().cachePolicy === 'NO_CACHE' ? CacheMode.Online :
-        (this.renderView.settings().cachePolicy === 'CACHE_ONLY' ? CacheMode.Only :
-          (this.renderView.settings().cachePolicy === 'CACHE_ELSE_NETWORK' ? CacheMode.None : CacheMode.Default)))
-      .mediaPlayGestureAccess(this.renderView.settings().mediaPlaybackRequiresUserGesture !== false)
-      .javaScriptOnDocumentStart(this.renderView.documentStartScripts())
-      .onControllerAttached(() => { if (this.live()) this.renderView.onControllerAttached(this.renderToken); })
-      .onWindowNew(event => { if (this.live()) this.renderView.rejectNewWindow(event); else event.handler.setWebController(null!); })
-      .onLoadIntercept(event => this.live() && event ? this.renderView.interceptNavigation(event.data) : true)
-      .onInterceptRequest(event => this.live() && event ? this.renderView.interceptResource(event.request) : null!)
-      .onPageBegin(event => { if (this.live()) this.renderView.onPageBegin(event?.url || ''); })
-      .onPageVisible(event => { if (this.live()) this.renderView.onPageVisible(event?.url || ''); })
-      .onPageEnd(event => { if (this.live()) this.renderView.onPageEnd(event?.url || ''); })
-      .onProgressChange(event => { if (this.live()) this.renderView.emit({ type: 'progressChanged', progress: event?.newProgress || 0 }); })
-      .onTitleReceive(event => { if (this.live()) this.renderView.emit({ type: 'titleChanged', title: event?.title || '' }); })
-      .onErrorReceive(event => { if (this.live() && event?.request.isMainFrame()) this.renderView.fail('NETWORK', event.error.getErrorInfo(), event.error.getErrorCode()); })
-      .onHttpErrorReceive(event => { if (this.live() && event?.request.isMainFrame()) this.renderView.fail('HTTP', 'HTTP load failed', undefined, event.response.getResponseCode()); })
-      .onSslErrorEventReceive(event => { event?.handler.handleCancel(); if (this.live()) this.renderView.fail('SSL', 'TLS certificate rejected'); })
-      .onRenderExited(() => { if (this.live()) this.renderView.renderExited(); })
-      .onPermissionRequest(event => { if (event) { if (this.live()) this.renderView.permissionRequest(event.request); else event.request.deny(); } })
-      .onShowFileSelector(event => { if (!event) return true; if (this.live()) return this.renderView.selectFile(event); event.result.handleFileList([]); return true; })
-      .onFullScreenEnter(event => { if (this.live()) this.renderView.enterFullscreen(event.handler, event.videoWidth || 0, event.videoHeight || 0); else event.handler.exitFullScreen(); })
-      .onFullScreenExit(() => { if (this.live()) this.renderView.nativeFullscreenExited(this.renderToken); })
-      .onNavigationEntryCommitted(() => { if (this.live()) this.renderView.emitHistory(); })
-      .visibility(this.renderView.visible ? Visibility.Visible : Visibility.Hidden)
-      .width('100%').height('100%')
+    if (this.live()) {
+      if (this.renderView.request?.pageMessageChannels?.length) {
+        Web({ src: '', controller: this.controller })
+          .javaScriptProxy({ object: this.renderView, name: 'GYWebViewPageMessageNative',
+            methodList: ['pageMessageBootstrap', 'pageMessagePost', 'pageMessageRevoke'], controller: this.controller })
+          .runJavaScriptOnDocumentStart(this.renderView.documentStartScripts())
+          .webViewAttributes(this.renderView, this.renderToken)
+      } else {
+        Web({ src: '', controller: this.controller })
+          .javaScriptOnDocumentStart(this.renderView.documentStartScripts())
+          .webViewAttributes(this.renderView, this.renderToken)
+      }
+    }
   }
 }

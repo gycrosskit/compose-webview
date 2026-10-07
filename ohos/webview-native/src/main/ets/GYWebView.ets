@@ -1,6 +1,7 @@
 import { KRAny, KuiklyRenderBaseView, KuiklyRenderCallback } from '@kuikly-open/render';
 import { ComponentContent } from '@ohos.arkui.node';
 import { webview } from '@kit.ArkWeb';
+import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { url, util } from '@kit.ArkTS';
 import { window } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -9,10 +10,12 @@ import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { picker, fileIo, fileUri } from '@kit.CoreFileKit';
 import { camera, cameraPicker } from '@kit.CameraKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
-import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings, PAGE_MESSAGE_CHANNEL_UNSUPPORTED } from './WebViewWire';
+import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings } from './WebViewWire';
 import { createGYWebView } from './WebViewComponent';
 
 interface EvalParams { script: string; }
+interface PageReplyParams { replyId: string; data: string; }
+interface PendingPageReply { nonce: string; channel: string; }
 interface BridgeMessage { handlerName: string; data: string; }
 /**
  * 发往 Kuikly 的中立事件，仅设置与 type 对应的字段，业务正文、URL 和文件地址不得直接记日志。
@@ -40,7 +43,7 @@ export interface WebEvent {
   type: string; url?: string; title?: string; progress?: number; canGoBack?: boolean; canGoForward?: boolean;
   handlerName?: string; data?: string; isFullscreen?: boolean; kind?: string; message?: string;
   errorCode?: number; httpStatus?: number; isMainFrame?: boolean; hasUserGesture?: boolean;
-  target?: string; blocked?: boolean; permissions?: string[]; capability?: string;
+  target?: string; blocked?: boolean; permissions?: string[]; capability?: string; channel?: string; replyId?: string;
 }
 
 // 端口只由原生发送给主文档；不使用注册到所有 iframe 的 JavaScriptProxy。
@@ -86,6 +89,12 @@ export class GYWebView extends KuiklyRenderBaseView {
   /** 当前渲染节点列表，仅含当前身份，用于 ArkUI 替换旧 Controller。 */
   renderTokens: number[] = [0];
   private documentReady: boolean = false;
+  private pageMessageSecret: string = '';
+  private pageMessageNonce: string = '';
+  private pageMessageActive: boolean = false;
+  private pageMessageStarted: boolean = false;
+  private pageMessageIntercepted: boolean = false;
+  private pageMessageReplies: Map<string, PendingPageReply> = new Map();
   private bridgeVisibilityPending: boolean = false;
   private renderFailed: boolean = false;
   private eventCallback: KuiklyRenderCallback | null = null;
@@ -114,7 +123,10 @@ export class GYWebView extends KuiklyRenderBaseView {
     if (key === 'visible') {
       const changed = this.visible !== (value === true);
       this.visible = value === true;
-      this.revokePending();
+      const controllerOwner = this.controller;
+      const ownerToken = this.renderToken;
+      this.revokePending(!this.visible);
+      if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
       if (this.attached) {
         try {
           if (this.visible) this.controller.onActive();
@@ -146,11 +158,16 @@ export class GYWebView extends KuiklyRenderBaseView {
           JSON.stringify(this.request.settings) === JSON.stringify(next.settings) &&
           JSON.stringify(this.request.security) === JSON.stringify(next.security) &&
           JSON.stringify(this.request.scripts) === JSON.stringify(next.scripts) &&
+          JSON.stringify(this.request.pageMessageChannels) === JSON.stringify(next.pageMessageChannels) &&
           JSON.stringify(this.request.blockedResourceRules) === JSON.stringify(next.blockedResourceRules)) { this.request.navigationPolicy = next.navigationPolicy; return true; }
       } catch (_) {}
     }
+    const controllerOwner = this.controller;
+    const ownerToken = this.renderToken;
     this.revokePending();
+    if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
     this.exitFullscreen();
+    if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
     if (this.attached) { try { this.controller.stop(); this.controller.stopAllMedia(); } catch (_) {} }
     this.attached = false;
     this.renderFailed = false;
@@ -161,19 +178,22 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.pendingHtmlNavigation = false;
     this.loadingRequest = false;
     this.loadSubmitted = false;
-    try {
-      if (typeof value !== 'string') throw new Error('request must be a JSON string');
-      this.request = decodeRequest(value as string);
-    } catch (error) {
-      if ((error as Error).message === PAGE_MESSAGE_CHANNEL_UNSUPPORTED) {
-        this.emit({ type: 'capabilityUnsupported', capability: 'PAGE_MESSAGE_CHANNEL' });
-      }
-      this.fail('LOAD_EXCEPTION', 'Invalid or unsupported WebViewRequest');
-    }
-    // 新请求拥有独立 Controller / Web 节点。旧文档的同源迟到事件也不能再次授予 Bridge。
     this.renderToken++;
     this.nativeExitPending = false;
     this.renderTokens = [this.renderToken];
+    try {
+      if (typeof value !== 'string') throw new Error('request must be a JSON string');
+      this.request = decodeRequest(value as string);
+      this.pageMessageStarted = false; this.pageMessageIntercepted = false;
+      if (this.request.pageMessageChannels?.length && this.request.settings.javaScriptEnabled === true) {
+        const bytes = cryptoFramework.createRandom().generateRandomSync(32).data;
+        this.pageMessageSecret = Array.from(bytes).map(byte => byte.toString(16).padStart(2, '0')).join('');
+        this.pageMessageActive = this.visible;
+      }
+    } catch (_) {
+      this.request = null; this.pageMessageSecret = '';
+      this.fail('LOAD_EXCEPTION', 'Invalid or unsupported WebViewRequest');
+    }
     return true;
   }
 
@@ -197,7 +217,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     const request = this.request;
     if (!this.attached || !request || this.lifetime.disposed) return;
     try {
-      this.revokePending();
+      this.revokePending(false);
       const suffix = request.settings.userAgentSuffix;
       if (suffix) this.controller.setCustomUserAgent(`${this.controller.getUserAgent()} ${suffix}`);
       const content = request.content;
@@ -220,6 +240,8 @@ export class GYWebView extends KuiklyRenderBaseView {
   /** 原生同步拦截导航；仅一次无手势内部 HTML 首航可消费例外。 */
   interceptNavigation(request: WebResourceRequest): boolean {
     const current = this.request;
+    const controllerOwner = this.controller;
+    const ownerToken = this.renderToken;
     const target = request.getRequestUrl();
     const mainFrame = request.isMainFrame();
     // 首个主帧回调消费附着后 loadData 的内部导航；用户手势或后续 data 均走拒绝规则。
@@ -230,7 +252,12 @@ export class GYWebView extends KuiklyRenderBaseView {
     const allowed = current !== null && navigationAllowed(target, mainFrame, current);
     this.emit({ type: 'navigation', url: target, isMainFrame: mainFrame, hasUserGesture: request.isRequestGesture(),
       target: 'CURRENT_WINDOW', blocked: !allowed });
-    if (mainFrame && allowed) { this.documentReady = false; this.revokePending(); }
+    if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
+    if (mainFrame && allowed) {
+      const initial = !this.pageMessageIntercepted && target === this.initialPageMessageUrl();
+      this.pageMessageIntercepted = true; this.documentReady = false; this.revokePending(!initial);
+      if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
+    }
     return !allowed;
   }
 
@@ -259,14 +286,19 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.documentReady = false;
     this.loadingRequest = false;
     this.pendingHtmlNavigation = false;
-    this.revokePending();
-    this.emit({ type: 'pageStarted', url: value });
+    const controllerOwner = this.controller; const ownerToken = this.renderToken;
+    const initial = !this.pageMessageStarted && value === this.initialPageMessageUrl();
+    this.pageMessageStarted = true;
+    this.revokePending(!initial);
+    if (controllerOwner === this.controller && this.isRenderActive(ownerToken)) this.emit({ type: 'pageStarted', url: value });
   }
 
   /** 当前文档可绘制时执行 DOM_READY 脚本并尝试主文档端口握手。 */
   onPageVisible(value: string): void {
+    const controllerOwner = this.controller; const ownerToken = this.renderToken;
     this.documentReady = true;
     this.emit({ type: 'firstContentVisible', url: value });
+    if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
     this.runScripts('DOM_READY');
     this.installBridge();
     this.emitHistory();
@@ -274,8 +306,10 @@ export class GYWebView extends KuiklyRenderBaseView {
 
   /** 当前文档完成时执行完成脚本并更新历史。 */
   onPageEnd(value: string): void {
+    const controllerOwner = this.controller; const ownerToken = this.renderToken;
     this.documentReady = true;
     this.emit({ type: 'pageFinished', url: value });
+    if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
     this.runScripts('DOM_READY');
     this.runScripts('DOCUMENT_FINISHED');
     this.installBridge();
@@ -287,10 +321,90 @@ export class GYWebView extends KuiklyRenderBaseView {
     const request = this.request;
     if (!request || request.settings.javaScriptEnabled !== true) return [];
     const scripts: ScriptItem[] = [];
-    if (request.security.appBridgeEnabled || request.security.pageBridgeEnabled) scripts.push({ script: `window.__GY_WEBVIEW_VISIBILITY_REVISION__=${this.lifetime.generation};window.__GY_WEBVIEW_VISIBLE__=${this.visible};${BRIDGE_BOOTSTRAP}`, scriptRules: ['*'] });
+    const pageScript = this.pageMessageScript();
+    if (pageScript) scripts.push({ script: pageScript, scriptRules: ['*'] });
+    if (request.security.appBridgeEnabled || request.security.pageBridgeEnabled) scripts.push({
+      script: `window.__GY_WEBVIEW_VISIBILITY_REVISION__=${this.lifetime.generation};window.__GY_WEBVIEW_VISIBLE__=${this.visible};${BRIDGE_BOOTSTRAP}`,
+      scriptRules: ['*']
+    });
     request.scripts.filter(script => script.injectionTime !== 'DOCUMENT_FINISHED').forEach(script =>
       scripts.push({ script: guardedScript(script, request), scriptRules: ['*'] }));
     return scripts;
+  }
+
+  private initialPageMessageUrl(): string {
+    return this.request?.content.type === 'url' ? this.request.content.url || '' : this.request?.content.baseUrl || '';
+  }
+
+  private pageMessageAllowed(): boolean {
+    return this.pageMessageActive && this.visible && this.attached && this.isRenderActive(this.renderToken) &&
+      this.request?.settings.javaScriptEnabled === true && !!this.pageMessageSecret &&
+      navigationAllowed(this.initialPageMessageUrl(), true, this.request) &&
+      (!this.currentUrl() || this.currentUrl() === this.initialPageMessageUrl());
+  }
+
+  /** URL 只辅助初始文档检查；消息授权依赖私有主文档 capability，不能把 URL 当 frame 认证。 */
+  pageMessageBootstrap(key: string, nonce: string): boolean {
+    if (key !== this.pageMessageSecret || !this.pageMessageAllowed() || this.pageMessageNonce || !/^[a-f0-9]{64}$/.test(nonce)) return false;
+    try {
+      if (this.controller.getLastJavascriptProxyCallingFrameUrl() !== this.initialPageMessageUrl()) return false;
+    } catch (_) { return false; }
+    // 首次门禁在同步宿主回调前消费；同一 owner 的后续同 URL 文档不能再次引导。
+    this.pageMessageNonce = nonce;
+    return true;
+  }
+
+  pageMessagePost(key: string, nonce: string, channel: string, data: string): void {
+    if (key !== this.pageMessageSecret || nonce !== this.pageMessageNonce || !nonce || !this.pageMessageAllowed() ||
+      !this.request?.pageMessageChannels?.includes(channel) || !this.validPageMessageData(data) || this.pageMessageReplies.size >= 128) return;
+    const replyId = util.generateRandomUUID(true);
+    this.pageMessageReplies.set(replyId, { nonce: nonce, channel: channel });
+    this.emit({ type: 'pageMessage', channel: channel, data: data, replyId: replyId });
+  }
+
+  pageMessageRevoke(key: string, nonce: string): void {
+    if (key === this.pageMessageSecret && nonce === this.pageMessageNonce && !!nonce) this.revokePending();
+  }
+
+  private validPageMessageData(data: string): boolean {
+    return typeof data === 'string' && data.length <= 65536 && new util.TextEncoder().encodeInto(data).length <= 65536;
+  }
+
+  private pageMessageScript(): string {
+    if (!this.pageMessageActive || !this.pageMessageSecret || !this.request?.pageMessageChannels?.length) return '';
+    return `(function(key,channels,url){
+if(window!==window.top||location.href!==url)return;
+const proxy=window.GYWebViewPageMessageNative;
+if(!proxy)return;
+const listen=window.addEventListener.bind(window);
+const bootstrap=proxy.pageMessageBootstrap.bind(proxy),post=proxy.pageMessagePost.bind(proxy),revoke=proxy.pageMessageRevoke.bind(proxy);
+const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);const nonce=Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
+let active=bootstrap(key,nonce);const entries=Object.create(null);
+channels.forEach(function(channel){const entry={onmessage:null,postMessage:function(data){
+if(active&&window===window.top&&location.href===url&&typeof data==='string')post(key,nonce,channel,data);
+}};entries[channel]=entry;Object.defineProperty(window,channel,{value:entry,configurable:true});});
+window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__=function(expected,channel,data){
+if(!active||nonce!==expected||window!==window.top||location.href!==url||typeof data!=='string')return false;
+const entry=entries[channel];if(!entry||typeof entry.onmessage!=='function')return false;entry.onmessage({data:data});return true;
+};
+listen('pagehide',function(){active=false;revoke(key,nonce)});
+})(${JSON.stringify(this.pageMessageSecret)},${JSON.stringify(this.request.pageMessageChannels)},${JSON.stringify(this.initialPageMessageUrl())});`;
+  }
+
+  private replyPageMessage(params: KRAny, callback: KuiklyRenderCallback | null): void {
+    let args: PageReplyParams;
+    try { args = JSON.parse(typeof params === 'string' ? params : '{}') as PageReplyParams; }
+    catch (_) { callback?.({ result: false }); return; }
+    if (!args || typeof args.replyId !== 'string' || !this.pageMessageAllowed() || !this.validPageMessageData(args.data)) { callback?.({ result: false }); return; }
+    const pending = this.pageMessageReplies.get(args.replyId);
+    const nonce = pending?.nonce;
+    this.pageMessageReplies.delete(args.replyId);
+    if (!nonce || nonce !== this.pageMessageNonce) { callback?.({ result: false }); return; }
+    const script = `(function(){const reply=window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__;return typeof reply==='function'&&reply(${JSON.stringify(nonce)},${JSON.stringify(pending?.channel)},${JSON.stringify(args.data)});})();`;
+    // Boolean 与 A/i 一致，只表示已向当前 native Controller 提交，不是 H5 delivery/业务 ACK。
+    try { this.controller.runJavaScript(script).catch(() => {}); }
+    catch (_) { callback?.({ result: false }); return; }
+    callback?.({ result: true });
   }
 
   private runScripts(time: string): void {
@@ -534,7 +648,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   }
 
   call(method: string, params: KRAny, callback: KuiklyRenderCallback | null): KRAny {
-    if (method === 'replyPageMessage') { callback?.({ result: false }); return null; }
+    if (method === 'replyPageMessage') { this.replyPageMessage(params, callback); return null; }
     if (this.lifetime.disposed) return null;
     if (!this.attached || !this.request) { callback?.({ result: null }); return null; }
     try {
@@ -551,21 +665,23 @@ export class GYWebView extends KuiklyRenderBaseView {
         }).catch(() => { if (this.lifetime.current(generation)) callback?.({ result: null }); });
         return null;
       }
+      const controllerOwner = this.controller; const ownerToken = this.renderToken;
+      const currentOwner = (): boolean => controllerOwner === this.controller && ownerToken === this.renderToken && !this.lifetime.disposed;
       let result = true;
       if (method === 'reload') {
-        if (this.renderFailed || !this.loadSubmitted) this.setProp('request', JSON.stringify(this.request));
-        else { this.documentReady = false; this.revokePending(); this.controller.refresh(); }
+        if (this.renderFailed || !this.loadSubmitted || this.request.pageMessageChannels?.length) this.setProp('request', JSON.stringify(this.request));
+        else { this.documentReady = false; this.revokePending(); if (currentOwner()) controllerOwner.refresh(); else result = false; }
       }
       else if (method === 'goBack') {
         if (this.exitFullscreen()) result = true;
-        else { result = this.controller.accessBackward(); if (result) { this.documentReady = false; this.revokePending(); this.controller.backward(); } }
+        else { result = this.controller.accessBackward(); if (result) { this.documentReady = false; this.revokePending(); if (currentOwner()) controllerOwner.backward(); else result = false; } }
       }
-      else if (method === 'goForward') { result = this.controller.accessForward(); if (result) { this.documentReady = false; this.revokePending(); this.controller.forward(); } }
-      else if (method === 'stopLoading') { this.revokePending(); this.controller.stop(); }
+      else if (method === 'goForward') { result = this.controller.accessForward(); if (result) { this.documentReady = false; this.revokePending(); if (currentOwner()) controllerOwner.forward(); else result = false; } }
+      else if (method === 'stopLoading') { this.revokePending(); if (currentOwner()) controllerOwner.stop(); else result = false; }
       else if (method === 'exitFullscreen') result = this.exitFullscreen();
       else { super.call(method, params, callback); return null; }
       callback?.({ result: result });
-      this.emitHistory();
+      if (currentOwner()) this.emitHistory();
     } catch (_) { callback?.({ result: null }); this.fail('LOAD_EXCEPTION', 'ArkWeb method failed'); }
     return null;
   }
@@ -579,6 +695,9 @@ export class GYWebView extends KuiklyRenderBaseView {
   emit(event: WebEvent): void { if (!this.lifetime.disposed) this.eventCallback?.(event); }
   /** 发布中立主文档错误，errorCode/httpStatus 可缺省。 */
   fail(kind: string, message: string, errorCode?: number, httpStatus?: number): void {
+    const controllerOwner = this.controller; const ownerToken = this.renderToken;
+    this.revokePending();
+    if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return;
     this.emit({ type: 'loadFailed', kind: kind, message: message, url: this.attached ? this.currentUrl() : '',
       errorCode: errorCode, httpStatus: httpStatus, isMainFrame: true });
   }
@@ -590,11 +709,21 @@ export class GYWebView extends KuiklyRenderBaseView {
   }
   /** 标记渲染进程失败，撤销所有能力；reload 会重建 Controller。 */
   renderExited(): void {
-    this.renderFailed = true; this.documentReady = false; this.revokePending(); this.exitFullscreen();
+    const controllerOwner = this.controller; const ownerToken = this.renderToken;
+    this.renderFailed = true; this.documentReady = false; this.revokePending();
+    if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return;
+    this.exitFullscreen();
     this.fail('RENDER_PROCESS', 'Web renderer exited');
   }
   private closePorts(): void { this.ports.forEach(port => { try { port.close(); } catch (_) {} }); this.ports = []; }
-  private revokePending(): void {
+  private revokePending(revokePageChannels: boolean = true): void {
+    if (revokePageChannels) {
+      this.pageMessageActive = false; this.pageMessageSecret = ''; this.pageMessageNonce = '';
+      this.pageMessageReplies.clear();
+      if (this.attached && this.request?.pageMessageChannels?.length) {
+        try { this.controller.deleteJavaScriptRegister('GYWebViewPageMessageNative'); } catch (_) {}
+      }
+    }
     this.bridgeVisibilityPending = false;
     this.lifetime.invalidate(); this.closePorts();
     this.permissionRequests.forEach(request => { try { request.deny(); } catch (_) {} }); this.permissionRequests.clear();
@@ -602,7 +731,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.captureFiles.forEach(path => { try { fileIo.unlinkSync(path); } catch (_) {} }); this.captureFiles.clear();
   }
   onDestroy(): void {
-    this.revokePending(); this.lifetime.dispose(); this.eventCallback = null; this.exitFullscreen();
+    this.lifetime.dispose(); this.revokePending(); this.eventCallback = null; this.exitFullscreen();
     this.pendingHtmlNavigation = false; this.request = null;
     if (this.attached) {
       try { this.controller.stopAllMedia(); this.controller.closeAllMediaPresentations(); this.controller.stop(); this.controller.onInactive(); } catch (_) {}

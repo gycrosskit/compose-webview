@@ -1,6 +1,6 @@
 # 0.2.0-rc.12
 
-- pageMessageChannels 非空请求明确拒绝加载并上报 PAGE_MESSAGE_CHANNEL 不支持；replyPageMessage 返回 false。
+- v2 未发布候选：pageMessageChannels 采用初始主文档私有 capability、文档 nonce 与单次回复；隐藏/导航/停止/销毁撤销，显式 reload 重建物理 owner。64KiB UTF-8 / 128 pending，与 common 合同一致。
 - 默认空通道保留 rc.11 的 Bridge、完整 URL 导航、文件、媒体和全屏行为。
 - 配套 Maven / iOS Git Pod rc.13；OHOS 不声称实现早期双向页面通道，SystemActions Native 仍精确 rc.4。
 

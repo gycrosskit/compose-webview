@@ -1,4 +1,4 @@
-> 当前 `0.2.0-rc.12` 为未发布候选，配套 system-actions-native `0.2.0-rc.4`。非空 pageMessageChannels 明确 Unsupported，不加载请求；replyPageMessage 返回 false。默认空配置保留既有行为。本地 HAR 检查、远程发布与设备验收分别记录。
+> 当前 `0.2.0-rc.12` 为未发布候选，配套 system-actions-native `0.2.0-rc.4`。v2 源码候选实现 pageMessageChannels 初始主文档 capability 与单次回复；私有安全随机 owner key 和 document nonce 不进入事件、日志或返回值。默认空配置保留既有行为。本地 HAR 检查、远程发布与设备验收分别记录。
 
 # GY WebView 鸿蒙 HAR
 
@@ -117,3 +117,9 @@ Window 的恢复不等待该事件，也不设置超时猜测归属；若 SDK �
 HVigor 打入 HAR 的生成 lock 记录构建时的相对 override 缓存路径；包内公开 oh-package manifest 保持精确版本依赖。调用方 root override 指向自己下载并校验的 rc.3 HAR，不依赖发布机器缓存目录。新目录独立消费者 30/30 tasks、actual HAR 契约与唯一 owner realpath 检查通过，迁移结果见闭合记录，设备未验。
 
 rc.9 的 HostSuffix 可声明 `scheme="https"`、`includeRoot=false`、`rejectUserInfo=true`，最后一个条件默认 false 保留旧规则行为；空 `@` 同样拒绝。仅 navigationPolicy 变化保留当前 ArkWeb Controller/DOM 和已授权能力请求；security 变化仍重建，商城规则不授予 Bridge 能力。
+
+具名通道不等待 PageVisible/PageEnd；非空频道用 API15 `runJavaScriptOnDocumentStart` 按数组顺序先安装 facade；Bridge 和每个调用方脚本仍是独立 ScriptItem。空频道继续原 legacy 注入数组。自身 iframe 无 capability 被拒绝；可访问 parent facade 的同源 iframe 使用父文档 capability，与 Android/WK 一致，不提供 JavaScript 调用栈隔离。后续导航、隐藏、stop、失败或销毁永久撤销；show/H5 reload 不恢复，显式 reload 以新 Controller 重建。每条 UTF-8 64 KiB、最多 128 待回复，旧 replyId/nonce/owner 不可跨文档使用。
+
+本地源与实际 HAR 合同检查使用生产 ETS/生成 JS，系统 SDK 由测试替身隔离；API22 配置由本机 SDK 编译。不等于真 ArkWeb/设备验收，仍需确认 document-start 的同步 Proxy/URL query 与首段脚本实际时序。
+
+OHOS `replyPageMessage` Boolean 与 A/i 一致：通过当前 owner/nonce/input/单次 replyId 检查并提交原生 JS 队列即 true；不存在 onmessage、H5 handler 抛错或异步 JS 拒绝不改写已受理结果。它不是交付确认或业务 ACK。同步 SDK 提交失败返回 false；旧 ID、撤销或新文档返回 false。
