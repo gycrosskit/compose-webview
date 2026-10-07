@@ -1,22 +1,22 @@
-> 宿主基线为 `0.2.0-rc.9`，配套 system-actions-native `0.2.0-rc.4`。当前新增的低权限页面脚本、完整 URL 白名单和透明背景补丁尚未发布，不属于远程 rc.9。
+> 发布准备版本为 `0.2.0-rc.11`，配套 system-actions-native `0.2.0-rc.4`。本地 HAR 检查、远程发布与设备验收分别记录。
 
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **0.2.0-rc.9 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.4`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **0.2.0-rc.10 本地候选（尚未发布）**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.4`，后者提供共用窗口执行 owner。
 
 ## 安装与注册
 
-HAR 0.2.0-rc.9 配套 system-actions 0.2.0-rc.4。宿主直接使用系统组件时也选择 rc.4；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。新增补丁需独立版本和远程消费验收。Release HAR 与 Registry 分别验收。rc.5 的既有消费记录保留在历史验收文档中。
+HAR 0.2.0-rc.11 配套 system-actions 0.2.0-rc.4。宿主直接使用系统组件时也选择 rc.4；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 
-以下为宿主基线的精确 Registry 坐标；安装后仍需核对锁文件，不能用它验证未发布补丁。
+以下为本版本精确 Registry 坐标；审核通过并实际可查询、安装后使用。
 
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.9
+ohpm install @gycrosskit/webview@0.2.0-rc.10
 ```
 
-Registry 审核期间从同版本 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry rc.4。本地干净消费者核对只有一份窗口 owner。完全离线时下载 Web rc.9 和 system-actions rc.4 的固定 Release HAR、校验各自 SHA，并用 root override 保证同一系统包。文件下载消费与 Registry 安装分开验收。
+候选阶段从本地 assembleHar 输出安装；发布后，Registry 审核期间可从同版本 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry rc.4。本地干净消费者核对只有一份窗口 owner。完全离线时下载同版本 Web 和 system-actions rc.4 的固定 Release HAR、校验各自 SHA，并用 root override 保证同一系统包。文件下载消费与 Registry 安装分开验收。
 
 ```json
 {
@@ -43,6 +43,21 @@ getCustomRenderViewCreatorRegisterMap(): Map<string, KRRenderViewExportCreator> 
 ```
 
 宿主声明 `ohos.permission.INTERNET`。开启 `mediaCaptureEnabled` 时，宿主另外声明 `ohos.permission.CAMERA` / `ohos.permission.MICROPHONE` 及用途；HAR 不替应用写权限说明、账号、支付或业务 Bridge。
+
+## 共享 Web 数据清理
+
+清理器独立于 Kuikly View / Module，现有宿主原生 Module 可直接复用。调用前由宿主保证 UI 线程与 Web 组件已加载；影响应用共享资源缓存以及默认非隐私 Cookie / WebStorage，不按 View 或域名隔离。
+
+```ts
+import { OhosWebViewDataCleaner } from '@gycrosskit/webview';
+
+OhosWebViewDataCleaner.clearResourceCache(); // 内存/磁盘缓存，保留 Cookie 与网站存储。
+await OhosWebViewDataCleaner.clearWebsiteData(); // 缓存 → Cookie 异步完成 → WebStorage。
+```
+
+系统异常原样抛出 / reject，失败即停止后续步骤；部分删除不会回滚。缓存和 WebStorage 的 void API 没有删除完成信号，Promise 完成仅说明 Cookie 回执与其余 API 返回，不证明业务退出、持久化完成或所有内核数据类型删除。宿主决定切环境/退出时机、清理自身状态并停止页面继续写入；不承诺隐私模式清理。
+
+取消等待与宿主销毁不撤销已发起删除。现有 Kuikly Module 在有效 requestId 下交付结果，cancel/onDestroy 后过滤迟到完成；不把普通同步缓存返回转换成网页账号退出成功。无需注册新的 Kuikly Module。
 
 ## wire 与安全
 

@@ -1,0 +1,3 @@
+# Native cold build may exceed 10 minutes; retain the resolved Maven address for this 60-minute CI job.
+networkaddress.cache.ttl=3600
+networkaddress.cache.negative.ttl=0

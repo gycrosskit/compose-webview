@@ -17,7 +17,7 @@ kotlin {
             renderFrameworkDir?.let { linkerOpts("-F$it", "-framework", "OpenKuiklyIOSRender") }
         }
     }
-    iosX64()
+    iosX64 { binaries.framework { baseName = "WebViewConsumer" } }
     iosSimulatorArm64 {
         binaries.framework {
             baseName = "WebViewConsumer"
@@ -28,8 +28,9 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation("com.github.gycrosskit.compose-webview:webview-core:$componentVersion")
-            implementation("com.github.gycrosskit.compose-webview:webview-kuikly:$componentVersion")
+            if (!verifyCmp) implementation("com.github.gycrosskit.compose-webview:webview-kuikly:$componentVersion")
         }
+        if (!verifyCmp) commonMain.get().kotlin.srcDir("src/kuiklyMain/kotlin")
         val cmpMain = if (verifyCmp) create("cmpMain") {
             dependsOn(commonMain.get())
             dependencies {
@@ -38,7 +39,10 @@ kotlin {
                 implementation("org.jetbrains.compose.ui:ui:1.10.3")
             }
         } else null
-        androidMain { cmpMain?.let { dependsOn(it) } }
+        androidMain {
+            if (!verifyCmp) kotlin.srcDir("src/kuiklyAndroidMain/kotlin")
+            cmpMain?.let { dependsOn(it) }
+        }
         val iosMain by creating { dependsOn(cmpMain ?: commonMain.get()) }
         iosArm64Main { dependsOn(iosMain) }
         iosX64Main { dependsOn(iosMain) }
@@ -80,4 +84,12 @@ android {
         versionName = "1.0"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_11; targetCompatibility = JavaVersion.VERSION_11 }
+}
+
+tasks.register("verifyNoKuikly") {
+    doLast {
+        check(verifyCmp) { "Run this check in CMP mode" }
+        val artifacts = configurations.getByName("debugRuntimeClasspath").resolvedConfiguration.resolvedArtifacts
+        check(artifacts.none { it.moduleVersion.id.group == "com.tencent.kuikly-open" || it.moduleVersion.id.name.endsWith("-kuikly-android") }) { "CMP-only consumer unexpectedly pulls Kuikly runtime" }
+    }
 }
