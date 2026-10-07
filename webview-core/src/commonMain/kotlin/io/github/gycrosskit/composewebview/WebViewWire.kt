@@ -34,6 +34,7 @@ object WebViewWire {
         put("navigationPolicy", buildJsonObject {
             put("allowedSchemes", strings(request.navigationPolicy.allowedSchemes))
             put("allowedOrigins", strings(request.navigationPolicy.allowedOrigins))
+            put("allowedUrls", strings(request.navigationPolicy.allowedUrls))
             put("blockedRules", rules(request.navigationPolicy.blockedRules))
             put("allowNewWindows", request.navigationPolicy.allowNewWindows)
         })
@@ -67,6 +68,7 @@ object WebViewWire {
                 if ("allowedSchemes" in policy) policy.strings("allowedSchemes").toSet() else setOf("http", "https"),
                 decodeRules(policy["blockedRules"]), policy.boolean("allowNewWindows", false),
                 policy.strings("allowedOrigins").toSet(),
+                policy.strings("allowedUrls").toSet(),
             ),
         )
     }

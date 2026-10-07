@@ -78,10 +78,11 @@ export interface WebViewScript { id: string; source: string; injectionTime: stri
  * 原生同步导航策略，不等待 Kotlin 异步观察事件。
  * @property allowedSchemes 允许的 scheme；ArkWeb 进一步限制为 HTTP/HTTPS。
  * @property allowedOrigins 可选精确主文档来源白名单，空时不限制。
+ * @property allowedUrls 可选完整 URL 字符串白名单，只限制主文档；空时不限制，不归一化路径或查询。
  * @property blockedRules 主文档拒绝规则。
  * @property allowNewWindows 默认 false；此平台不支持启用。
  */
-export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; }
+export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; allowedUrls?: string[]; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; }
 /**
  * 单个原生实例的完整 JSON 输入；变化重建 Controller 并撤销旧异步操作。
  * @property content 本次声明式内容。
@@ -157,6 +158,8 @@ export function navigationAllowed(value: string, mainFrame: boolean, request: We
     if (!['http', 'https'].includes(scheme) || !origin(value) || !request.navigationPolicy.allowedSchemes.includes(scheme)) return false;
     if (mainFrame && request.navigationPolicy.allowedOrigins && request.navigationPolicy.allowedOrigins.length > 0 &&
       !request.navigationPolicy.allowedOrigins.some(item => origin(item) === origin(value))) return false;
+    if (mainFrame && request.navigationPolicy.allowedUrls && request.navigationPolicy.allowedUrls.length > 0 &&
+      !request.navigationPolicy.allowedUrls.includes(value)) return false;
     if (mainFrame && request.navigationPolicy.blockedRules.some(rule => matches(value, rule))) return false;
     if (!mainFrame && request.blockedResourceRules.some(rule => matches(value, rule))) return false;
     if (mainFrame && request.security.appBridgeEnabled && !trusted(value, request.security)) return false;
@@ -180,6 +183,10 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   if (request.navigationPolicy.allowedOrigins !== undefined && !Array.isArray(request.navigationPolicy.allowedOrigins)) throw new Error('Invalid allowed origins');
   request.navigationPolicy.allowedOrigins?.forEach(item => {
     if (typeof item !== 'string' || !origin(item)) throw new Error('Invalid allowed origin');
+  });
+  if (request.navigationPolicy.allowedUrls !== undefined && !Array.isArray(request.navigationPolicy.allowedUrls)) throw new Error('Invalid allowed URLs');
+  request.navigationPolicy.allowedUrls?.forEach(item => {
+    if (typeof item !== 'string' || item !== item.trim() || !origin(item)) throw new Error('Invalid allowed URL');
   });
   const settingValues = request.settings as Record<string, Object>;
   const booleanKeys = ['javaScriptEnabled', 'domStorageEnabled', 'allowFileAccess', 'allowContentAccess', 'acceptsThirdPartyCookies',
@@ -246,12 +253,17 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   return request;
 }
 
-/** 原生 document-start 注入仍必须在页面内校验 top 与 HTTPS origin，绝不为 iframe 执行业务脚本。 */
+/** 自定义脚本沿用手动执行的来源边界；pageBridge 只放行初始同源主文档，不授予高权限。 */
 export function guardedScript(script: WebViewScript, request: WebViewRequest): string {
   const exact = JSON.stringify(request.security.trustedOrigins.urls.map(item => origin(item)).filter(item => item.startsWith('https:')));
   const suffixes = JSON.stringify(request.security.trustedOrigins.trustedHostSuffixes.filter(item => /^[a-zA-Z0-9.-]+$/.test(item)));
-  const guard = script.onlyForTrustedMainFrame !== false ?
-    `location.protocol==='https:'&&(${exact}.includes(location.protocol+'//'+location.hostname.toLowerCase().replace(/\\.$/,'')+':'+(location.port||'443'))||${suffixes}.some(function(s){s=s.toLowerCase().replace(/^\\.|\\.$/g,'');return location.hostname===s||location.hostname.endsWith('.'+s)}))` : 'true';
+  const initial = request.content.type === 'url' ? request.content.url || '' : request.content.baseUrl || '';
+  const pageOrigin = request.security.pageBridgeEnabled && !request.security.appBridgeEnabled ? origin(initial) : '';
+  const trustedGuard = `location.protocol==='https:'&&(${exact}.includes(location.protocol+'//'+location.hostname.toLowerCase().replace(/\\.$/,'')+':'+(location.port||'443'))||${suffixes}.some(function(s){s=s.toLowerCase().replace(/^\\.|\\.$/g,'');return location.hostname===s||location.hostname.endsWith('.'+s)}))`;
+  const page = pageOrigin ? new url.URL(pageOrigin) : null;
+  const defaultPort = page?.protocol === 'https:' ? '443' : '80';
+  const pageGuard = page ? `location.protocol===${JSON.stringify(page.protocol)}&&(location.hostname===${JSON.stringify(page.hostname)}||location.hostname===${JSON.stringify(page.hostname + '.')})&&(location.port||${JSON.stringify(defaultPort)})===${JSON.stringify(page.port || defaultPort)}` : 'false';
+  const guard = script.onlyForTrustedMainFrame !== false ? `(${trustedGuard})||(${pageGuard})` : 'true';
   const id = JSON.stringify(script.id);
   const guarded = `if(window===window.top&&(${guard})){window.__GY_WEBVIEW_SCRIPT_IDS__=window.__GY_WEBVIEW_SCRIPT_IDS__||Object.create(null);if(!Object.prototype.hasOwnProperty.call(window.__GY_WEBVIEW_SCRIPT_IDS__,${id})){window.__GY_WEBVIEW_SCRIPT_IDS__[${id}]=true;${script.source}\n}}`;
   return script.injectionTime === 'DOM_READY' ?

@@ -28,9 +28,9 @@ fun WebViewRequest.shouldBlockMainFrameNavigation(
     (security.appBridgeEnabled || security.pageBridgeEnabled) &&
     !canUseAppBridgeAt(url)
 
-/** 统一两端的脚本来源门禁，业务脚本不能绕过 [WebViewScript.onlyForTrustedMainFrame]。 */
+/** 可信限定脚本复用手动执行的 JavaScript 开关及来源门禁，不授予初始页面高权限。 */
 fun WebViewRequest.canInject(script: WebViewScript, url: String?): Boolean =
-    !script.onlyForTrustedMainFrame || security.trustedOrigins.isTrusted(url)
+    !script.onlyForTrustedMainFrame || canEvaluateJavascriptAt(url)
 
 /** URL 页面以自身为初始来源，内联 HTML 只能使用显式 baseUrl 建立来源。 */
 fun WebViewContent.initialOrigin(): String? = when (this) {

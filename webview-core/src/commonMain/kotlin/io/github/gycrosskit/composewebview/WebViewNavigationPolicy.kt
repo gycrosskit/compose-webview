@@ -15,10 +15,13 @@ data class WebViewNavigationPolicy(
     val allowNewWindows: Boolean = false,
     /** 主帧精确来源白名单，与 JS/Bridge 无关；空集合不限制来源。路径和查询不参与匹配。 */
     val allowedOrigins: Set<String> = emptySet(),
+    /** 主帧完整 URL 字符串白名单；不归一化路径、查询或默认端口，空集合不限制。 */
+    val allowedUrls: Set<String> = emptySet(),
 ) {
     init {
         require(allowedSchemes.all { it.matches(Regex("[a-z][a-z0-9+.-]*")) })
         require(allowedOrigins.all { it.toHttpOrigin() != null }) { "allowedOrigins requires valid HTTP/HTTPS origins" }
+        require(allowedUrls.all { it == it.trim() && it.toHttpOrigin() != null }) { "allowedUrls requires valid HTTP/HTTPS URLs" }
     }
 
     /** 同步检查 scheme、窗口、主文档规则和来源；不负责 JS/Bridge 来源授权。 */
@@ -27,6 +30,7 @@ data class WebViewNavigationPolicy(
         return scheme in allowedSchemes &&
             (navigation.target != WebViewNavigationTarget.NEW_WINDOW || allowNewWindows) &&
             (!navigation.isMainFrame || blockedRules.none { it.matches(navigation.url) }) &&
+            (!navigation.isMainFrame || allowedUrls.isEmpty() || navigation.url in allowedUrls) &&
             (!navigation.isMainFrame || allowedOrigins.isEmpty() ||
                 navigation.url.toHttpOrigin()?.let { origin -> allowedOrigins.any { it.toHttpOrigin() == origin } } == true)
     }

@@ -5,7 +5,16 @@ fun WebViewRequest.earlyScriptSource(): String? {
     if (!settings.javaScriptEnabled) return null
     val scripts = scripts.filter { it.injectionTime != WebViewScriptInjectionTime.DOCUMENT_FINISHED }
     if (scripts.isEmpty()) return null
-    val trustExpression = security.trustedOrigins.javascriptTrustExpression()
+    val trusted = security.trustedOrigins.javascriptTrustExpression()
+    val initial = content.initialOrigin()?.toHttpOrigin()
+    val page = if (security.pageBridgeEnabled && !security.appBridgeEnabled && initial != null) {
+        val host = initial.host.escapeJavascriptSingleQuoted()
+        val defaultPort = if (initial.scheme == "https") 443 else 80
+        "(location.protocol === '${initial.scheme}:' && " +
+            "(location.hostname === '$host' || location.hostname === '$host.') && " +
+            "(location.port || '$defaultPort') === '${initial.port}')"
+    } else "false"
+    val trustExpression = "($trusted) || ($page)"
     return buildString {
         appendLine("(function() {")
         appendLine("  if (window !== window.top) return;")
@@ -38,7 +47,15 @@ fun WebViewRequest.earlyScriptOriginRules(): Set<String> {
     return when {
         early.isEmpty() -> emptySet()
         early.any { !it.onlyForTrustedMainFrame } -> setOf("*")
-        else -> security.trustedOrigins.documentStartOriginRules()
+        else -> buildSet {
+            addAll(security.trustedOrigins.documentStartOriginRules())
+            if (security.pageBridgeEnabled && !security.appBridgeEnabled) {
+                content.initialOrigin()?.toHttpOrigin()?.let { origin ->
+                    add("${origin.scheme}://${origin.host}:${origin.port}")
+                    if (!origin.host.startsWith('[')) add("${origin.scheme}://${origin.host}.:${origin.port}")
+                }
+            }
+        }
     }
 }
 

@@ -21,6 +21,7 @@ import platform.Foundation.NSError
 import platform.Foundation.NSNumber
 import platform.Foundation.NSUUID
 import platform.Foundation.NSURLErrorDomain
+import platform.UIKit.UIColor
 import platform.WebKit.WKNavigation
 import platform.WebKit.WKNavigationAction
 import platform.WebKit.WKNavigationActionPolicy
@@ -125,6 +126,9 @@ internal actual fun PlatformAppWebView(
                 }
                 val creationMark = TimeSource.Monotonic.markNow()
                 WKWebView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0), configuration = configuration).apply {
+                    opaque = false
+                    backgroundColor = UIColor.clearColor
+                    scrollView.backgroundColor = UIColor.clearColor
                     navigationDelegate = coordinator
                     UIDelegate = coordinator
                     if (currentRequest.canUseAppBridgeAt(currentRequest.content.initialOrigin())) {
