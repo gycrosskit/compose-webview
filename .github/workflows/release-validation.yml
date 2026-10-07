@@ -31,6 +31,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - run: bash scripts/ci-pin-fork-host.sh
       - run: bash scripts/verify-release.sh
       - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly assembleDebug verifyNoCompose verifyExactComponentVersion --refresh-dependencies --daemon --max-workers=1 --stacktrace --info
       - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly -PverifyCmp=true -PverifyNavigation=${{ github.event.release.tag_name == '0.2.0-rc.12' || inputs.version == '0.2.0-rc.12' }} assembleDebug verifyNoKuikly verifyExactComponentVersion --daemon --max-workers=1 --stacktrace --info
@@ -46,6 +47,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - run: bash scripts/ci-pin-fork-host.sh
       - run: bash scripts/verify-release.sh
       - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly compileKotlinIosArm64 compileKotlinIosSimulatorArm64 compileKotlinIosX64 compileKotlinOhosArm64 --refresh-dependencies --daemon --max-workers=1 --stacktrace --info
       - run: |
