@@ -4,10 +4,11 @@ plugins {
     id("com.android.application") version "8.10.1"
 }
 
-val componentVersion = providers.gradleProperty("webViewVersion").orElse("0.2.0-rc.11").get()
+val componentVersion = providers.gradleProperty("webViewVersion").orElse("0.2.0-rc.12").get()
 val renderFrameworkDir = providers.gradleProperty("renderFrameworkDir").orNull
 val simRenderFrameworkDir = providers.gradleProperty("simRenderFrameworkDir").orNull
 val verifyCmp = providers.gradleProperty("verifyCmp").orElse("false").get().toBoolean()
+val verifyNavigation = providers.gradleProperty("verifyNavigation").orElse("false").get().toBoolean()
 if (verifyCmp) apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 kotlin {
     androidTarget { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11) } }
@@ -33,6 +34,7 @@ kotlin {
         if (!verifyCmp) commonMain.get().kotlin.srcDir("src/kuiklyMain/kotlin")
         val cmpMain = if (verifyCmp) create("cmpMain") {
             dependsOn(commonMain.get())
+            if (verifyNavigation) kotlin.srcDir("src/navigationMain/kotlin")
             dependencies {
                 implementation("com.github.gycrosskit.compose-webview:compose-webview:$componentVersion")
                 implementation("org.jetbrains.compose.runtime:runtime:1.10.3")

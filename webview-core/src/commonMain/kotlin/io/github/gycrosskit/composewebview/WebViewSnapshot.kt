@@ -10,6 +10,7 @@ package io.github.gycrosskit.composewebview
  * @property hasVisibleContent 当前实例是否已经提交过首个可见主文档，用于首屏性能诊断。
  * @property canGoBack 平台网页历史是否可以返回。
  * @property error 最近一次整页级失败。
+ * @property canGoForward 平台网页历史是否可以前进。
  */
 data class WebViewSnapshot(
     val title: String? = null,
@@ -19,6 +20,7 @@ data class WebViewSnapshot(
     val hasVisibleContent: Boolean = false,
     val canGoBack: Boolean = false,
     val error: WebViewLoadError? = null,
+    val canGoForward: Boolean = false,
 ) {
     init {
         require(progress in 0..100)

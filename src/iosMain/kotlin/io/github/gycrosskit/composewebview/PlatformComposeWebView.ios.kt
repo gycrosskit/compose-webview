@@ -161,7 +161,7 @@ internal actual fun PlatformAppWebView(
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private class IosWebViewCoordinator(
+internal class IosWebViewCoordinator(
     private val state: AppWebViewState,
     private val request: () -> WebViewRequest,
     private val callbacks: () -> WebViewCallbacks,
@@ -189,8 +189,10 @@ private class IosWebViewCoordinator(
     }
 
     fun attach(webView: WKWebView, creationDurationMillis: Long) {
+        if (released || !state.isAttached(webView)) return
         state.javascriptAllowed = { request().canEvaluateJavascriptAt(it.URL?.absoluteString) }
         mediaTarget = webView
+        state.fullscreenExitHandler = ::exitFullscreen
         progress.attach(webView)
         performanceTrace = WebViewPerformanceTrace(
             platform = "ios",
@@ -199,6 +201,23 @@ private class IosWebViewCoordinator(
         ).also { it.created(creationDurationMillis) }
         suspendMedia(webView, mediaSuspended, "attach")
         prepareDocumentScripts(webView)
+    }
+
+    private fun exitFullscreen(webView: WKWebView, callback: (Boolean) -> Unit): Boolean {
+        if (released || mediaTarget != webView || !state.isAttached(webView) || webView.hidden || !fullscreen) return false
+        val generation = navigationGeneration
+        webView.callAsyncJavaScript(
+            IOS_EXIT_FULLSCREEN_SCRIPT,
+            arguments = emptyMap<Any?, Any?>(),
+            inFrame = null,
+            inContentWorld = platform.WebKit.WKContentWorld.pageWorld(),
+        ) { value, error ->
+            if (released || !state.isAttached(webView) || webView.hidden || navigationGeneration != generation) return@callAsyncJavaScript
+            val consumed = error == null && (value as? platform.Foundation.NSNumber)?.boolValue == true
+            if (consumed) updateFullscreen(false)
+            callback(consumed)
+        }
+        return true
     }
 
     fun setVisible(webView: WKWebView, visible: Boolean) {
@@ -301,6 +320,7 @@ private class IosWebViewCoordinator(
 
     fun release(webView: WKWebView) {
         released = true
+        if (state.isAttached(webView)) state.invalidateJavascriptCallbacks()
         navigationGeneration++
         fileChooser.cancel(revokeDocument = true)
         suspendMedia(webView, true, "release")
@@ -453,13 +473,16 @@ private class IosWebViewCoordinator(
                     state.navigationCancelled(webView)
                 },
                 onAllowedMainFrame = {
-                    navigationGeneration++
-                    fileChooser.cancel(revokeDocument = true)
-                    prepareDocumentScripts(webView)
+                    state.invalidateJavascriptCallbacks()
+                    if (!released && state.isAttached(webView)) {
+                        navigationGeneration++
+                        fileChooser.cancel(revokeDocument = true)
+                        prepareDocumentScripts(webView)
+                    }
                 },
             )
             decisionHandler(
-                if (decision == WebViewNavigationDecision.ALLOW) WKNavigationActionPolicy.WKNavigationActionPolicyAllow
+                if (decision == WebViewNavigationDecision.ALLOW && !released && state.isAttached(webView)) WKNavigationActionPolicy.WKNavigationActionPolicyAllow
                 else WKNavigationActionPolicy.WKNavigationActionPolicyCancel,
             )
         }
@@ -494,6 +517,7 @@ private class IosWebViewCoordinator(
                 }
                 return
             }
+            if (!didReceiveScriptMessage.frameInfo.mainFrame) return
             when (raw) {
                 WEB_EVENT_FULLSCREEN_ENTER -> updateFullscreen(true)
                 WEB_EVENT_FULLSCREEN_EXIT -> updateFullscreen(false)

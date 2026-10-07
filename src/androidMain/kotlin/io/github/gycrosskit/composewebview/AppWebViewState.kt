@@ -67,6 +67,21 @@ actual class AppWebViewState actual internal constructor() {
         return true
     }
 
+    actual fun goBack(callback: (Boolean) -> Unit) { callback(goBack()) }
+
+    actual fun goForward(): Boolean {
+        val target = webView ?: return false
+        if (!isAttached(target) || !target.canGoForward()) return false
+        invalidateJavascriptCallbacks()
+        target.goForward()
+        updateNavigation(target)
+        return true
+    }
+
+    actual fun exitFullscreen(callback: (Boolean) -> Unit) {
+        callback(backInterceptor?.invoke() == true)
+    }
+
     /** 停止当前加载并立即将 [isLoading] 置为 `false`。未绑定实例时安全忽略。 */
     actual fun stopLoading() {
         webView?.stopLoading()
@@ -96,6 +111,7 @@ actual class AppWebViewState actual internal constructor() {
         mutableSnapshot = snapshot.copy(
             currentUrl = target.url,
             canGoBack = target.canGoBack(),
+            canGoForward = target.canGoForward(),
             hasVisibleContent = false,
         )
     }
@@ -126,7 +142,7 @@ actual class AppWebViewState actual internal constructor() {
         defaultUserAgent = null
         appliedConfig = null
         loadedContent = null
-        mutableSnapshot = snapshot.copy(canGoBack = false, hasVisibleContent = false)
+        mutableSnapshot = snapshot.copy(canGoBack = false, canGoForward = false, hasVisibleContent = false)
     }
 
     /** 新主框架导航开始时清空上一页标题和错误，但保留声明式内容身份。 */
@@ -143,13 +159,14 @@ actual class AppWebViewState actual internal constructor() {
     }
 
     /** 主框架成功完成后同步进度和历史返回能力。 */
-    internal fun onLoadFinished(url: String?, canGoBack: Boolean) {
+    internal fun onLoadFinished(url: String?, canGoBack: Boolean, canGoForward: Boolean = false) {
         mutableSnapshot = snapshot.copy(
             currentUrl = url,
             progress = 100,
             isLoading = false,
             hasVisibleContent = true,
             canGoBack = canGoBack,
+            canGoForward = canGoForward,
             error = null,
         )
     }
@@ -182,6 +199,7 @@ actual class AppWebViewState actual internal constructor() {
         mutableSnapshot = snapshot.copy(
             currentUrl = target.url,
             canGoBack = target.canGoBack(),
+            canGoForward = target.canGoForward(),
         )
     }
 
