@@ -148,6 +148,32 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   }
   const guarded = { id: 'contract', source: 'window.executions=(window.executions||0)+1;',
     injectionTime: 'DOCUMENT_START', onlyForTrustedMainFrame: true };
+  for (const initial of ['http://legacy.test/captcha', 'http://legacy.test:8080/captcha', 'https://legacy.test:8443/captcha']) {
+    const page = request({ content: { type: 'url', url: initial }, settings: { javaScriptEnabled: true },
+      security: { trustedOrigins: { urls: [], trustedHostSuffixes: [] }, pageBridgeEnabled: true },
+      navigationPolicy: { allowedSchemes: ['http', 'https'], allowedUrls: [initial], blockedRules: [] } });
+    assert.equal(wire.decodeRequest(encoded(page)).content.url, initial);
+    for (const [target, main, allowed] of [[initial, true, true], [initial, false, false],
+      ['http://legacy.test:9090/captcha', true, false], ['https://evil.test/captcha', true, false]]) {
+      const window = {}; window.top = main ? window : {};
+      vm.runInNewContext(wire.guardedScript(guarded, page), { window, location: new URL(target) });
+      assert.equal(window.executions || 0, allowed ? 1 : 0, `${target} main=${main}`);
+    }
+    for (const target of [initial.replace('/captcha', '/other'), initial + '?extra=1', initial + '#next']) {
+      assert.equal(wire.navigationAllowed(target, true, page), false, target);
+      assert.equal(wire.navigationAllowed(target, false, page), true, target);
+    }
+    assert.equal(wire.navigationAllowed(initial, true, { ...page, navigationPolicy: { ...page.navigationPolicy, blockedRules: [{ type: 'contains', value: '/captcha' }] } }), false);
+    const mixed = { ...page, security: { ...page.security, appBridgeEnabled: true } };
+    assert.throws(() => wire.decodeRequest(encoded(mixed)));
+    const window = {}; window.top = window;
+    vm.runInNewContext(wire.guardedScript(guarded, mixed), { window, location: new URL(initial) });
+    assert.equal(window.executions || 0, 0, 'Invalid mixed Bridge flags must not grant page scope');
+  }
+  for (const allowedUrls of [null, 'https://trusted.test/page', [1], ['javascript:evil'], ['http://user@legacy.test/captcha'], ['http://legacy.test:0/captcha'], [' https://trusted.test/page']]) {
+    assert.throws(() => wire.decodeRequest(encoded(request({ navigationPolicy: { allowedSchemes: ['http', 'https'], allowedUrls, blockedRules: [] } }))));
+  }
+  assert.throws(() => wire.decodeRequest(encoded(request({ security: { trustedOrigins: { urls: ['http://legacy.test'], trustedHostSuffixes: [] }, appBridgeEnabled: true } }))));
   for (const [target, mainFrame, expected] of [
     ['https://trusted.test/page', true, 1], ['https://trusted.test:444/page', true, 0],
     ['https://trusted.test.evil/page', true, 0], ['http://trusted.test/page', true, 0],

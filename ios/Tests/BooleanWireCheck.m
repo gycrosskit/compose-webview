@@ -71,6 +71,30 @@ static void Check(void) {
         BOOL valid = CFGetTypeID((__bridge CFTypeRef)flag) == CFBooleanGetTypeID();
         Require([view validRequest:request] == valid, @"Native security flags require genuine JSON Booleans");
     }
+    for (NSString *initial in @[@"http://legacy.example/captcha", @"http://legacy.example:8080/captcha", @"https://legacy.example:8443/captcha"]) {
+        NSDictionary *security = @{@"pageBridgeEnabled": @YES, @"trustedOrigins": @{@"urls": @[], @"trustedHostSuffixes": @[]}};
+        NSDictionary *policy = @{@"allowedSchemes": @[@"http", @"https"], @"allowedUrls": @[initial]};
+        view.request = @{@"content": @{@"type": @"url", @"url": initial}, @"settings": @{@"javaScriptEnabled": @YES}, @"security": security, @"navigationPolicy": policy};
+        Require([view validRequest:view.request], @"Initial page script scope rejected valid HTTP/HTTPS input");
+        Require([view bridgeAllowed:initial], @"Initial page origin lost low privilege Bridge");
+        Require(![view trusted:initial], @"Page Bridge must not grant high privilege trust");
+        Require([[view trustExpression] containsString:GYQuote([GYOrigin(initial)[@"scheme"] stringByAppendingString:@":"])], @"Early script lost initial page scheme");
+        Require([view allows:initial mainFrame:YES newWindow:NO gesture:NO], @"Exact URL rejected its configured document");
+        for (NSString *target in @[[initial stringByReplacingOccurrencesOfString:@"/captcha" withString:@"/other"], [initial stringByAppendingString:@"?extra=1"], [initial stringByAppendingString:@"#next"]]) {
+            Require(![view allows:target mainFrame:YES newWindow:NO gesture:NO], @"Exact URL normalized path/query/fragment");
+            Require([view allows:target mainFrame:NO newWindow:NO gesture:NO], @"Exact main frame URLs blocked subframes");
+        }
+        for (NSString *target in @[@"http://legacy.example:9090/captcha", @"https://evil.example/captcha"])
+            Require(![view bridgeAllowed:target], @"Page Bridge crossed scheme/host/port boundary");
+        NSMutableDictionary *mixed = [view.request mutableCopy];
+        mixed[@"security"] = @{@"appBridgeEnabled": @YES, @"pageBridgeEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://trusted.example"], @"trustedHostSuffixes": @[]}};
+        Require(![view validRequest:mixed], @"Mixed Bridge flags accepted");
+        view.request = mixed;
+        Require(![view bridgeAllowed:initial], @"Page Bridge bypassed app Bridge precedence");
+    }
+    for (id allowedUrls in @[NSNull.null, @"https://safe.example", @[@1], @[@"javascript:evil"], @[@"http://user@legacy.example/captcha"], @[@"http://legacy.example:0/captcha"], @[@" http://legacy.example/captcha"]]) {
+        Require(![view validRequest:@{@"content": @{@"type": @"url", @"url": @"https://safe.example"}, @"navigationPolicy": @{@"allowedUrls": allowedUrls}}], @"Malformed exact URL wire accepted");
+    }
     view.request = @{@"navigationPolicy": @{@"allowedSchemes": @[@"https"]}, @"security": @{}};
     __block NSDictionary *event;
     [view hrv_setPropWithKey:@"onEvent" propValue:^(id value) { event = JSONRoundTrip(value); }];

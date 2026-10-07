@@ -209,11 +209,12 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (GYBool(security, @"appBridgeEnabled", NO) && GYBool(security, @"pageBridgeEnabled", NO)) return NO;
     NSDictionary *origins = security[@"trustedOrigins"];
     if (origins && ![origins isKindOfClass:NSDictionary.class]) return NO;
-    for (id value in @[origins[@"urls"] ?: @[], origins[@"trustedHostSuffixes"] ?: @[], policy[@"allowedSchemes"] ?: @[], policy[@"allowedOrigins"] ?: @[]]) {
+    for (id value in @[origins[@"urls"] ?: @[], origins[@"trustedHostSuffixes"] ?: @[], policy[@"allowedSchemes"] ?: @[], policy[@"allowedOrigins"] ?: @[], policy[@"allowedUrls"] ?: @[]]) {
         if (![value isKindOfClass:NSArray.class]) return NO;
         for (id item in value) if (!GYString(item)) return NO;
     }
     for (NSString *url in policy[@"allowedOrigins"]) if (!GYOrigin(url)) return NO;
+    for (NSString *url in policy[@"allowedUrls"]) if (![url isEqual:[url stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]] || !GYOrigin(url)) return NO;
     for (NSString *url in origins[@"urls"]) if (![GYOrigin(url)[@"scheme"] isEqual:@"https"]) return NO;
     NSRegularExpression *hostPattern = [NSRegularExpression regularExpressionWithPattern:@"^[\\p{L}\\p{N}]([\\p{L}\\p{N}-]*[\\p{L}\\p{N}])?(\\.[\\p{L}\\p{N}]([\\p{L}\\p{N}-]*[\\p{L}\\p{N}])?)*$" options:0 error:nil];
     for (NSString *suffix in origins[@"trustedHostSuffixes"]) if (![hostPattern firstMatchInString:GYHost(suffix) options:0 range:NSMakeRange(0, GYHost(suffix).length)]) return NO;
@@ -257,6 +258,8 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     NSString *scheme = [NSURLComponents componentsWithString:url ?: @""].scheme.lowercaseString;
     NSArray *schemes = policy[@"allowedSchemes"] ?: @[@"http", @"https"];
     BOOL allow = [schemes containsObject:scheme ?: @""] && (!newWindow || GYBool(policy, @"allowNewWindows", NO));
+    NSArray *allowedUrls = policy[@"allowedUrls"];
+    if (mainFrame && allowedUrls.count && ![allowedUrls containsObject:url ?: @""]) allow = NO;
     NSArray *allowedOrigins = policy[@"allowedOrigins"];
     if (mainFrame && allowedOrigins.count) {
         NSDictionary *origin = GYOrigin(url);
@@ -280,7 +283,17 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         [parts addObject:[NSString stringWithFormat:@"((location.hostname === %@ || location.hostname === %@) && (location.port || '443') === %@)", GYQuote(host), GYQuote([host stringByAppendingString:@"."]), GYQuote([origin[@"port"] stringValue])]];
     }
     for (NSString *suffix in trust[@"trustedHostSuffixes"]) [parts addObject:[NSString stringWithFormat:@"(function(h) { var s = %@, n = h.length; if (h[n - 1] === '.') n--; if (n < s.length || (n > s.length && h[n - s.length - 1] !== '.')) return false; for (var i = 0; i < s.length; i++) if (h[n - s.length + i] !== s[i]) return false; return true; })(location.hostname)", GYQuote(GYHost(suffix))]];
-    return parts.count ? [NSString stringWithFormat:@"(location.protocol === 'https:' && (%@))", [parts componentsJoinedByString:@" || "]] : @"false";
+    NSString *trusted = parts.count ? [NSString stringWithFormat:@"(location.protocol === 'https:' && (%@))", [parts componentsJoinedByString:@" || "]] : @"false";
+    NSDictionary *security = self.request[@"security"], *content = self.request[@"content"];
+    NSString *initial = [content[@"type"] isEqual:@"url"] ? GYString(content[@"url"]) : GYString(content[@"baseUrl"]);
+    NSDictionary *origin = GYOrigin(initial);
+    if (GYBool(security, @"pageBridgeEnabled", NO) && !GYBool(security, @"appBridgeEnabled", NO) && origin) {
+        NSString *host = origin[@"host"], *scheme = origin[@"scheme"];
+        NSString *defaultPort = [scheme isEqual:@"https"] ? @"443" : @"80";
+        return [NSString stringWithFormat:@"((%@) || (location.protocol === %@ && (location.hostname === %@ || location.hostname === %@) && (location.port || %@) === %@))",
+            trusted, GYQuote([scheme stringByAppendingString:@":"]), GYQuote(host), GYQuote([host stringByAppendingString:@"."]), GYQuote(defaultPort), GYQuote([origin[@"port"] stringValue])];
+    }
+    return trusted;
 }
 - (void)addScript:(NSString *)source start:(BOOL)start {
     [self.webView.configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:source injectionTime:start ? WKUserScriptInjectionTimeAtDocumentStart : WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES]];
@@ -299,6 +312,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     self.webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
     self.webView.navigationDelegate = self; self.webView.UIDelegate = self;
     self.webView.opaque = NO; self.webView.backgroundColor = UIColor.clearColor;
+    self.webView.scrollView.backgroundColor = UIColor.clearColor;
     self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self addSubview:self.webView];
     for (NSString *key in @[@"estimatedProgress", @"title", @"canGoBack", @"canGoForward"]) [self.webView addObserver:self forKeyPath:key options:NSKeyValueObservingOptionNew context:nil];
@@ -415,7 +429,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (view != self.webView || self.released) return;
     BOOL fileAllowed = GYBool(self.request[@"security"], @"fileChooserEnabled", NO) && [self trusted:view.URL.absoluteString];
     [view evaluateJavaScript:[NSString stringWithFormat:@"window.__COMPOSE_WEBVIEW_FILE_CHOOSER_ALLOWED__=%@;", fileAllowed ? @"true" : @"false"] completionHandler:nil];
-    if (GYBool(self.request[@"settings"], @"javaScriptEnabled", NO)) for (NSDictionary *script in self.request[@"scripts"]) if ([script[@"injectionTime"] isEqual:@"DOCUMENT_FINISHED"] && (!GYBool(script, @"onlyForTrustedMainFrame", YES) || [self trusted:view.URL.absoluteString])) [view evaluateJavaScript:script[@"source"] completionHandler:nil];
+    if (GYBool(self.request[@"settings"], @"javaScriptEnabled", NO)) for (NSDictionary *script in self.request[@"scripts"]) if ([script[@"injectionTime"] isEqual:@"DOCUMENT_FINISHED"] && (!GYBool(script, @"onlyForTrustedMainFrame", YES) || [self trusted:view.URL.absoluteString] || (GYBool(self.request[@"security"], @"pageBridgeEnabled", NO) && [self bridgeAllowed:view.URL.absoluteString]))) [view evaluateJavaScript:script[@"source"] completionHandler:nil];
 }
 - (void)webView:(WKWebView *)view didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error { if (view == self.webView && error.code != NSURLErrorCancelled) [self fail:@"NETWORK" message:error.localizedDescription url:view.URL.absoluteString code:@(error.code)]; }
 - (void)webView:(WKWebView *)view didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error { [self webView:view didFailProvisionalNavigation:navigation withError:error]; }

@@ -35,3 +35,5 @@ classpath="$(cat build/early-scripts/classpath)"
 javac -encoding UTF-8 -cp "$classpath" -d build/early-scripts verification/early-scripts/ExportScript.java
 java -cp "build/early-scripts:$classpath" ExportScript > build/early-scripts/production.js
 node verification/early-scripts/verify.cjs build/early-scripts/production.js
+java -cp "build/early-scripts:$classpath" ExportScript page > build/early-scripts/page.js
+node verification/early-scripts/verify.cjs build/early-scripts/page.js page

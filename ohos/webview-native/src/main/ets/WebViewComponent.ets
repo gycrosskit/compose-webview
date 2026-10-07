@@ -26,6 +26,7 @@ struct GYWebViewComponent {
   private live(): boolean { return this.renderView.isRenderActive(this.renderToken); }
   build() {
     Web({ src: '', controller: this.controller })
+      .backgroundColor(Color.Transparent)
       .javaScriptAccess(this.renderView.settings().javaScriptEnabled === true)
       .domStorageAccess(this.renderView.settings().domStorageEnabled !== false)
       .fileAccess(false)

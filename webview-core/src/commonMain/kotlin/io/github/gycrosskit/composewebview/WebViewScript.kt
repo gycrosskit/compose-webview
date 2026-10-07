@@ -15,7 +15,7 @@ enum class WebViewScriptInjectionTime {
  * @property id 供诊断和去重使用的稳定脚本标识。
  * @property source 非空可信 JavaScript 源码；不得直接拼接外部输入或记录敏感正文。
  * @property injectionTime 脚本注入时机，默认 DOM_READY。
- * @property onlyForTrustedMainFrame 是否只在可信主文档中执行。
+ * @property onlyForTrustedMainFrame 是否限定获准主文档：可信 HTTPS，或明确 pageBridge 的初始同源 HTTP(S) 页面。
  */
 data class WebViewScript(
     val id: String,

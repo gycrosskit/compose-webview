@@ -6,7 +6,7 @@ export const request: WebViewRequest = {
   settings: { javaScriptEnabled: false },
   security: { trustedOrigins: { urls: [], trustedHostSuffixes: [] } },
   scripts: [], blockedResourceRules: [],
-  navigationPolicy: { allowedSchemes: ['https'], blockedRules: [], allowNewWindows: false }
+  navigationPolicy: { allowedSchemes: ['https'], allowedUrls: ['https://example.test'], blockedRules: [], allowNewWindows: false }
 };
 
 /** 只编译产物的公开类型、属性与注册工厂，不启动网页或系统权限。 */
