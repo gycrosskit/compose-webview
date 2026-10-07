@@ -2,6 +2,8 @@
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
+本地 Maven / HAR **0.2.0-rc.10 候选，尚未发布**：增加独立 `OhosWebViewDataCleaner`，宿主直接从 HAR 调用；未变更的 Native Pod 保持 rc.9，system-actions-native rc.4 / Render 2.28.0 不变。现有公开安装仍使用下文 rc.9，候选验证见[开发与验证](docs/开发与验证.md#鸿蒙-web-数据清理候选)。
+
 已发布 Maven/Native Git Pod/Release HAR **0.2.0-rc.9**，Web HAR 精确配套 system-actions-native **0.2.0-rc.4**。修复 CMP 隐藏业务 Bridge、文档/owner 回执隔离，接入原生受控选择与拍摄，并补 HTTPS 子域商城组合规则、policy-only 保留 DOM 和 Android Kuikly 原生全屏宿主控制槽。17 个 JitPack 模块、实际 Release 字节校验、新目录 CMP/Kuikly Maven 消费、真实 Git Pod/UIKit device App 链接与 Release HAR 消费均通过。Web OHPM 提交审核中，精确版本仍 NOTFOUND；Registry 安装和真机业务验收未通过，详见[rc.9 远程发布验收](docs/0.2.0-rc.9远程发布验收.md)。
 
 iOS 常规网页最低仍为 15.0；受控文件上传通过公开 `WKUIDelegate.runOpenPanelWithParameters`，要求 iOS18.4+。15～18.3 开启 `fileChooserEnabled` 会明确拒绝并发送 `FILE_CHOOSER` Unsupported；关闭能力时的 DOM 兼容拦截无法保证默认 WebKit 上传被原生隔离。需要这种隔离的页面应使用 18.4+。iOS 视频拍摄输出真实 MOV，仅接受 MP4 时拒绝，不做改名转换。见[完整源码审查与平台边界](docs/完整源码审查.md)。
@@ -183,14 +185,28 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 
 [Apache-2.0](LICENSE)。系统框架和 Kuikly 依赖分别遵循其原厂许可。
 
-## Web 数据清理（自 0.2.0-rc.3）
+## Web 数据清理
 
-`AndroidWebViewDataCleaner(applicationContext)` 与 `IosWebViewDataCleaner()` 提供两个挂起函数：
+清理针对应用共享 Web 数据，时机、业务账号、Repository 和图片缓存由宿主控制。清理时停止相关页面继续写入；不以系统 API 返回证明业务退出。
 
-- `clearResourceCache()` 仅删除资源缓存，保留Cookie/LocalStorage/IndexedDB。
-- `clearWebsiteData()` 删除完整Web账号数据，等待系统异步完成。
+| 平台 / 首次版本 | 入口 | `clearResourceCache()` | `clearWebsiteData()` |
+| --- | --- | --- | --- |
+| Android / rc.3 | `AndroidWebViewDataCleaner(applicationContext)` | 挂起；资源缓存 | 挂起；资源缓存、WebStorage、Cookie，等待 Cookie 回执并 flush |
+| iOS / rc.3 | `IosWebViewDataCleaner()` | 挂起；默认 WKWebsiteDataStore 内存/磁盘缓存 | 挂起；默认 store 全部网站数据，等待 WebKit completion |
+| HarmonyOS / rc.10 候选 | HAR `OhosWebViewDataCleaner` 静态方法 | 同步；共享内存/磁盘资源缓存 | Promise；缓存 → 等待 Cookie 删除 → WebStorage |
 
-组件在主线程执行原生操作；宿主决定普通清缓存或切环境、清自己的账号/Repository/图片缓存。取消结束调用方等待，已开始的系统删除继续；回调不得唤醒已取消的调用。
+资源缓存清理保留 Cookie 与网站存储。Android/iOS 自动切到 Main；HarmonyOS 由宿主在 UI 线程、Web 组件加载后调用，Cookie 与 WebStorage 操作默认非隐私存储。ArkWeb 缓存与 WebStorage 没有完成回调，网站清理 Promise 只确认 Cookie 删除完成及其余 API 已返回，不承诺所有内核数据类型或持久化完成。
+
+```ts
+import { OhosWebViewDataCleaner } from '@gycrosskit/webview';
+
+// 普通缓存清理，保留网站账号。
+OhosWebViewDataCleaner.clearResourceCache();
+// 宿主切环境/退出网页账号时调用；系统异常继续向调用方传播。
+await OhosWebViewDataCleaner.clearWebsiteData();
+```
+
+两类调用均保留系统错误。取消等待或销毁宿主不撤销已发起删除；Kuikly 宿主沿用自身 requestId/取消/销毁协议，只向仍有效的调用投递完成或失败，清理器不引入 Module、全局状态或业务成功回执。
 
 ## 0.2.0-rc.5 发布候选与契约
 

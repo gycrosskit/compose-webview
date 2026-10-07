@@ -1,5 +1,5 @@
 import { WindowPolicyController } from '@gycrosskit/system-actions-native';
-import { GYWebView, FullscreenWindowPolicy, WebViewRequest, WebEvent, KuiklyRenderBaseView } from '@gycrosskit/webview';
+import { GYWebView, OhosWebViewDataCleaner, FullscreenWindowPolicy, WebViewRequest, WebEvent, KuiklyRenderBaseView } from '@gycrosskit/webview';
 
 export const request: WebViewRequest = {
   content: { type: 'url', url: 'https://example.test' },
@@ -20,6 +20,15 @@ export function createWebView(): KuiklyRenderBaseView {
 }
 export function consumeEvent(event: WebEvent): string { return event.type; }
 export const viewName: string = GYWebView.VIEW_NAME;
+
+/** 只编译 HAR 公开清理 API；执行时由宿主保证 UI 线程及 Web 组件已加载。 */
+export async function clearWebData(websiteData: boolean): Promise<void> {
+  if (websiteData) {
+    await OhosWebViewDataCleaner.clearWebsiteData();
+  } else {
+    OhosWebViewDataCleaner.clearResourceCache();
+  }
+}
 
 export class HostPolicyWebView extends GYWebView {
   fullscreenPolicy(width: number, height: number): FullscreenWindowPolicy {
