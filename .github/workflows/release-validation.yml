@@ -32,7 +32,7 @@ jobs:
           cache: gradle
       - run: bash scripts/verify-release.sh
       - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly assembleDebug verifyNoCompose verifyExactComponentVersion --refresh-dependencies --no-daemon --max-workers=1 --stacktrace --info
-      - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly -PverifyCmp=true assembleDebug verifyNoKuikly verifyExactComponentVersion --refresh-dependencies --no-daemon --max-workers=1 --stacktrace --info
+      - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly -PverifyCmp=true assembleDebug verifyNoKuikly verifyExactComponentVersion --no-daemon --max-workers=1 --stacktrace --info
   release-native:
     runs-on: macos-15
     timeout-minutes: 60
@@ -50,4 +50,4 @@ jobs:
       - run: |
           ios_framework_target=IosSimulatorArm64
           if [[ "$(uname -m)" != arm64 ]]; then ios_framework_target=IosX64; fi
-          bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly -PverifyCmp=true "linkDebugFramework$ios_framework_target" compileKotlinIosArm64 compileKotlinIosX64 --refresh-dependencies --no-daemon --max-workers=1 --stacktrace --info
+          bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly -PverifyCmp=true "linkDebugFramework$ios_framework_target" compileKotlinIosArm64 compileKotlinIosX64 --no-daemon --max-workers=1 --stacktrace --info
