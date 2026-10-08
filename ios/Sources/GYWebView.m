@@ -118,6 +118,8 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 @property(nonatomic, copy) NSArray<UTType *> *fileTypes;
 @property(nonatomic, copy) NSString *fileOrigin;
 @property(nonatomic, strong) NSMutableArray<NSURL *> *temporaryFiles;
+@property(nonatomic, strong) AVAssetExportSession *videoExport;
+@property(nonatomic, copy) NSArray<NSURL *> *exportingFiles;
 @end
 
 @implementation GYWebViewMessageHandler
@@ -347,13 +349,14 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     NSDictionary *content = request[@"content"], *settings = request[@"settings"], *security = request[@"security"];
     NSString *value = GYString(content[[content[@"type"] isEqual:@"url"] ? @"url" : @"html"]);
     NSString *origin = [content[@"type"] isEqual:@"url"] ? value : GYString(content[@"baseUrl"]);
-    if (!value.length) { [self fail:@"EMPTY_CONTENT" message:@"" url:origin code:nil]; return; }
+    if (![value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) { [self fail:@"EMPTY_CONTENT" message:@"" url:origin code:nil]; return; }
     if (origin && ![self allows:origin mainFrame:YES newWindow:NO gesture:NO]) return;
     // navigation 事件与取消回执可同步替换 owner，旧调用不能继续创建或授权新页面。
     if (self.released || self.request != request || self.callbackGeneration != generation || self.webView) return;
     WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
     configuration.defaultWebpagePreferences.allowsContentJavaScript = GYBool(settings, @"javaScriptEnabled", NO);
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = GYBool(settings, @"javaScriptCanOpenWindowsAutomatically", NO);
+    configuration.ignoresViewportScaleLimits = NO;
     configuration.allowsInlineMediaPlayback = YES;
     configuration.mediaTypesRequiringUserActionForPlayback = GYBool(settings, @"mediaPlaybackRequiresUserGesture", YES) ? WKAudiovisualMediaTypeAll : WKAudiovisualMediaTypeNone;
     self.webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
@@ -390,6 +393,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
     [configuration.userContentController removeAllUserScripts];
     [self addScript:[self transportScript] start:YES];
+    if (!GYBool(settings, @"supportZoom", YES)) { configuration.ignoresViewportScaleLimits = NO; [self addScript:IOS_DISABLE_ZOOM_SCRIPT start:YES]; }
     [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:IOS_FILE_CHOOSER_GATE_SCRIPT injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
     if (GYBool(settings, @"javaScriptEnabled", NO)) {
         [self addScript:[IOS_WEB_EVENT_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.ComposeWebViewEvent" withString:@"window.__GY_WEBVIEW_EVENT_TRANSPORT__"] start:YES];
@@ -412,7 +416,6 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 }
 - (void)installResourceRulesAndLoad {
     NSArray *rules = self.request[@"blockedResourceRules"];
-    if (!rules.count) { [self loadContent]; return; }
     NSMutableArray *encoded = [NSMutableArray array];
     for (NSDictionary *rule in rules) {
         NSString *type = rule[@"type"], *filter;
@@ -421,6 +424,12 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         else filter = [NSString stringWithFormat:@"^%@://%@%@(:[0-9]+)?(/.*)?$", GYString(rule[@"scheme"]) ?: @"[a-zA-Z][a-zA-Z0-9+.-]*", [type isEqual:@"hostSuffix"] ? (GYBool(rule, @"includeRoot", YES) ? (GYBool(rule, @"rejectUserInfo", NO) ? @"([^./:@]+\\.)*" : @"([^./]+\\.)*") : (GYBool(rule, @"rejectUserInfo", NO) ? @"([^./:@]+\\.)+" : @"([^./]+\\.)+")) : @"", [NSRegularExpression escapedPatternForString:GYHost(rule[[type isEqual:@"exactHost"] ? @"host" : @"suffix"])]];
         [encoded addObject:@{@"trigger": @{@"url-filter": filter, @"url-filter-is-case-sensitive": ([type isEqual:@"contains"] && !GYBool(rule, @"ignoreCase", NO)) ? @YES : @NO}, @"action": @{@"type": @"block"}}];
     }
+    // COMPATIBILITY uses the conservative WebKit policy; only HTTPS top documents are restricted.
+    if (![GYString(self.request[@"settings"][@"mixedContentPolicy"]) isEqual:@"ALWAYS_ALLOW"])
+        [encoded addObject:@{@"trigger": @{@"url-filter": @"^http://", @"if-top-url": @[@"^https://"], @"url-filter-is-case-sensitive": @NO}, @"action": @{@"type": @"block"}}];
+    if (GYBool(self.request[@"settings"], @"blockNetworkImage", NO))
+        [encoded addObject:@{@"trigger": @{@"url-filter": @"^https?://", @"resource-type": @[@"image"], @"url-filter-is-case-sensitive": @NO}, @"action": @{@"type": @"block"}}];
+    if (!encoded.count) { [self loadContent]; return; }
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:encoded options:0 error:nil] encoding:NSUTF8StringEncoding];
     WKWebView *owner = self.webView;
     __weak typeof(self) weakSelf = self;
@@ -438,7 +447,18 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     NSDictionary *content = self.request[@"content"], *settings = self.request[@"settings"];
     if ([content[@"type"] isEqual:@"html"]) {
         self.initialHtmlNavigation = YES;
-        [self.webView loadHTMLString:content[@"html"] baseURL:[NSURL URLWithString:GYString(content[@"baseUrl"]) ?: @""]];
+        NSString *historyURL = GYString(content[@"historyUrl"]);
+        if (historyURL && ![historyURL isEqual:GYString(content[@"baseUrl"])]) {
+            [self fail:@"LOAD_EXCEPTION" message:@"HTML historyUrl must equal baseUrl on iOS" url:historyURL code:nil]; return;
+        }
+        NSURL *baseURL = [NSURL URLWithString:GYString(content[@"baseUrl"]) ?: @"about:blank"];
+        NSString *encoding = GYString(content[@"encoding"]) ?: @"UTF-8";
+        CFStringEncoding charset = CFStringConvertIANACharSetNameToEncoding((__bridge CFStringRef)encoding);
+        NSData *data = charset == kCFStringEncodingInvalidId ? nil :
+            [content[@"html"] dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(charset) allowLossyConversion:NO];
+        if (!data) { [self fail:@"LOAD_EXCEPTION" message:@"Unsupported HTML character encoding" url:GYString(content[@"baseUrl"]) code:nil]; return; }
+        [self.webView loadData:data MIMEType:GYString(content[@"mimeType"]) ?: @"text/html"
+            characterEncodingName:encoding baseURL:baseURL];
     }
     else {
         NSURL *url = [NSURL URLWithString:content[@"url"]];
@@ -644,7 +664,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 }
 - (void)captureFile:(WKWebView *)owner {
     BOOL image = [self.fileTypes containsObject:UTTypeItem] || [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeJPEG conformsToType:type]; }] != NSNotFound;
-    BOOL video = !image && [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeQuickTimeMovie conformsToType:type]; }] != NSNotFound;
+    BOOL video = !image && [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeQuickTimeMovie conformsToType:type] || [UTTypeMPEG4Movie conformsToType:type]; }] != NSNotFound;
     if ((!image && !video) || !GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO) || ![UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera] || ![NSBundle.mainBundle objectForInfoDictionaryKey:@"NSCameraUsageDescription"] || (video && ![NSBundle.mainBundle objectForInfoDictionaryKey:@"NSMicrophoneUsageDescription"])) { [self cancelFilePicker]; return; }
     NSUInteger generation = self.filePickerGeneration;
     NSUInteger revision = self.filePickerRevision;
@@ -675,7 +695,32 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     else { NSData *data = UIImageJPEGRepresentation(info[UIImagePickerControllerOriginalImage], 0.9); saved = data.length && [data writeToURL:destination atomically:YES]; }
     if (!self.temporaryFiles) self.temporaryFiles = [NSMutableArray array];
     if (!saved) [NSFileManager.defaultManager removeItemAtURL:destination error:nil];
-    [self finishFiles:saved ? @[destination] : nil];
+    BOOL acceptsMOV = [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeQuickTimeMovie conformsToType:type]; }] != NSNotFound;
+    BOOL acceptsMP4 = [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeMPEG4Movie conformsToType:type]; }] != NSNotFound;
+    if (saved && [destination.pathExtension isEqual:@"mov"] && !acceptsMOV && acceptsMP4) [self exportCapturedMovie:destination];
+    else [self finishFiles:saved ? @[destination] : nil];
+}
+// Input and final output are limited to 50 MiB; AVFoundation intermediate disk usage is not bounded.
+- (void)exportCapturedMovie:(NSURL *)source {
+    NSNumber *size = [NSFileManager.defaultManager attributesOfItemAtPath:source.path error:nil][NSFileSize];
+    if (!self.filePickerCompletion || ![self filePickerAllowed:self.webView] || size.longLongValue <= 0 || size.longLongValue > 50 * 1024 * 1024) {
+        [NSFileManager.defaultManager removeItemAtURL:source error:nil]; [self cancelFilePicker]; return;
+    }
+    NSURL *target = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:@".mp4"]]];
+    AVAssetExportSession *session = [[AVAssetExportSession alloc] initWithAsset:[AVURLAsset URLAssetWithURL:source options:nil] presetName:AVAssetExportPresetHighestQuality];
+    if (!session || ![session.supportedFileTypes containsObject:AVFileTypeMPEG4]) {
+        [NSFileManager.defaultManager removeItemAtURL:source error:nil]; [self cancelFilePicker]; return;
+    }
+    NSUInteger revision = self.filePickerRevision;
+    self.videoExport = session; self.exportingFiles = @[source, target];
+    session.outputURL = target; session.outputFileType = AVFileTypeMPEG4;
+    [session exportAsynchronouslyWithCompletionHandler:^{ dispatch_async(dispatch_get_main_queue(), ^{
+        [NSFileManager.defaultManager removeItemAtURL:source error:nil];
+        if (self.videoExport == session) { self.videoExport = nil; self.exportingFiles = nil; }
+        if (revision != self.filePickerRevision) [NSFileManager.defaultManager removeItemAtURL:target error:nil];
+        else if (session.status == AVAssetExportSessionStatusCompleted && [self filePickerAllowed:self.webView]) [self finishFiles:@[target]];
+        else { [NSFileManager.defaultManager removeItemAtURL:target error:nil]; [self cancelFilePicker]; }
+    }); }];
 }
 - (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker { if (picker == self.capturePicker) [self cancelFilePicker]; }
 - (void)finishFiles:(NSArray<NSURL *> *)urls {
@@ -701,6 +746,9 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)picker { if (picker == self.filePicker) [self cancelFilePicker]; }
 - (void)cancelFilePicker {
     self.filePickerRevision++;
+    [self.videoExport cancelExport]; self.videoExport = nil;
+    for (NSURL *url in self.exportingFiles) [NSFileManager.defaultManager removeItemAtURL:url error:nil];
+    self.exportingFiles = nil;
     UIDocumentPickerViewController *picker = self.filePicker; self.filePicker = nil;
     void (^completion)(NSArray<NSURL *> *) = self.filePickerCompletion; self.filePickerCompletion = nil;
     picker.delegate = nil; [picker dismissViewControllerAnimated:NO completion:nil];

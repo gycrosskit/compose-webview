@@ -7,6 +7,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import platform.Foundation.*
+import platform.AVFoundation.*
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 import platform.UIKit.*
 import platform.WebKit.WKWebView
 import platform.UniformTypeIdentifiers.*
@@ -44,6 +47,8 @@ internal class IosWebFileChooserController : NSObject(), UIDocumentPickerDelegat
     private val temporaryFiles = mutableListOf<NSURL>()
     private var revision = 0
     private var maxFiles = 1
+    private var videoExport: AVAssetExportSession? = null
+    private var exportingFiles = emptyList<NSURL>()
 
     fun show(owner: WKWebView, multiple: Boolean, request: () -> WebViewRequest,
              allowed: () -> Boolean, result: (List<*>?) -> Unit) {
@@ -67,7 +72,7 @@ internal class IosWebFileChooserController : NSObject(), UIDocumentPickerDelegat
             if (types.isEmpty()) types = listOf(UTTypeItem)
             if (input.second) {
                 val image = types.any { UTTypeJPEG.conformsToType(it) }
-                val video = !image && types.any { UTTypeQuickTimeMovie.conformsToType(it) }
+                val video = !image && types.any { UTTypeQuickTimeMovie.conformsToType(it) || UTTypeMPEG4Movie.conformsToType(it) }
                 if ((!image && !video) || !request().security.mediaCaptureEnabled ||
                     !UIImagePickerController.isSourceTypeAvailable(UIImagePickerControllerSourceType.UIImagePickerControllerSourceTypeCamera) ||
                     NSBundle.mainBundle.objectForInfoDictionaryKey("NSCameraUsageDescription") == null ||
@@ -143,7 +148,37 @@ internal class IosWebFileChooserController : NSObject(), UIDocumentPickerDelegat
             } == true
         }
         if (!saved) NSFileManager.defaultManager.removeItemAtURL(target, null)
-        finishCapturedFile(if (saved) target else null)
+        if (saved && video && types.none { UTTypeQuickTimeMovie.conformsToType(it) } &&
+            types.any { UTTypeMPEG4Movie.conformsToType(it) }) {
+            exportCapturedMovie(target)
+        } else finishCapturedFile(if (saved) target else null)
+    }
+
+    /** UIKit 的 MOV 只在 accept 要求 MP4 时经系统导出；输入与最终输出分别验收50MiB；系统转码临时磁盘占用不作流过程上限承诺。 */
+    internal fun exportCapturedMovie(source: NSURL) {
+        val size = (NSFileManager.defaultManager.attributesOfItemAtPath(source.path.orEmpty(), null)?.get(NSFileSize) as? NSNumber)?.longLongValue ?: 0L
+        if (completion == null || !stillAllowed() || size !in 1L..50L * 1024L * 1024L) {
+            NSFileManager.defaultManager.removeItemAtURL(source, null); cancel(); return
+        }
+        val target = NSURL.fileURLWithPath(NSTemporaryDirectory() + NSUUID().UUIDString + ".mp4")
+        val session = AVAssetExportSession(AVURLAsset(source, null), AVAssetExportPresetHighestQuality)
+        if (session == null || AVFileTypeMPEG4 !in session.supportedFileTypes) {
+            NSFileManager.defaultManager.removeItemAtURL(source, null); cancel(); return
+        }
+        val current = revision
+        videoExport = session
+        exportingFiles = listOf(source, target)
+        session.outputURL = target
+        session.outputFileType = AVFileTypeMPEG4
+        session.exportAsynchronouslyWithCompletionHandler {
+            dispatch_async(dispatch_get_main_queue()) {
+                NSFileManager.defaultManager.removeItemAtURL(source, null)
+                if (videoExport === session) { videoExport = null; exportingFiles = emptyList() }
+                if (current != revision) { NSFileManager.defaultManager.removeItemAtURL(target, null) }
+                else if (session.status == AVAssetExportSessionStatusCompleted && stillAllowed()) finishCapturedFile(target)
+                else { NSFileManager.defaultManager.removeItemAtURL(target, null); cancel() }
+            }
+        }
     }
 
     override fun imagePickerControllerDidCancel(picker: UIImagePickerController) {
@@ -161,6 +196,7 @@ internal class IosWebFileChooserController : NSObject(), UIDocumentPickerDelegat
             val type = if (captured) when (url.pathExtension) {
                 "jpg" -> UTTypeJPEG
                 "mov" -> UTTypeQuickTimeMovie
+                "mp4" -> UTTypeMPEG4Movie
                 else -> null
             } else UTType.typeWithFilenameExtension(url.pathExtension.orEmpty())
             url.isFileURL() && attrs?.get(NSFileType) == NSFileTypeRegular && size in 1L..50L * 1024L * 1024L && type != null && types.any {
@@ -182,6 +218,10 @@ internal class IosWebFileChooserController : NSObject(), UIDocumentPickerDelegat
         val result = completion
         completion = null
         revision++
+        videoExport?.cancelExport()
+        videoExport = null
+        exportingFiles.forEach { NSFileManager.defaultManager.removeItemAtURL(it, null) }
+        exportingFiles = emptyList()
         dismiss()
         if (revokeDocument) clearTemporaryFiles()
         result?.invoke(null)

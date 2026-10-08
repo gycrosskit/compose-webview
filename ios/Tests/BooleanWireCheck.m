@@ -126,7 +126,38 @@ static void CheckNavigationOwnerReplacement(NSDictionary *request) {
     }
 }
 
+static void CheckHtmlContent(void) {
+    for (NSDictionary *fixture in @[@{@"encoding": @"UTF-8", @"html": @"中文 <script>window.mimeExecuted=true</script>"},
+            @{@"encoding": @"UTF-8", @"mime": @"text/html", @"html": @"中文 <script>window.mimeExecuted=true</script>"},
+            @{@"encoding": @"ISO-8859-1", @"html": @"Café <b>literal</b>"},
+            @{@"encoding": @"unknown-fixture-charset", @"html": @"text", @"error": @YES},
+            @{@"encoding": @"US-ASCII", @"html": @"中文", @"error": @YES},
+            @{@"encoding": @"UTF-8", @"html": @" \n", @"error": @YES, @"errorKind": @"EMPTY_CONTENT"},
+            @{@"encoding": @"UTF-8", @"html": @"same history", @"base": @"https://safe.example/page", @"history": @"https://safe.example/page"},
+            @{@"encoding": @"UTF-8", @"html": @"different history", @"base": @"https://safe.example/page", @"history": @"https://safe.example/other", @"error": @YES},
+            @{@"encoding": @"UTF-8", @"html": @"foreign history", @"base": @"https://safe.example/page", @"history": @"https://foreign.example/", @"error": @YES}]) {
+        GYWebView *view = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+        [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:view];
+        __block BOOL finished = NO, failed = NO;
+        [view hrv_setPropWithKey:@"onEvent" propValue:^(id event) {
+            if ([event[@"type"] isEqual:@"pageFinished"]) finished = YES;
+            if ([event[@"type"] isEqual:@"loadFailed"] && [event[@"kind"] isEqual:fixture[@"errorKind"] ?: @"LOAD_EXCEPTION"]) failed = YES;
+        }];
+        [view hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"html", @"html": fixture[@"html"], @"baseUrl": fixture[@"base"] ?: NSNull.null, @"historyUrl": fixture[@"history"] ?: NSNull.null, @"mimeType": fixture[@"mime"] ?: @"text/plain", @"encoding": fixture[@"encoding"]}, @"settings": @{@"javaScriptEnabled": @YES}})];
+        WaitUntil(^BOOL { return finished || failed; }, @"HTML MIME fixture never finished");
+        Require(failed == [fixture[@"error"] boolValue], @"Invalid or lossy charset was falsely accepted");
+        if (!failed) {
+            BOOL html = [fixture[@"mime"] isEqual:@"text/html"];
+            Require([Evaluate(view.webView, @"document.contentType") isEqual:html ? @"text/html" : @"text/plain"], @"Declared HTML MIME was ignored");
+            Require([Evaluate(view.webView, @"document.body.innerText") containsString:html ? @"中文" : fixture[@"html"]], @"Declared charset changed content");
+            Require([Evaluate(view.webView, @"window.mimeExecuted === true") boolValue] == html, @"MIME script execution policy changed");
+        }
+        [view hrv_removeFromSuperview];
+    }
+}
+
 static void Check(void) {
+    CheckHtmlContent();
     for (NSArray *pair in @[@[@"2001:0db8:0000:0:0:0:0:1", @"2001:db8::1"], @[@"::ffff:192.0.2.1", @"::ffff:c000:201"], @[@"0:0:0:0:0:0:0:0", @"::"], @[@"1:0:0:2:0:0:3:4", @"1::2:0:0:3:4"]]) {
         NSString *raw = [NSString stringWithFormat:@"https://[%@]:8443", pair[0]];
         NSString *canonical = [NSString stringWithFormat:@"https://[%@]:8443/next", pair[1]];
@@ -139,6 +170,56 @@ static void Check(void) {
     for (NSString *value in @[@"http://shop.jd.com/item", @"https://jd.com/item", @"https://shop.jd.com.evil/item", @"https://shop.jd.com..", @"https://shop..jd.com", @"https://user@shop.jd.com", @"https://@shop.jd.com", @"https://:@shop.jd.com"])
         Require(!GYRuleMatches(mall, value), @"Mall rule widened scheme/root/domain boundary");
     Require(!GYOrigin(@"https://trusted.example..") && !GYOrigin(@"https://sub..trusted.example") && !GYOrigin(@"https://[::1]."), @"Empty DNS label origin accepted");
+    for (NSNumber *enabled in @[@NO, @YES]) for (NSNumber *javascript in @[@NO, @YES]) {
+        GYWebView *zoom = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+        [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:zoom];
+        __block BOOL zoomFinished = NO;
+        [zoom hrv_setPropWithKey:@"onEvent" propValue:^(id event) { if ([event[@"type"] isEqual:@"pageFinished"]) zoomFinished = YES; }];
+        [zoom hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"html", @"html": @"<meta name='viewport' content='width=device-width,initial-scale=1'><p style='width:1000px'>zoom</p>"}, @"settings": @{@"supportZoom": enabled, @"javaScriptEnabled": javascript}})];
+        WaitUntil(^BOOL { return zoomFinished; }, @"Zoom document never finished");
+        [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+        NSString *viewport = Evaluate(zoom.webView, @"document.querySelector('meta[name=viewport]').content");
+        Require([viewport containsString:@"width=device-width"] && [viewport containsString:@"initial-scale=1"] &&
+          [viewport containsString:@"user-scalable=no"] == !enabled.boolValue && !zoom.webView.configuration.ignoresViewportScaleLimits,
+          @"Production author viewport policy was ignored");
+        if (!enabled.boolValue) {
+            Evaluate(zoom.webView, @"document.querySelector('meta[name=viewport]').content='width=device-width;initial-scale=2;viewport-fit=cover;user-scalable=yes';true");
+            NSString *updated = Evaluate(zoom.webView, @"document.querySelector('meta[name=viewport]').content");
+            Require([updated containsString:@"initial-scale=2"] && [updated containsString:@"viewport-fit=cover"] &&
+                [updated containsString:@"user-scalable=no"] && ![updated containsString:@"user-scalable=yes"], @"Dynamic author viewport parameters were lost");
+        }
+        [zoom hrv_removeFromSuperview];
+    }
+    NSString *fixture = NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"];
+    NSString *imageURL = [[[NSURL URLWithString:fixture] URLByDeletingLastPathComponent].absoluteString stringByAppendingString:@"mixed-image"];
+    for (NSString *policy in @[@"NEVER_ALLOW", @"COMPATIBILITY", @"ALWAYS_ALLOW"]) {
+        for (NSString *scheme in @[@"https", @"http"]) {
+            GYWebView *mixed = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+            [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:mixed];
+            NSString *html = [NSString stringWithFormat:@"<img src='%@?%@-%@' onload='window.mixedResult=1' onerror='window.mixedResult=2'>", imageURL, policy, scheme];
+            [mixed hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"html", @"html": html, @"baseUrl": [scheme isEqual:@"http"] ? fixture : @"https://safe.example/"}, @"settings": @{@"javaScriptEnabled": @YES, @"mixedContentPolicy": policy}, @"blockedResourceRules": @[@{@"type": @"exactHost", @"host": @"unrelated.example"}]})];
+            __block NSNumber *result = nil;
+            WaitUntil(^BOOL{
+                [mixed.webView evaluateJavaScript:@"window.mixedResult || 0" completionHandler:^(id value, NSError *error) { if ([value integerValue]) result = value; }];
+                return result != nil;
+            }, @"Real WebKit mixed image request did not finish");
+            BOOL blocked = [scheme isEqual:@"https"] && ![policy isEqual:@"ALWAYS_ALLOW"];
+            Require(result.integerValue == (blocked ? 2 : 1), [NSString stringWithFormat:@"Mixed content %@ under %@ gave %@", policy, scheme, result]);
+            [mixed hrv_removeFromSuperview];
+        }
+    }
+    for (NSString *mode in @[@"default", @"network"]) for (NSNumber *dataImage in @[@NO, @YES]) {
+        GYWebView *images = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+        [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:images];
+        NSString *source = dataImage.boolValue ? @"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" : [imageURL stringByAppendingFormat:@"?images-%@", mode];
+        NSString *html = [NSString stringWithFormat:@"<img src='%@' onload='window.imageResult=1' onerror='window.imageResult=2'>", source];
+        [images hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"html", @"html": html, @"baseUrl": fixture}, @"settings": @{@"javaScriptEnabled": @YES, @"mixedContentPolicy": @"ALWAYS_ALLOW", @"blockNetworkImage": [mode isEqual:@"network"] ? @YES : @NO}})];
+        __block NSNumber *result = nil;
+        WaitUntil(^BOOL { [images.webView evaluateJavaScript:@"window.imageResult || 0" completionHandler:^(id value, NSError *error) { if ([value integerValue]) result = value; }]; return result != nil; }, [NSString stringWithFormat:@"Actual image rule did not complete: %@ data=%@", mode, dataImage]);
+        BOOL blocked = [mode isEqual:@"network"] && !dataImage.boolValue;
+        Require(result.integerValue == (blocked ? 2 : 1), [NSString stringWithFormat:@"Image rule %@ data=%@ gave %@", mode, dataImage, result]);
+        [images hrv_removeFromSuperview];
+    }
     GYWebView *view = [[GYWebView alloc] initWithFrame:CGRectZero];
     view.request = @{@"security": @{@"trustedOrigins": @{@"urls": @[@"https://[::ffff:192.0.2.1]:8443", @"https://trusted.example."], @"trustedHostSuffixes": @[]}}};
     Require([[view trustExpression] containsString:@"[::ffff:c000:201]"], @"JS trust must use browser IPv6 representation");
@@ -433,6 +514,35 @@ static void Check(void) {
     [upload imagePickerController:camera didFinishPickingMediaWithInfo:@{UIImagePickerControllerMediaType: UTTypeMovie.identifier, UIImagePickerControllerMediaURL: foreignVideo}];
     Require([NSFileManager.defaultManager fileExistsAtPath:foreignVideo.path], @"Rejected capture deleted provider-owned source");
     [NSFileManager.defaultManager removeItemAtURL:foreignVideo error:nil];
+    for (NSString *mode in @[@"complete", @"cancel", @"hide"]) {
+        NSURL *movie = [NSBundle.mainBundle URLForResource:@"capture" withExtension:@"mov"];
+        Require(movie != nil, @"Missing real MOV fixture");
+        upload.fileTypes = @[UTTypeMPEG4Movie]; upload.filePickerGeneration = upload.callbackGeneration;
+        camera = [UIImagePickerController new]; upload.capturePicker = camera;
+        __block NSUInteger movieResults = 0; __block NSURL *exported;
+        upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { movieResults++; exported = files.firstObject; };
+        [upload imagePickerController:camera didFinishPickingMediaWithInfo:@{UIImagePickerControllerMediaType: UTTypeMovie.identifier, UIImagePickerControllerMediaURL: movie}];
+        NSArray<NSURL *> *working = upload.exportingFiles;
+        Require(working.count == 2, @"MP4-only capture did not start system export");
+        if ([mode isEqual:@"cancel"]) [upload cancelFilePicker];
+        if ([mode isEqual:@"hide"]) [upload hrv_setPropWithKey:@"visible" propValue:@NO];
+        WaitUntil(^BOOL { return movieResults == 1; }, @"MP4 export did not settle once");
+        if ([mode isEqual:@"complete"]) {
+            Require([exported.pathExtension isEqual:@"mp4"], @"MP4 accept did not receive MP4 output");
+            Require([[AVURLAsset URLAssetWithURL:exported options:nil] tracksWithMediaType:AVMediaTypeVideo].count > 0, @"Exported MP4 has no real video track");
+            Require(![NSFileManager.defaultManager fileExistsAtPath:working.firstObject.path], @"MOV conversion input was retained");
+            [upload revokeFilePicker];
+        } else {
+            Require(exported == nil, @"Revoked capture disclosed output");
+            // Let the cancelled AVFoundation completion run before checking late cleanup.
+            NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
+            while (deadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+        }
+        for (NSURL *url in working) Require(![NSFileManager.defaultManager fileExistsAtPath:url.path], @"Export temporary file leaked");
+        Require(movieResults == 1, @"Late movie export completed twice");
+        Require([NSFileManager.defaultManager fileExistsAtPath:movie.path], @"Capture removed provider-owned fixture");
+        [upload hrv_setPropWithKey:@"visible" propValue:@YES];
+    }
     [upload hrv_removeFromSuperview];
     [probe hrv_removeFromSuperview];
     [view hrv_removeFromSuperview];

@@ -5,22 +5,31 @@ package io.github.gycrosskit.composewebview
  *
  * 该格式只由 iOS WKWebView 消费，因此实现留在 iosMain；纯 Kotlin 写法仅用于让 iosTest 固化转义和相似域边界。
  */
-internal fun List<WebViewUrlRule>.toWebKitContentRuleList(): String = joinToString(
-    prefix = "[",
-    postfix = "]",
-    separator = ",",
-) { rule ->
-    val filter = when (rule) {
-        is WebViewUrlRule.Contains -> ".*${rule.value.regexEscaped()}.*"
-        is WebViewUrlRule.ExactHost ->
-            "^[a-zA-Z][a-zA-Z0-9+.-]*://${rule.host.normalizedRuleHost().regexEscaped()}" +
-                "(:[0-9]+)?(/.*)?$"
-        is WebViewUrlRule.HostSuffix ->
-            "^${rule.scheme?.regexEscaped() ?: "[a-zA-Z][a-zA-Z0-9+.-]*"}://(${if (rule.rejectUserInfo) "[^./:@]+" else "[^./]+"}\\.)${if (rule.includeRoot) "*" else "+"}" +
-                "${rule.suffix.normalizedRuleHost().regexEscaped()}(:[0-9]+)?(/.*)?$"
+internal fun List<WebViewUrlRule>.toWebKitContentRuleList(
+    mixedContentPolicy: WebViewMixedContentPolicy = WebViewMixedContentPolicy.ALWAYS_ALLOW,
+    blockNetworkImage: Boolean = false,
+): String {
+    val encoded = map { rule ->
+        val filter = when (rule) {
+            is WebViewUrlRule.Contains -> ".*${rule.value.regexEscaped()}.*"
+            is WebViewUrlRule.ExactHost ->
+                "^[a-zA-Z][a-zA-Z0-9+.-]*://${rule.host.normalizedRuleHost().regexEscaped()}" +
+                    "(:[0-9]+)?(/.*)?$"
+            is WebViewUrlRule.HostSuffix ->
+                "^${rule.scheme?.regexEscaped() ?: "[a-zA-Z][a-zA-Z0-9+.-]*"}://(${if (rule.rejectUserInfo) "[^./:@]+" else "[^./]+"}\\.)${if (rule.includeRoot) "*" else "+"}" +
+                    "${rule.suffix.normalizedRuleHost().regexEscaped()}(:[0-9]+)?(/.*)?$"
+        }
+        val caseSensitive = rule is WebViewUrlRule.Contains && !rule.ignoreCase
+        """{"trigger":{"url-filter":"${filter.jsonEscaped()}","url-filter-is-case-sensitive":$caseSensitive},"action":{"type":"block"}}"""
+    }.toMutableList()
+    // WebKit has no Android compatibility heuristic; use the strict policy for COMPATIBILITY.
+    if (mixedContentPolicy != WebViewMixedContentPolicy.ALWAYS_ALLOW) {
+        encoded += """{"trigger":{"url-filter":"^http://","if-top-url":["^https://"],"url-filter-is-case-sensitive":false},"action":{"type":"block"}}"""
     }
-    val caseSensitive = rule is WebViewUrlRule.Contains && !rule.ignoreCase
-    """{"trigger":{"url-filter":"${filter.jsonEscaped()}","url-filter-is-case-sensitive":$caseSensitive},"action":{"type":"block"}}"""
+    if (blockNetworkImage) {
+        encoded += """{"trigger":{"url-filter":"^https?://","resource-type":["image"],"url-filter-is-case-sensitive":false},"action":{"type":"block"}}"""
+    }
+    return encoded.joinToString(prefix = "[", postfix = "]", separator = ",")
 }
 
 private fun String.regexEscaped(): String = buildString(length * 2) {

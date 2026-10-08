@@ -119,6 +119,7 @@ internal actual fun PlatformAppWebView(
                         } else {
                             WKAudiovisualMediaTypeNone
                         }
+                    ignoresViewportScaleLimits = false
                     allowsInlineMediaPlayback = true
                     allowsPictureInPictureMediaPlayback = true
                     preferences.elementFullscreenEnabled = true
@@ -141,7 +142,6 @@ internal actual fun PlatformAppWebView(
                     userContentController.addScriptMessageHandler(coordinator, WEB_EVENT_HANDLER)
                     state.attach(this)
                     coordinator.attach(this, creationMark.elapsedNow().inWholeMilliseconds)
-                    coordinator.installContentRules(this)
                 }
             },
             modifier = modifier,
@@ -177,7 +177,9 @@ internal class IosWebViewCoordinator(
     private val progress = IosWebViewProgressController(state, callbacks, scope)
     private var fullscreen = false
     private var visibleForNavigation = false
-    private var contentRulesReady = request().blockedResourceRules.isEmpty()
+    private var contentRulesReady = request().blockedResourceRules.isEmpty() &&
+        request().settings.mixedContentPolicy == WebViewMixedContentPolicy.ALWAYS_ALLOW &&
+        !request().settings.blockNetworkImage
     private var performanceTrace: WebViewPerformanceTrace? = null
     private var released = false
     private var navigationGeneration = 0
@@ -213,6 +215,7 @@ internal class IosWebViewCoordinator(
         ).also { it.created(creationDurationMillis) }
         suspendMedia(webView, mediaSuspended, "attach")
         prepareDocumentScripts(webView)
+        installContentRules(webView)
     }
 
     private fun exitFullscreen(webView: WKWebView, callback: (Boolean) -> Unit): Boolean {
@@ -262,6 +265,10 @@ internal class IosWebViewCoordinator(
         }
         add(transportScript(!webView.hidden))
         add(IOS_FILE_CHOOSER_GATE_SCRIPT, false)
+        if (!request().settings.supportZoom) {
+            webView.configuration.ignoresViewportScaleLimits = false
+            add(IOS_DISABLE_ZOOM_SCRIPT)
+        }
         val current = request()
         if (current.settings.javaScriptEnabled) {
             add(WEB_VIEW_PERFORMANCE_SCRIPT.replace("window.webkit.messageHandlers.ComposeWebViewEvent", "window.__GY_WEBVIEW_EVENT_TRANSPORT__"))
@@ -296,8 +303,9 @@ internal class IosWebViewCoordinator(
 
     fun installContentRules(webView: WKWebView) {
         val rules = request().blockedResourceRules
-        if (rules.isEmpty()) return
-        val encodedRules = rules.toWebKitContentRuleList()
+        if (contentRulesReady) return
+        val settings = request().settings
+        val encodedRules = rules.toWebKitContentRuleList(settings.mixedContentPolicy, settings.blockNetworkImage)
         val identifier = "compose-webview-resource-rules-${encodedRules.hashCode().toUInt()}"
         WKContentRuleListStore.defaultStore()!!.compileContentRuleListForIdentifier(
             identifier = identifier,
@@ -305,10 +313,13 @@ internal class IosWebViewCoordinator(
         ) { ruleList: WKContentRuleList?, _: NSError? ->
             scope.launch {
                 if (released || !state.isAttached(webView)) return@launch
-                if (ruleList != null) {
-                    webView.configuration.userContentController.addContentRuleList(ruleList)
+                if (ruleList == null) {
+                    val error = WebViewLoadError(WebViewErrorKind.LOAD_EXCEPTION, "WebKit content policy compilation failed")
+                    state.loadFailed(webView, error)
+                    emit(WebViewEvent.LoadFailed(error))
+                    return@launch
                 }
-                // 编译失败时仍放行页面加载；Android 也不会因单条过滤规则异常阻断主页面。
+                webView.configuration.userContentController.addContentRuleList(ruleList)
                 contentRulesReady = true
                 val current = request()
                 state.loadIfChanged(

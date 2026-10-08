@@ -1,22 +1,22 @@
-> 当前 `0.2.0-rc.12` 为未发布候选，配套 system-actions-native `0.2.0-rc.4`。v2 源码候选实现 pageMessageChannels 初始主文档 capability 与单次回复；私有安全随机 owner key 和 document nonce 不进入事件、日志或返回值。默认空配置保留既有行为。本地 HAR 检查、远程发布与设备验收分别记录。
+> 当前HAR版本为 `0.2.0-rc.13`，配套 system-actions-native `0.2.0-rc.4`。v2 实现 pageMessageChannels 初始主文档 capability 与单次回复；私有安全随机 owner key 和 document nonce 不进入事件、日志或返回值。默认空配置保留既有行为。本地 HAR 检查、远程发布与设备验收分别记录。
 
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **0.2.0-rc.12 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.4`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **0.2.0-rc.13 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.4`，后者提供共用窗口执行 owner。
 
 ## 安装与注册
 
-HAR 0.2.0-rc.12 配套 system-actions 0.2.0-rc.4。宿主直接使用系统组件时也选择 rc.4；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+HAR 0.2.0-rc.13 配套 system-actions 0.2.0-rc.4。宿主直接使用系统组件时也选择 rc.4；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 
 以下为本版本精确 Registry 坐标；审核通过并实际可查询、安装后使用。
 
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.12
+ohpm install @gycrosskit/webview@0.2.0-rc.13
 ```
 
-候选阶段从本地 assembleHar 输出安装；发布后，Registry 审核期间可从同版本 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry rc.4。本地干净消费者核对只有一份窗口 owner。完全离线时下载同版本 Web 和 system-actions rc.4 的固定 Release HAR、校验各自 SHA，并用 root override 保证同一系统包。文件下载消费与 Registry 安装分开验收。
+本地工作树可从assembleHar输出验证；正式版本可从同版本 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry rc.4。本地干净消费者核对只有一份窗口 owner。完全离线时下载同版本 Web 和 system-actions rc.4 的固定 Release HAR、校验各自 SHA，并用 root override 保证同一系统包。文件下载消费与 Registry 安装分开验收。
 
 ```json
 {
@@ -63,7 +63,7 @@ await OhosWebViewDataCleaner.clearWebsiteData(); // 缓存 → Cookie 异步完�
 
 原生 View 名为 `GYWebView`。`request` 接收公共 `WebViewRequest` JSON 字符串，另有 `visible: Boolean` 和 `onEvent`。请求包含 `content`、`settings`、`security`、`scripts`、`blockedResourceRules`、`navigationPolicy`，与 Kotlin adapter 一致。每个新 request 创建独立 WebviewController / Web 节点；旧节点事件通过实例 token 拒绝，旧异步操作通过 generation 撤销。
 
-原生在加载初始 URL、HTML baseUrl / historyUrl、导航与子资源时同步执行策略。只加载 HTTP / HTTPS，拒绝 URL 用户名密码、file/content/resource、自定义 scheme 和页面 data 导航。HTML 等待 controller attached 后调用 `loadData`；只允许当前 loadData 的一次无用户手势内部 `data:text/html` 主文档导航，保留 baseUrl、encoding、mimeType、historyUrl。导航事件仅用于报告同步判定结果。`navigationPolicy.allowedOrigins` 为可选 HTTP(S) URL 数组，空数组或省略时不限制主帧来源；非空时精确比较 scheme、host 和有效端口，与 JavaScript/Bridge 开关独立，并与主帧 `blockedRules` 组合。
+原生在加载初始 URL、HTML baseUrl / historyUrl、导航与子资源时同步执行策略。顶层只加载 HTTP / HTTPS，拒绝 URL 用户名密码、file/content/resource、自定义 scheme 和页面 data 导航。allowFileAccess=true只允许受规则约束的沙箱file子资源。HTML 等待 controller attached 后调用 `loadData`；只允许当前loadData的一次无用户手势、精确匹配声明MIME的内部data主文档导航，保留baseUrl、encoding、mimeType、historyUrl。导航事件仅用于报告同步判定结果。`navigationPolicy.allowedOrigins` 为可选 HTTP(S) URL 数组，空数组或省略时不限制主帧来源；非空时精确比较 scheme、host 和有效端口，与 JavaScript/Bridge 开关独立，并与主帧 `blockedRules` 组合。
 
 rc.11 增加 `navigationPolicy.allowedUrls`：非空数组只允许完整原字符串匹配的主文档 URL，与来源及拒绝规则组合，不归一化路径、查询、fragment 或默认端口，不影响子资源。明确 `pageBridgeEnabled` 的初始 HTTP(S) 同源页面可执行仍受主文档门禁的业务脚本；HTTP 不进入高权限信任。原生 Web 节点背景透明，H5 自身背景仍由页面 CSS 控制。
 
@@ -83,7 +83,7 @@ JavaScript、Bridge、文件 URL、媒体采集默认关闭。TLS 错误调用 `
 
 DocumentViewPicker/CameraPicker 结果在导航、隐藏、request 切换和销毁时以空列表结算；迟到回调不能给新文档交付 URI。拍摄使用本实例沙箱 cache 文件，不自动写系统相册；成功后文件保留到文档撤销，失败/取消立即删除，并核验实际输出 JPEG/MP4 头、大小和系统返回 URI。当前 SDK 缺少真实来源 frame 和独立 user-gesture 字段，不能把当前可信页面检查写成来源 frame 证明。真实设备权限与 H5 上传仍需宿主验收。
 
-支持 DOM Storage、图像访问、zoomAccess、混合内容和 cacheMode、User-Agent suffix。Android 专属缩放按钮、viewport/overview、字体缩放和算法变暗设置不在 HAR 实现范围。内核开启新窗口事件分流并在 onWindowNew 同步取消，避免把 target=_blank 降成当前页而绕过 policy。公开的新窗口/自动开窗开启请求、file/content 本地 URL、每实例第三方 Cookie 开启请求明确拒绝；全局 Cookie 默认由 ArkWeb/宿主管理，HAR 不改其他实例的全局开关。没有实现的设置不作为能力承诺。
+支持 DOM Storage、图像访问、zoomAccess、混合内容和 cacheMode、User-Agent suffix。HAR rc.13包含系统字体倍率与算法暗化；Android 专属缩放按钮、viewport/overview 没有等价 ArkWeb 开关。新窗口事件同步取消实际第二窗口，policy 允许时路由到当前页面；自动脚本开窗另外要求显式开关。顶层file/content URL与content/resource子资源拒绝；本版显式allowFileAccess可允许file子资源。每实例第三方Cookie开启请求仍拒绝；false/默认也不保证per-view隔离，同进程其他Web可能修改全局Cookie策略。
 
 所有方法回调都为 JSON 对象 `{result: ...}`，不返回裸布尔字符串。`reload/goBack/goForward/stopLoading/exitFullscreen` 的 params 为 null；`evaluateJavascript` 的 params 为 JSON 字符串。historyChanged 通过 `onEvent` 报告 canGoBack / canGoForward。异步调用被撤销后不再投递旧结果。
 
@@ -123,3 +123,13 @@ rc.9 的 HostSuffix 可声明 `scheme="https"`、`includeRoot=false`、`rejectUs
 本地源与实际 HAR 合同检查使用生产 ETS/生成 JS，系统 SDK 由测试替身隔离；API22 配置由本机 SDK 编译。不等于真 ArkWeb/设备验收，仍需确认 document-start 的同步 Proxy/URL query 与首段脚本实际时序。
 
 OHOS `replyPageMessage` Boolean 与 A/i 一致：通过当前 owner/nonce/input/单次 replyId 检查并提交原生 JS 队列即 true；不存在 onmessage、H5 handler 抛错或异步 JS 拒绝不改写已受理结果。它不是交付确认或业务 ACK。同步 SDK 提交失败返回 false；旧 ID、撤销或新文档返回 false。
+
+## 0.2.0-rc.13 平台能力与限制
+
+固定源码基线、五入口差异和验证范围见[功能与平台差异](../../docs/功能与平台差异.md)；本节适用于本次HAR rc.13，Release产物消费与Registry上架分别核验。
+
+允许的 popup 复用当前页面，保留原有导航、可信来源、手势/自动开窗和 owner 门禁；不创建独立第二窗口。`textZoomRatio` 使用系统字体倍率和请求上下限，`darkMode` 跟随系统，`forceDarkAccess` 由算法暗化开关控制。系统配置观察失败不阻断加载，销毁后撤销观察和迟到事件。
+
+本版 allowFileAccess 显式映射 ArkWeb fileAccess（默认 false）；true 只放行应用沙箱 file 子资源，顶层仍限声明 HTTP(S) policy，blockedResourceRules 仍优先，content/resource URI不开放。第三方 Cookie 当前只有 WebCookieManager 全局静态开关，组件不修改进程共享策略；false/默认也不能保证同进程其他Web修改全局策略后的每实例隔离。
+
+候选 HTML MIME 使用 ArkWeb loadData 已有 Media type 参数，移除 text/html 人为限制；仅接受token/token MIME，不接受参数，charset走独立encoding字段；声明 MIME 的一次性内部data导航必须精确匹配类型，后续/手势data仍拒绝。historyUrl需非空baseUrl（系统声明base为空时history无效，组件明确拒绝）；真实引擎的各charset/中文渲染仍需设备验收。

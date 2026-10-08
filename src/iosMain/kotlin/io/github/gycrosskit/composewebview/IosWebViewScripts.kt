@@ -128,3 +128,30 @@ return await new Promise(resolve=>{
   }catch(error){finish(false);}
 });
 """
+
+/** Author viewport limits are public WebKit policy; this is a display setting, not a security boundary. */
+internal val IOS_DISABLE_ZOOM_SCRIPT = """
+    (function() {
+      function apply() {
+        if (!document.head) return;
+        var metas = document.querySelectorAll('meta[name="viewport" i]');
+        if (!metas.length) {
+          var meta = document.createElement('meta');
+          meta.name = 'viewport';
+          document.head.appendChild(meta);
+          metas = [meta];
+        }
+        for (var i = 0; i < metas.length; i++) {
+          var parts = (metas[i].content || '').split(/[;,]/).filter(function(part) {
+            return !/^\s*user-scalable\s*=/i.test(part) && part.trim();
+          });
+          parts.push('user-scalable=no');
+          var value = parts.join(',');
+          if (metas[i].content !== value) metas[i].content = value;
+        }
+      }
+      new MutationObserver(apply).observe(document, {subtree:true, childList:true, attributes:true, attributeFilter:['content','name']});
+      document.addEventListener('DOMContentLoaded', apply, {once:true});
+      apply();
+    })();
+""".trimIndent()
