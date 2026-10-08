@@ -204,6 +204,12 @@ internal class IosWebViewCoordinator(
         state.javascriptAllowed = { request().canEvaluateJavascriptAt(it.URL?.absoluteString) }
         state.pageMessageReply = { replyId, data -> replyPageMessage(webView, replyId, data) }
         state.pageMessageCancel = { pageMessageReplies.clear(); pageMessageRevoked = true }
+        state.cancelPendingCapabilities = {
+            if (!released && state.isAttached(webView)) {
+                navigationGeneration++
+                fileChooser.cancel(revokeDocument = true)
+            }
+        }
         state.rebuildPageMessagesOnReload = request().pageMessageChannels.isNotEmpty()
         mediaTarget = webView
         state.fullscreenExitHandler = ::exitFullscreen
@@ -354,6 +360,7 @@ internal class IosWebViewCoordinator(
         if (state.isAttached(webView)) {
             state.pageMessageReply = null
             state.pageMessageCancel = null
+            state.cancelPendingCapabilities = null
             state.rebuildPageMessagesOnReload = false
             state.invalidateJavascriptCallbacks()
         }

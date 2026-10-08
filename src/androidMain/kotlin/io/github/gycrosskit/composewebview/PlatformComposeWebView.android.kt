@@ -84,7 +84,12 @@ internal actual fun PlatformAppWebView(
     }
     DisposableEffect(capabilities, popupRouter, fullscreenController, state) {
         state.installBackInterceptor(fullscreenBackHandler)
+        state.cancelPendingCapabilities = { owner ->
+            popupRouter.release()
+            capabilities?.release(owner)
+        }
         onDispose {
+            state.cancelPendingCapabilities = null
             state.installBackInterceptor(null)
             fullscreenController?.release()
             capabilities?.destroy()

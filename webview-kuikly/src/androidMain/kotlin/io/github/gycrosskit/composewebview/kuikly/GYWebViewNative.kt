@@ -91,7 +91,15 @@ class GYWebViewNative @JvmOverloads constructor(
             }
             "goBack" -> if (exitFullscreen()) true else owner?.let { if (it.canGoBack()) { pageMessageChannels?.revoke(); it.goBack(); true } else false } ?: false
             "goForward" -> owner?.let { if (it.canGoForward()) { pageMessageChannels?.revoke(); it.goForward(); true } else false } ?: false
-            "stopLoading" -> { pageMessageChannels?.revoke(); owner?.stopLoading(); owner != null }
+            "stopLoading" -> {
+                callbackGeneration++
+                pageMessageChannels?.revoke()
+                // 先停止旧加载；撤销回执可能同步创建新 owner，之后不能再 stop。
+                owner?.stopLoading()
+                popupRouter?.release()
+                owner?.let { capabilities?.release(it) }
+                owner != null
+            }
             "exitFullscreen" -> exitFullscreen()
             "evaluateJavascript" -> {
                 val script = runCatching { JSONObject(params ?: "{}").getString("script") }.getOrNull()

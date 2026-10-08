@@ -45,6 +45,7 @@ actual class AppWebViewState actual internal constructor() {
     internal var javascriptAllowed: ((WKWebView) -> Boolean)? = null
     internal var pageMessageReply: ((String, String) -> Boolean)? = null
     internal var pageMessageCancel: (() -> Unit)? = null
+    internal var cancelPendingCapabilities: (() -> Unit)? = null
     private val mutablePageMessageInstanceKey = mutableStateOf(0)
     internal val pageMessageInstanceKey: Int get() = mutablePageMessageInstanceKey.value
     internal var rebuildPageMessagesOnReload = false
@@ -146,9 +147,15 @@ actual class AppWebViewState actual internal constructor() {
     }
 
     actual fun stopLoading() {
-        pageMessageCancel?.invoke()
-        webView?.stopLoading()
+        val target = webView
+        val cancel = cancelPendingCapabilities
+        target?.stopLoading()
         mutableSnapshot.value = snapshot.copy(isLoading = false)
+        pageMessageCancel?.invoke()
+        val cancellations = takeJavascriptCancellations()
+        // 先摘除全部旧回执，再调用外部代码；取消回执重入时，新请求不属于旧 stop。
+        cancel?.invoke()
+        cancellations.forEach { it() }
     }
 
     actual fun evaluateJavascript(script: String, callback: ((String?) -> Unit)?) {
@@ -168,6 +175,7 @@ actual class AppWebViewState actual internal constructor() {
         fullscreenExitHandler = null
         pageMessageReply = null
         pageMessageCancel = null
+        cancelPendingCapabilities = null
         rebuildPageMessagesOnReload = false
         loadState = IosWebViewLoadState()
         mutableSnapshot.value = snapshot.copy(hasVisibleContent = false)
@@ -183,6 +191,7 @@ actual class AppWebViewState actual internal constructor() {
         fullscreenExitHandler = null
         pageMessageReply = null
         pageMessageCancel = null
+        cancelPendingCapabilities = null
         rebuildPageMessagesOnReload = false
         webView = null
         loadState = IosWebViewLoadState()
@@ -303,10 +312,14 @@ actual class AppWebViewState actual internal constructor() {
     internal fun isAttached(target: WKWebView): Boolean = webView == target
 
     internal fun invalidateJavascriptCallbacks() {
+        takeJavascriptCancellations().forEach { it() }
+    }
+
+    private fun takeJavascriptCancellations(): List<() -> Unit> {
         callbackGeneration++
         val pending = pendingFullscreenReplies.toList()
         pendingFullscreenReplies.clear()
-        pending.forEach { it() }
+        return pending
     }
 
     private fun updateNavigation(target: WKWebView) {

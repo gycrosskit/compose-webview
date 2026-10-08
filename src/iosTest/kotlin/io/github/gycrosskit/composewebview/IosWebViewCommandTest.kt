@@ -13,6 +13,49 @@ import kotlin.test.*
 class IosWebViewCommandTest {
     private fun view() = WKWebView(CGRectMake(0.0, 0.0, 100.0, 100.0), WKWebViewConfiguration())
 
+    @Test fun stopCancelsOldCommandOnceAndPreservesReentrantFreshCommand() {
+        val state = AppWebViewState()
+        val owner = view()
+        state.attach(owner)
+        val replies = mutableListOf<(Boolean) -> Unit>()
+        state.fullscreenExitHandler = { _, callback -> replies += callback; true }
+        val old = mutableListOf<Boolean>()
+        val fresh = mutableListOf<Boolean>()
+        state.exitFullscreen { old += it }
+        var filesCancelled = 0
+        state.cancelPendingCapabilities = {
+            filesCancelled++
+            // 模拟文件 null 回执同步创建新的全屏请求。
+            state.exitFullscreen { fresh += it }
+        }
+        state.stopLoading()
+        assertEquals(1, filesCancelled)
+        assertEquals(listOf(false), old)
+        assertTrue(fresh.isEmpty())
+        replies[0](true); replies[0](false)
+        assertEquals(listOf(false), old)
+        replies[1](true)
+        assertEquals(listOf(true), fresh)
+        assertTrue(state.isAttached(owner))
+        state.detach(owner)
+    }
+
+    @Test fun stopCancellationCanAttachFreshOwnerAndKeepItsSnapshot() {
+        val state = AppWebViewState()
+        val old = view()
+        val next = view()
+        state.attach(old)
+        state.fullscreenExitHandler = { _, _ -> true }
+        state.exitFullscreen {
+            state.attach(next)
+            state.pageFinished(next)
+        }
+        state.stopLoading()
+        assertTrue(state.isAttached(next))
+        assertTrue(state.snapshot.hasVisibleContent)
+        state.detach(next)
+    }
+
     @Test fun fullscreenReplyReportsSuccessAndFailureWithoutInventingHistory() {
         val state = AppWebViewState()
         val owner = view()

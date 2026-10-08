@@ -39,6 +39,7 @@ actual class AppWebViewState actual internal constructor() {
     private var callbackGeneration = 0
     internal var javascriptAllowed: ((WebView) -> Boolean)? = null
     internal var pageMessageChannels: AndroidPageMessageChannels? = null
+    internal var cancelPendingCapabilities: ((WebView) -> Unit)? = null
 
     /**
      * 重新加载当前内容。渲染进程崩溃时会重建 WebView，其余情况调用实例的 `reload()`。
@@ -98,9 +99,14 @@ actual class AppWebViewState actual internal constructor() {
 
     /** 停止当前加载并立即将 [isLoading] 置为 `false`。未绑定实例时安全忽略。 */
     actual fun stopLoading() {
+        val target = webView
+        val cancel = cancelPendingCapabilities
+        invalidateJavascriptCallbacks()
         pageMessageChannels?.revoke()
-        webView?.stopLoading()
+        target?.stopLoading()
         mutableSnapshot = snapshot.copy(isLoading = false)
+        // 回执可重入 reload/attach；此后不再改状态或停止原生加载。
+        if (target != null) cancel?.invoke(target)
     }
 
     /**

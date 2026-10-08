@@ -62,8 +62,10 @@ internal class AndroidWebMediaPermissionController(
         if (requestValue != null && pendingRequest === requestValue) cancel(deny = false)
     }
 
-    fun release(owner: WebView) {
-        if (pendingOwner === owner) cancel()
+    fun pendingRequest(owner: WebView): PermissionRequest? = pendingRequest.takeIf { pendingOwner === owner }
+
+    fun release(owner: WebView, expected: PermissionRequest? = pendingRequest) {
+        if (pendingOwner === owner && pendingRequest === expected) cancel()
     }
 
     fun destroy() {

@@ -587,7 +587,16 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         result = @(owner.canGoBack); if (owner.canGoBack) { [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES; [owner goBack]; }
     }
     else if ([method isEqual:@"goForward"]) { result = @(owner.canGoForward); if (owner.canGoForward) { [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES; [owner goForward]; } }
-    else if ([method isEqual:@"stopLoading"]) { [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES; [owner stopLoading]; result = owner ? @YES : @NO; }
+    else if ([method isEqual:@"stopLoading"]) {
+        [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES;
+        // 取消回执可重入创建/加载新文档；只在交付回执之前停止旧加载。
+        [owner stopLoading];
+        NSUInteger generation = self.callbackGeneration + 1;
+        [self prepareDocumentScripts];
+        if (!self.released && self.webView == owner && self.callbackGeneration == generation)
+            [owner evaluateJavaScript:[self transportScript] completionHandler:nil];
+        result = owner ? @YES : @NO;
+    }
     else if ([method isEqual:@"exitFullscreen"]) { [self exitFullscreen:callback fallbackToHistory:NO]; return; }
     else if ([method isEqual:@"replyPageMessage"]) {
         NSDictionary *value = GYObject(params);
@@ -756,9 +765,10 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (completion) completion(nil);
 }
 - (void)revokeFilePicker {
-    [self cancelFilePicker];
-    for (NSURL *url in self.temporaryFiles) [NSFileManager.defaultManager removeItemAtURL:url error:nil];
+    NSArray<NSURL *> *files = self.temporaryFiles.copy;
     [self.temporaryFiles removeAllObjects];
+    for (NSURL *url in files) [NSFileManager.defaultManager removeItemAtURL:url error:nil];
+    [self cancelFilePicker];
 }
 - (NSArray *)takeFullscreenCancellations {
     NSArray *pending = self.fullscreenCancellations.allValues ?: @[];

@@ -127,8 +127,9 @@ internal class AndroidWebFileChooserController(
     }
 
     fun release(owner: WebView) {
-        if (callbackOwner === owner) cancel()
+        // 先清理旧文件；null 回执可同步发起同 owner 的新选择，不能再扫描新文件。
         captureFiles.filterValues { it === owner }.keys.toList().forEach { file -> file.delete(); captureFiles.remove(file) }
+        if (callbackOwner === owner) cancel()
     }
 
     private fun launchLegacyChooser(
