@@ -8,11 +8,15 @@ function webViewAttributes(view: GYWebView, token: number) {
   .backgroundColor(Color.Transparent)
   .javaScriptAccess(view.settings().javaScriptEnabled === true)
   .domStorageAccess(view.settings().domStorageEnabled !== false)
-  .fileAccess(false)
+  .fileAccess(view.settings().allowFileAccess === true)
   .onlineImageAccess(view.settings().blockNetworkImage !== true)
   .imageAccess(view.settings().loadsImagesAutomatically !== false)
   .zoomAccess(view.settings().supportZoom !== false)
+  .textZoomRatio(view.textZoomPercent())
+  .darkMode(view.darkTheme ? WebDarkMode.On : WebDarkMode.Off)
+  .forceDarkAccess(view.darkTheme && view.settings().algorithmicDarkeningAllowed !== false)
   .multiWindowAccess(true)
+  .allowWindowOpenMethod(view.settings().javaScriptCanOpenWindowsAutomatically === true)
   .mixedMode(view.settings().mixedContentPolicy === 'ALWAYS_ALLOW' ? MixedMode.All :
     (view.settings().mixedContentPolicy === 'COMPATIBILITY' ? MixedMode.Compatible : MixedMode.None))
   .cacheMode(view.settings().cachePolicy === 'NO_CACHE' ? CacheMode.Online :

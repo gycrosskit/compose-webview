@@ -20,9 +20,9 @@ sealed interface WebViewContent {
      * [baseUrl] 决定相对链接解析和页面来源；高权限能力必须使用可被信任策略验证的 HTTPS 地址。
      * @property html 非空 HTML 正文，可能包含业务敏感内容。
      * @property baseUrl 相对地址基准，默认 null；无基准时不能获得来源授权。
-     * @property mimeType MIME 类型，默认 text/html；部分原生桥仅支持此类型。
-     * @property encoding 文本编码，默认 UTF-8；平台支持范围由原生内核决定。
-     * @property historyUrl 历史记录显示地址，默认 null；不会替代 baseUrl 的来源授权。
+     * @property mimeType MIME 类型，默认 text/html；OHOS 接受合法 type/subtype 并传递给 ArkWeb，实际渲染范围由内核决定。
+     * @property encoding 文本编码，默认 UTF-8；平台支持范围由原生内核决定。iOS 未知或无法无损表示的编码报告 LOAD_EXCEPTION。
+     * @property historyUrl 历史记录显示地址，默认 null；不会替代 baseUrl 的来源授权。iOS 只接受 null 或与 baseUrl 相等，其他值报告 LOAD_EXCEPTION。
      */
     data class Html(
         val html: String,

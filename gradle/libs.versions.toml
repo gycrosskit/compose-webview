@@ -12,6 +12,7 @@ kuikly = "2.28.0-2.0.21-ohos"
 serialization = "1.9.1-1.0.0"
 
 [libraries]
+kuikly-compose = { module = "com.tencent.kuikly-open:compose", version.ref = "kuikly" }
 kuikly-core = { module = "com.tencent.kuikly-open:core", version.ref = "kuikly" }
 kuikly-render-android = { module = "com.tencent.kuikly-open:core-render-android", version.ref = "kuikly" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }

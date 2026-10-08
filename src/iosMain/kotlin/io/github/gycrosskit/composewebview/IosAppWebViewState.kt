@@ -4,16 +4,21 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
-import platform.Foundation.NSData
+import platform.Foundation.NSString
 import platform.Foundation.NSMutableURLRequest
+import platform.CoreFoundation.CFStringCreateWithCString
+import platform.CoreFoundation.CFStringConvertIANACharSetNameToEncoding
+import platform.CoreFoundation.CFStringConvertEncodingToNSStringEncoding
+import platform.CoreFoundation.CFRelease
+import platform.CoreFoundation.kCFStringEncodingUTF8
+import platform.CoreFoundation.kCFStringEncodingInvalidId
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLRequestReloadIgnoringLocalCacheData
 import platform.Foundation.NSURLRequestReturnCacheDataDontLoad
 import platform.Foundation.NSURLRequestReturnCacheDataElseLoad
 import platform.Foundation.NSURLRequestUseProtocolCachePolicy
 import platform.Foundation.create
+import platform.Foundation.dataUsingEncoding
 import platform.Foundation.setValue
 import platform.WebKit.WKWebView
 
@@ -380,32 +385,25 @@ private fun AppWebViewState.loadUrl(
     target.loadRequest(request)
 }
 
-/** HTML 保持调用方声明的 MIME 与编码；UTF-8 使用 NSData 避免 WebKit 误判旧页面 charset。 */
-private fun loadHtml(target: WKWebView, content: WebViewContent.Html) {
-    val baseUrl = content.baseUrl?.let(NSURL::URLWithString) ?: ABOUT_BLANK_URL
-    if (content.encoding.isUtf8Encoding()) {
-        target.loadData(
-            data = content.html.toUtf8Data(),
-            MIMEType = content.mimeType,
-            characterEncodingName = UTF8_ENCODING,
-            baseURL = baseUrl,
-        )
-    } else {
-        // 当前业务只生成 UTF-8；未知编码继续交给 WebKit，避免把 UTF-8 字节误标为其他编码。
-        target.loadHTMLString(content.html, baseUrl)
-    }
-}
-
+/** 先按声明编码生成字节；未知 charset 或不可无损表示的内容不能假称加载成功。 */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-private fun String.toUtf8Data(): NSData {
-    val bytes = encodeToByteArray()
-    return bytes.usePinned { pinned ->
-        NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+private fun AppWebViewState.loadHtml(target: WKWebView, content: WebViewContent.Html) {
+    if (content.historyUrl != null && content.historyUrl != content.baseUrl) {
+        loadFailed(target, WebViewLoadError(WebViewErrorKind.LOAD_EXCEPTION, message = "HTML historyUrl must equal baseUrl on iOS", url = content.historyUrl))
+        return
     }
+    val name = CFStringCreateWithCString(null, content.encoding, kCFStringEncodingUTF8)
+    val charset = if (name == null) kCFStringEncodingInvalidId else try {
+        CFStringConvertIANACharSetNameToEncoding(name)
+    } finally { CFRelease(name) }
+    val data = if (charset == kCFStringEncodingInvalidId) null else
+        NSString.create(string = content.html).dataUsingEncoding(CFStringConvertEncodingToNSStringEncoding(charset), false)
+    if (data == null) {
+        loadFailed(target, WebViewLoadError(WebViewErrorKind.LOAD_EXCEPTION, message = "Unsupported HTML character encoding"))
+        return
+    }
+    target.loadData(data, content.mimeType, content.encoding, content.baseUrl?.let(NSURL::URLWithString) ?: ABOUT_BLANK_URL)
 }
-
-private fun String.isUtf8Encoding(): Boolean =
-    replace("_", "").replace("-", "").equals("utf8", ignoreCase = true)
 
 private fun WebViewCachePolicy.toIosCachePolicy(): ULong = when (this) {
     WebViewCachePolicy.DEFAULT -> NSURLRequestUseProtocolCachePolicy

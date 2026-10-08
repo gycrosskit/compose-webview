@@ -1,3 +1,9 @@
+# 0.2.0-rc.13
+
+- 配套Maven/Git Pod 0.2.0-rc.14；保留具名早期通道v2，补齐fileAccess映射和HTML MIME合同，严格拒绝不能兑现的设置。
+- third-party Cookie只有进程级API，不承诺per-view隔离；默认false也不能隔离其他Web更改的全局策略。
+- 保留SystemActions Native 0.2.0-rc.4和Render 2.28.0。真实ArkWeb的charset/history/文件权限尚待验收。
+
 # 0.2.0-rc.12
 
 - v2 未发布候选：pageMessageChannels 采用初始主文档私有 capability、文档 nonce 与单次回复；隐藏/导航/停止/销毁撤销，显式 reload 重建物理 owner。64KiB UTF-8 / 128 pending，与 common 合同一致。

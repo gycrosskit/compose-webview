@@ -4,7 +4,7 @@ import { webview } from '@kit.ArkWeb';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { url, util } from '@kit.ArkTS';
 import { window } from '@kit.ArkUI';
-import { common } from '@kit.AbilityKit';
+import { common, Configuration, ConfigurationConstant } from '@kit.AbilityKit';
 import { FullscreenWindowLease, FullscreenWindowPolicy, WindowPolicyController } from '@gycrosskit/system-actions-native';
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { picker, fileIo, fileUri } from '@kit.CoreFileKit';
@@ -88,6 +88,10 @@ export class GYWebView extends KuiklyRenderBaseView {
   renderToken: number = 0;
   /** 当前渲染节点列表，仅含当前身份，用于 ArkUI 替换旧 Controller。 */
   renderTokens: number[] = [0];
+  fontScale: number = 1;
+  darkTheme: boolean = false;
+  private environmentContext: common.ApplicationContext | null = null;
+  private environmentId: number | null = null;
   private documentReady: boolean = false;
   private pageMessageSecret: string = '';
   private pageMessageNonce: string = '';
@@ -116,6 +120,41 @@ export class GYWebView extends KuiklyRenderBaseView {
 
   /** 返回当前声明配置；未设置输入时使用空对象的默认值。 */
   settings(): WebViewSettings { return this.request?.settings || {}; }
+
+  textZoomPercent(): number {
+    const settings = this.settings();
+    if (settings.followSystemFontScale === false) return 100;
+    return Math.min(settings.maximumTextZoomPercent || 200,
+      Math.max(settings.minimumTextZoomPercent || 100, Math.round(this.fontScale * 100)));
+  }
+
+  private updateConfiguration(config: Configuration): void {
+    if (this.lifetime.disposed) return;
+    if (config.fontSizeScale !== undefined) this.fontScale = Number.isFinite(config.fontSizeScale) && config.fontSizeScale > 0 ? config.fontSizeScale : 1;
+    if (config.colorMode !== undefined) this.darkTheme = config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+  }
+
+  private observeConfiguration(): void {
+    if (this.environmentContext) return;
+    const ui = this.getUIContext();
+    if (!ui) return;
+    const context = ui.getHostContext() as common.UIAbilityContext;
+    if (!context) return;
+    this.updateConfiguration(context.config);
+    const application = context.getApplicationContext();
+    try {
+      const id = application.on('environment', {
+        onConfigurationUpdated: (config: Configuration) => this.updateConfiguration(config),
+        onMemoryLevel: () => {},
+      });
+      if (this.lifetime.disposed) {
+        try { application.off('environment', id).catch(() => {}); } catch (_) {}
+        return;
+      }
+      this.environmentId = id;
+      this.environmentContext = application;
+    } catch (_) { /* Environment observation must not prevent document loading. */ }
+  }
 
   setProp(key: string, value: KRAny | KuiklyRenderCallback): boolean {
     if (this.lifetime.disposed) return true;
@@ -209,6 +248,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   onControllerAttached(token: number = this.renderToken): void {
     if (!this.isRenderActive(token) || this.attached) return;
     this.attached = true;
+    this.observeConfiguration();
     this.loadRequest();
     if (!this.visible) { try { this.controller.onInactive(); } catch (_) {} }
   }
@@ -246,7 +286,8 @@ export class GYWebView extends KuiklyRenderBaseView {
     const mainFrame = request.isMainFrame();
     // 首个主帧回调消费附着后 loadData 的内部导航；用户手势或后续 data 均走拒绝规则。
     const internalHtml = mainFrame && this.pendingHtmlNavigation && this.loadingRequest &&
-      !request.isRequestGesture() && target.toLowerCase().startsWith('data:text/html');
+      !request.isRequestGesture() && target.split(/[;,]/)[0].toLowerCase() ===
+        'data:' + (current?.content.mimeType || 'text/html').toLowerCase();
     if (mainFrame) this.pendingHtmlNavigation = false;
     if (internalHtml) return false;
     const allowed = current !== null && navigationAllowed(target, mainFrame, current);
@@ -261,12 +302,23 @@ export class GYWebView extends KuiklyRenderBaseView {
     return !allowed;
   }
 
-  /** 同步拒绝新窗口并发观察事件，不创建第二个 Controller。 */
+  /** 取消真实第二窗口；明确允许的目标沿用当前 Controller，并复核路由回调可能改变的 owner。 */
   rejectNewWindow(event: OnWindowNewEvent): void {
-    // SDK 指定 null 表示取消；只启用事件分流，不创建/支持第二个窗口。
+    const controllerOwner = this.controller;
+    const ownerToken = this.renderToken;
+    const current = this.request;
     event.handler.setWebController(null!);
+    const allowed = this.visible && this.isRenderActive(ownerToken) && current !== null &&
+      current.navigationPolicy.allowNewWindows === true &&
+      (event.isUserTrigger || current.settings.javaScriptCanOpenWindowsAutomatically === true) && navigationAllowed(event.targetUrl, true, current);
     this.emit({ type: 'navigation', url: event.targetUrl, isMainFrame: true, hasUserGesture: event.isUserTrigger,
-      target: 'NEW_WINDOW', blocked: true });
+      target: 'NEW_WINDOW', blocked: !allowed });
+    if (!allowed || !this.visible || this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
+    this.documentReady = false;
+    this.revokePending();
+    if (!this.visible || this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
+    try { controllerOwner.loadUrl(event.targetUrl); }
+    catch (_) { this.fail('LOAD_EXCEPTION', 'ArkWeb popup navigation failed'); }
   }
 
   /** 拒绝命中规则及本地资源；null 表示继续内核网络请求。 */
@@ -275,7 +327,9 @@ export class GYWebView extends KuiklyRenderBaseView {
     // SDK 回调类型未写 nullable；ArkWeb 契约用 null 表示沿用内核网络请求。
     if (!current || request.isMainFrame()) return null!;
     const target = request.getRequestUrl();
-    if (!current.blockedResourceRules.some(rule => matches(target, rule)) && !/^(file|content|resource):/i.test(target)) return null!;
+    const localBlocked = /^(content|resource):/i.test(target) ||
+      (/^file:/i.test(target) && current.settings.allowFileAccess !== true);
+    if (!current.blockedResourceRules.some(rule => matches(target, rule)) && !localBlocked) return null!;
     const response = new WebResourceResponse();
     response.setResponseCode(403); response.setReasonMessage('Blocked by WebView policy'); response.setResponseData('');
     return response;
@@ -731,6 +785,10 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     this.captureFiles.forEach(path => { try { fileIo.unlinkSync(path); } catch (_) {} }); this.captureFiles.clear();
   }
   onDestroy(): void {
+    if (this.environmentContext && this.environmentId !== null) {
+      try { this.environmentContext.off('environment', this.environmentId).catch(() => {}); } catch (_) {}
+    }
+    this.environmentContext = null; this.environmentId = null;
     this.lifetime.dispose(); this.revokePending(); this.eventCallback = null; this.exitFullscreen();
     this.pendingHtmlNavigation = false; this.request = null;
     if (this.attached) {

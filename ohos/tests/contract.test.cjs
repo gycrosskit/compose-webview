@@ -55,8 +55,13 @@ class Controller {
   stop() {} stopAllMedia() {} closeAllMediaPresentations() {} onInactive() {} onActive() {} refresh() { this.refreshes++; } backward() {} forward() {}
 }
 const contexts = [];
+const environmentCallbacks = new Map(); let nextEnvironmentId = 0;
+const applicationContext = {
+  on(name, callback) { const id = ++nextEnvironmentId; environmentCallbacks.set(id, callback); return id; },
+  async off(name, id) { environmentCallbacks.delete(id); },
+};
 class BaseView {
-  getUIContext() { return { getHostContext: () => ({ cacheDir: "/cache" }), postFrameCallback: callback => contexts.push(callback) }; }
+  getUIContext() { return { getHostContext: () => ({ cacheDir: "/cache", config: { fontSizeScale: 1, colorMode: 1 }, getApplicationContext: () => applicationContext }), postFrameCallback: callback => contexts.push(callback) }; }
   setProp() { return false; } onDestroy() {} call() {}
 }
 const windowObject = { Orientation: { UNSPECIFIED: 0, AUTO_ROTATION_LANDSCAPE: 1 }, getLastWindow: async () => ({}) };
@@ -72,7 +77,7 @@ const mocks = {
     WebStorage: { deleteAllData: () => { dataCleaningCalls.push(['storage']); if (dataCleaningFailure === 'storage') throw new Error('storage failed'); } },
   } },
   '@kit.ArkUI': { window: windowObject, FrameCallback: class {} },
-  '@kit.AbilityKit': { abilityAccessCtrl: { createAtManager: () => ({ requestPermissionsFromUser: () => permission.promise }) } },
+  '@kit.AbilityKit': { ConfigurationConstant: { ColorMode: { COLOR_MODE_DARK: 0, COLOR_MODE_LIGHT: 1 } }, abilityAccessCtrl: { createAtManager: () => ({ requestPermissionsFromUser: () => permission.promise }) } },
   '@kit.CoreFileKit': { fileIo: { OpenMode: { CREATE: 1, READ_WRITE: 2, READ_ONLY: 0 }, openSync: path => { fileOpens++; return { fd: path }; }, closeSync() {}, statSync: () => ({ size: fileSize }), readSync: (fd, buffer) => { const bytes = new Uint8Array(buffer); if (captureHeaderValid) { if (String(fd).endsWith('.mp4')) { bytes.set([0x66, 0x74, 0x79, 0x70], 4); } else bytes.set([0xff, 0xd8, 0xff]); } return 12; }, unlinkSync: path => deletedFiles.push(path) }, fileUri: { FileUri: class { constructor(uri) { this.name = uri.split('/').at(-1); } }, getUriFromPath: path => 'file://' + path }, picker: { DocumentSelectOptions: class {}, DocumentViewPicker: class { select() { return selectedFile.promise; } } } },
   './WebViewComponent': { createGYWebView() {} },
 };
@@ -141,6 +146,18 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   }
   {
   const ChannelView = load('GYWebView.ets').GYWebView;
+  for (const enabled of [undefined, false, true]) {
+    const local = new ChannelView(); local.setProp('request', encoded(request({settings: {allowFileAccess: enabled}})));
+    const resource = target => ({getRequestUrl: () => target, isMainFrame: () => false});
+    assert.equal(local.interceptResource(resource('file:///data/storage/el2/base/files/image.png')) === null, enabled === true);
+    assert.notEqual(local.interceptResource(resource('content://private/file')), null);
+    assert.notEqual(local.interceptResource(resource('resource://private/file')), null);
+    assert.equal(wire.navigationAllowed('file:///data/storage/el2/base/files/page.html', true, local.request), false, 'file flag cannot grant top-level navigation');
+    local.setProp('request', encoded(request({settings: {allowFileAccess: true}, blockedResourceRules: [{type:'contains',value:'image.png'}]})));
+    assert.notEqual(local.interceptResource(resource('file:///data/storage/el2/base/files/image.png')), null, 'explicit resource block still wins');
+    local.onDestroy();
+  }
+
   // 执行生产 component build 方法；替身只隔离 ArkUI Web 属性，不重写 SDK API 分支。
   const componentSource = fs.readFileSync(path.join(root, 'WebViewComponent.ets'), 'utf8');
   const componentTail = componentSource.split('struct GYWebViewComponent {')[1];
@@ -285,7 +302,8 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(wire.trusted('https://child.trusted.test:444/', suffixSecurity), true);
   assert.equal(wire.trusted('https://trusted.test.evil/', suffixSecurity), false);
   assert.throws(() => wire.decodeRequest(encoded(request({ security: { ...standard.security, appBridgeEnabled: true } }))));
-  assert.throws(() => wire.decodeRequest(encoded(request({ settings: { allowFileAccess: true } }))));
+  assert.equal(wire.decodeRequest(encoded(request({ settings: { allowFileAccess: true } }))).settings.allowFileAccess, true);
+  assert.throws(() => wire.decodeRequest(encoded(request({ settings: { allowContentAccess: true } }))));
   assert.throws(() => wire.decodeRequest(encoded(request({ content: { type: 'html', html: '<p>x</p>', baseUrl: 'javascript:evil' } }))));
   const filtered = request({ navigationPolicy: { allowedSchemes: ['https'], blockedRules: [{ type: 'hostSuffix', suffix: 'evil.test' }] } });
   assert.equal(wire.navigationAllowed('https://child.evil.test/', true, filtered), false);
@@ -484,6 +502,17 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   const htmlGesture = new GYWebView(); htmlGesture.setProp('request', encoded(html)); htmlGesture.onControllerAttached();
   assert.equal(htmlGesture.interceptNavigation(requestForNavigation('data:text/html,gesture')), true, 'user data navigation never receives the internal allowance');
   assert.equal(htmlGesture.interceptNavigation(requestForNavigation('data:text/html,late', false)), true, 'first rejected main-frame navigation consumes allowance'); htmlGesture.onDestroy();
+  for (const mime of ['text/plain', 'text/html', 'application/xhtml+xml']) {
+    const input = {...html, content: {...html.content, html: '中文 <script>literal</script>', mimeType:mime}};
+    const alternate = new GYWebView(); alternate.setProp('request', encoded(input)); alternate.onControllerAttached();
+    assert.deepEqual(Array.from(alternate.controller.data[0]), ['中文 <script>literal</script>', mime, 'UTF-8', 'https://trusted.test/relative/', 'https://trusted.test/history']);
+    assert.equal(alternate.interceptNavigation(requestForNavigation(`data:${mime},internal`, false)), false, 'only declared MIME initial navigation accepted');
+    assert.equal(alternate.interceptNavigation(requestForNavigation(`data:${mime},late`, false)), true, 'declared MIME allowance remains once-only'); alternate.onDestroy();
+    const impostor = new GYWebView(); impostor.setProp('request', encoded(input)); impostor.onControllerAttached();
+    assert.equal(impostor.interceptNavigation(requestForNavigation(`data:${mime}-other,evil`, false)), true, 'MIME prefix cannot widen internal navigation'); impostor.onDestroy();
+  }
+  for (const mimeType of ['', {}, 'text/html;script']) assert.throws(() => wire.decodeRequest(encoded({...html,content:{...html.content,mimeType}})), /Invalid MIME/);
+  assert.throws(() => wire.decodeRequest(encoded({...html,content:{...html.content,baseUrl:null}})), /historyUrl requires baseUrl/);
   const htmlOtherMime = new GYWebView(); htmlOtherMime.setProp('request', encoded(html)); htmlOtherMime.onControllerAttached();
   assert.equal(htmlOtherMime.interceptNavigation(requestForNavigation('data:image/svg+xml,evil', false)), true, 'only internal HTML MIME gets the first-load allowance');
   assert.equal(htmlOtherMime.interceptNavigation(requestForNavigation('data:text/html,late', false)), true); htmlOtherMime.onDestroy();
@@ -495,6 +524,72 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   view.rejectNewWindow({ targetUrl: 'https://trusted.test/popup', isUserTrigger: true, handler: { setWebController: controller => popupController = controller } });
   assert.equal(popupController, null, 'popup must be cancelled synchronously');
   assert.equal(events.at(-1).target, 'NEW_WINDOW'); assert.equal(events.at(-1).blocked, true);
+  for (const mode of ['allow', 'block', 'untrusted', 'hide', 'replace', 'destroy']) {
+    const popup = new GYWebView(); const popupEvents = [];
+    popup.setProp('request', encoded(request({ settings: {javaScriptEnabled: true, supportMultipleWindows: true},
+      security: {...standard.security, appBridgeEnabled: true},
+      navigationPolicy: {...standard.navigationPolicy, allowNewWindows: mode !== 'block'} })));
+    popup.onControllerAttached(); const previous = popup.controller; const before = previous.loads.length;
+    popup.setProp('onEvent', event => {
+      popupEvents.push(event);
+      if (event.target === 'NEW_WINDOW') {
+        if (mode === 'hide') popup.setProp('visible', false);
+        if (mode === 'replace') popup.setProp('request', encoded(request()));
+        if (mode === 'destroy') popup.onDestroy();
+      }
+    });
+    popup.rejectNewWindow({targetUrl: mode === 'untrusted' ? 'https://evil.test/popup' : 'https://trusted.test/popup',
+      isUserTrigger: true, handler: {setWebController: controller => assert.equal(controller, null)}});
+    assert.equal(popupEvents[0].blocked, mode === 'block' || mode === 'untrusted');
+    assert.equal(previous.loads.length, before + (mode === 'allow' ? 1 : 0), 'popup routing must retain current owner and visibility');
+    popup.onDestroy();
+  }
+  for (const automatic of [false, true]) {
+    const popup = new GYWebView(); const popupEvents = [];
+    popup.setProp('request', encoded(request({settings: {javaScriptCanOpenWindowsAutomatically: automatic},
+      navigationPolicy: {...standard.navigationPolicy, allowNewWindows: true}})));
+    popup.onControllerAttached(); const before = popup.controller.loads.length;
+    popup.setProp('onEvent', event => popupEvents.push(event));
+    popup.rejectNewWindow({targetUrl: 'https://trusted.test/automatic', isUserTrigger: false, handler: {setWebController: () => {}}});
+    assert.equal(popupEvents[0].blocked, !automatic);
+    assert.equal(popup.controller.loads.length, before + (automatic ? 1 : 0)); popup.onDestroy();
+  }
+  {
+    const configured = new GYWebView();
+    configured.setProp('request', encoded(request({settings: {minimumTextZoomPercent: 90, maximumTextZoomPercent: 180}})));
+    configured.onControllerAttached();
+    const callback = environmentCallbacks.get(configured.environmentId);
+    callback.onConfigurationUpdated({fontSizeScale: 3, colorMode: 0});
+    assert.equal(configured.textZoomPercent(), 180); assert.equal(configured.darkTheme, true);
+    callback.onConfigurationUpdated({fontSizeScale: 0.5, colorMode: 1});
+    assert.equal(configured.textZoomPercent(), 90); assert.equal(configured.darkTheme, false);
+    configured.setProp('request', encoded(request({settings: {followSystemFontScale: false}})));
+    assert.equal(configured.textZoomPercent(), 100);
+    const observer = configured.environmentId; configured.onDestroy();
+    assert.equal(environmentCallbacks.has(observer), false);
+    callback.onConfigurationUpdated({fontSizeScale: 2, colorMode: 0});
+    assert.equal(configured.darkTheme, false, 'late environment callback after destroy is ignored');
+    for (const settings of [{minimumTextZoomPercent: 0}, {maximumTextZoomPercent: 501},
+      {minimumTextZoomPercent: 201, maximumTextZoomPercent: 200}, {minimumTextZoomPercent: '100'}]) {
+      assert.throws(() => wire.decodeRequest(encoded(request({settings}))), /Invalid text zoom range/);
+    }
+  }
+  {
+    const originalOn = applicationContext.on, originalOff = applicationContext.off;
+    applicationContext.on = () => { throw new Error('registration denied'); };
+    const unavailable = new GYWebView(); unavailable.setProp('request', encoded(request()));
+    unavailable.onControllerAttached(); assert.equal(unavailable.controller.loads.length, 1);
+    unavailable.onDestroy(); applicationContext.on = originalOn;
+    const failure = new GYWebView(); failure.setProp('request', encoded(request())); failure.onControllerAttached();
+    applicationContext.off = () => { throw new Error('unregister failed'); };
+    assert.doesNotThrow(() => failure.onDestroy()); assert.equal(failure.lifetime.disposed, true);
+    applicationContext.off = originalOff;
+    const late = new GYWebView();
+    applicationContext.on = (...args) => { const id = originalOn(...args); late.onDestroy(); return id; };
+    late.setProp('request', encoded(request())); late.onControllerAttached();
+    assert.equal(late.environmentContext, null); assert.equal(environmentCallbacks.has(nextEnvironmentId), false);
+    applicationContext.on = originalOn;
+  }
   const bridgeRequest = request({ settings: { javaScriptEnabled: true }, security: { ...standard.security, appBridgeEnabled: true } });
   view.setProp('request', encoded(bridgeRequest));
   assert.equal(view.controller.loads.length, 0, 'new controller must wait for attachment');

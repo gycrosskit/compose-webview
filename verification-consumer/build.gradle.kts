@@ -10,7 +10,8 @@ val simRenderFrameworkDir = providers.gradleProperty("simRenderFrameworkDir").or
 val verifyCmp = providers.gradleProperty("verifyCmp").orElse("false").get().toBoolean()
 val verifyNavigation = providers.gradleProperty("verifyNavigation").orElse("false").get().toBoolean()
 val verifyPageChannels = providers.gradleProperty("verifyPageChannels").orElse("false").get().toBoolean()
-if (verifyCmp) apply(plugin = "org.jetbrains.kotlin.plugin.compose")
+val verifyKuiklyCompose = providers.gradleProperty("verifyKuiklyCompose").isPresent
+if (verifyCmp || verifyKuiklyCompose) apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 kotlin {
     androidTarget { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11) } }
     iosArm64 {
@@ -28,6 +29,8 @@ kotlin {
     }
     ohosArm64 { binaries.sharedLib { baseName = "webview_consumer" } }
     sourceSets {
+        if (verifyKuiklyCompose) commonMain.get().kotlin.srcDir("src/kuiklyComposeMain/kotlin")
+
         if (verifyPageChannels) {
             commonMain.get().kotlin.srcDir("src/pageChannelsMain/kotlin")
             if (!verifyCmp) commonMain.get().kotlin.srcDir("src/pageChannelsKuiklyMain/kotlin")
@@ -58,20 +61,22 @@ kotlin {
     }
 }
 
-tasks.register("verifyNoCompose") {
+tasks.register("verifyNoCmpUi") {
     doLast {
-        check(!verifyCmp) { "Run this check without -PverifyCmp=true" }
-        val components = configurations.getByName("debugRuntimeClasspath").incoming.resolutionResult.allComponents
-        check(components.none {
-            val group = it.moduleVersion?.group.orEmpty()
-            val name = it.moduleVersion?.name.orEmpty()
-            // AndroidX Activity 的稳定性注解不包含 Compose UI 或执行运行时。
-            val annotationOnly = group == "androidx.compose.runtime" && name in setOf("runtime-annotation", "runtime-annotation-android")
-            group.startsWith("org.jetbrains.compose") || (group.startsWith("androidx.compose") && !annotationOnly)
-        }) { "Kuikly-only consumer unexpectedly pulls Compose UI/runtime" }
-        println("Kuikly-only runtime has no Compose UI/runtime (AndroidX annotations allowed)")
+        check(!verifyCmp) { "Run this check in Kuikly mode" }
+        val deps = configurations.getByName("debugRuntimeClasspath").incoming.resolutionResult.allComponents
+            .mapNotNull { it.moduleVersion }
+        val forbidden = deps.filter {
+            it.group.startsWith("org.jetbrains.compose.ui") || it.group.startsWith("org.jetbrains.compose.foundation") ||
+                it.group.startsWith("org.jetbrains.compose.material") || it.group.startsWith("androidx.compose.ui") ||
+                it.group.startsWith("androidx.compose.foundation") || it.group.startsWith("androidx.compose.material")
+        }
+        check(forbidden.isEmpty()) { "Kuikly consumer pulls a second CMP UI: $forbidden" }
+        if (verifyKuiklyCompose) check(deps.any { it.group == "com.tencent.kuikly-open" && it.name.startsWith("compose") })
+        println("PASS no second CMP UI (KuiklyCompose presence required when API probe enabled); Compose runtime: " + deps.filter { it.group.contains("compose.runtime") })
     }
 }
+
 tasks.register("verifyExactComponentVersion") {
     doLast {
         val versions = configurations.getByName("debugRuntimeClasspath").incoming.resolutionResult.allComponents
@@ -97,7 +102,10 @@ android {
 tasks.register("verifyNoKuikly") {
     doLast {
         check(verifyCmp) { "Run this check in CMP mode" }
-        val artifacts = configurations.getByName("debugRuntimeClasspath").resolvedConfiguration.resolvedArtifacts
-        check(artifacts.none { it.moduleVersion.id.group == "com.tencent.kuikly-open" || it.moduleVersion.id.name.endsWith("-kuikly-android") }) { "CMP-only consumer unexpectedly pulls Kuikly runtime" }
+        val components = configurations.getByName("debugRuntimeClasspath").incoming.resolutionResult.allComponents
+        check(components.none {
+            it.moduleVersion?.group == "com.tencent.kuikly-open" || it.moduleVersion?.name.orEmpty().endsWith("-kuikly-android")
+        }) { "CMP-only consumer unexpectedly pulls Kuikly runtime" }
+        println("PASS CMP-only runtime has no Kuikly")
     }
 }

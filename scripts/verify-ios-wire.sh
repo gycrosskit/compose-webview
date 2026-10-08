@@ -17,6 +17,7 @@ done
 test -s "$output/page-server.port"
 export SIMCTL_CHILD_WEBVIEW_WIRE_PAGE_URL="http://127.0.0.1:$(cat "$output/page-server.port")/page"
 mkdir -p "$app/Frameworks"
+xcrun swift verification/ios-cmp-app/CreateMovie.swift "$app/capture.mov"
 cp -R "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR/OpenKuiklyIOSRender.framework" "$app/Frameworks/"
 sdk="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 xcrun --sdk iphonesimulator clang -target "$(uname -m)-apple-ios15.0-simulator" -isysroot "$sdk" \

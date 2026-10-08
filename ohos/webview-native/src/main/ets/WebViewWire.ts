@@ -7,7 +7,7 @@ import { url } from '@kit.ArkTS';
  * @property additionalHeaders 本次顶层请求头，缺省为空；不适用于全部子资源。
  * @property html 非空 HTML 正文。
  * @property baseUrl HTML 来源/相对链接基准，默认无来源。
- * @property mimeType 默认 text/html，桥仅支持此类型。
+ * @property mimeType 默认 text/html，原样传给 ArkWeb loadData。
  * @property encoding 默认 UTF-8。
  * @property historyUrl 可选历史显示地址，不替代来源授权。
  */
@@ -16,16 +16,16 @@ export interface WebViewContent {
   html?: string; baseUrl?: string | null; mimeType?: string; encoding?: string; historyUrl?: string | null;
 }
 /**
- * ArkWeb 消费的中立设置；本地文件、新窗口与每实例第三方 Cookie 能力不受支持时拒绝请求。
+ * ArkWeb 消费的中立设置；Android content URI 与每实例第三方 Cookie 不受支持时拒绝请求。
  * @property javaScriptEnabled 默认 false。
  * @property domStorageEnabled 默认 true。
- * @property allowFileAccess 必须关闭。
+ * @property allowFileAccess 默认 false，显式开启允许 ArkWeb 访问应用沙箱文件子资源；顶层仍受 HTTP(S) 导航门禁。
  * @property allowContentAccess 必须关闭。
  * @property mixedContentPolicy 默认 NEVER_ALLOW。
  * @property cachePolicy 默认 DEFAULT。
  * @property acceptsThirdPartyCookies 默认 false，不能启用。
- * @property supportMultipleWindows 默认 false，不能启用。
- * @property javaScriptCanOpenWindowsAutomatically 默认 false，不能启用。
+ * @property supportMultipleWindows 默认 false；新窗口始终路由到当前页面，不创建第二窗口。
+ * @property javaScriptCanOpenWindowsAutomatically 默认 false；启用后仍受 navigationPolicy 与当前 owner 门禁。
  * @property mediaPlaybackRequiresUserGesture 默认 true。
  * @property loadsImagesAutomatically 默认 true。
  * @property blockNetworkImage 默认 false。
@@ -38,6 +38,8 @@ export interface WebViewSettings {
   supportMultipleWindows?: boolean; javaScriptCanOpenWindowsAutomatically?: boolean;
   mediaPlaybackRequiresUserGesture?: boolean; loadsImagesAutomatically?: boolean; blockNetworkImage?: boolean;
   supportZoom?: boolean; userAgentSuffix?: string | null;
+  followSystemFontScale?: boolean; minimumTextZoomPercent?: number; maximumTextZoomPercent?: number;
+  algorithmicDarkeningAllowed?: boolean;
 }
 /**
  * 高权限 HTTPS 来源授权；路径、查询和 fragment 不参与匹配。
@@ -80,7 +82,7 @@ export interface WebViewScript { id: string; source: string; injectionTime: stri
  * @property allowedOrigins 可选精确主文档来源白名单，空时不限制。
  * @property allowedUrls 可选完整 URL 字符串白名单，只限制主文档；空时不限制，不归一化路径或查询。
  * @property blockedRules 主文档拒绝规则。
- * @property allowNewWindows 默认 false；此平台不支持启用。
+ * @property allowNewWindows 默认 false；允许目标复用当前窗口导航。
  */
 export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; allowedUrls?: string[]; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; }
 /**
@@ -211,6 +213,10 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
     'blockNetworkImage', 'builtInZoomControls', 'displayZoomControls', 'supportZoom', 'useWideViewPort', 'loadWithOverviewMode',
     'followSystemFontScale', 'algorithmicDarkeningAllowed'];
   booleanKeys.forEach(key => { if (settingValues[key] !== undefined && typeof settingValues[key] !== 'boolean') throw new Error('Invalid setting'); });
+  const minimumZoom = request.settings.minimumTextZoomPercent === undefined ? 100 : request.settings.minimumTextZoomPercent;
+  const maximumZoom = request.settings.maximumTextZoomPercent === undefined ? 200 : request.settings.maximumTextZoomPercent;
+  if (!Number.isInteger(minimumZoom) || !Number.isInteger(maximumZoom) || minimumZoom < 50 ||
+    maximumZoom > 500 || maximumZoom < minimumZoom) throw new Error('Invalid text zoom range');
   const securityFlags = [request.security.appBridgeEnabled, request.security.pageBridgeEnabled, request.security.fileChooserEnabled, request.security.mediaCaptureEnabled];
   securityFlags.forEach(flag => { if (flag !== undefined && typeof flag !== 'boolean') throw new Error('Invalid security flag'); });
   if (request.navigationPolicy.allowNewWindows !== undefined && typeof request.navigationPolicy.allowNewWindows !== 'boolean') throw new Error('Invalid navigation policy');
@@ -241,9 +247,8 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   if ((request.security.appBridgeEnabled || request.security.pageBridgeEnabled) && request.settings.javaScriptEnabled !== true) {
     throw new Error('Bridge requires JavaScript');
   }
-  if (request.settings.allowFileAccess || request.settings.allowContentAccess || request.settings.supportMultipleWindows ||
-    request.settings.javaScriptCanOpenWindowsAutomatically || request.navigationPolicy.allowNewWindows) {
-    throw new Error('Local URL access and new windows are unsupported');
+  if (request.settings.allowContentAccess) {
+    throw new Error('Android content URI access is unsupported');
   }
   const content = request.content;
   if (content.type === 'url') {
@@ -255,7 +260,9 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
     if (content.historyUrl !== undefined && content.historyUrl !== null && typeof content.historyUrl !== 'string') throw new Error('Invalid historyUrl');
     if (checkInitialNavigation && content.baseUrl && !navigationAllowed(content.baseUrl, true, request)) throw new Error('HTML baseUrl blocked');
     if (checkInitialNavigation && content.historyUrl && !navigationAllowed(content.historyUrl, true, request)) throw new Error('HTML historyUrl blocked');
-    if (content.mimeType && content.mimeType !== 'text/html') throw new Error('Only text/html is supported');
+    if (content.mimeType !== undefined && (typeof content.mimeType !== 'string' || !/^[A-Za-z0-9.+-]+\/[A-Za-z0-9.+-]+$/.test(content.mimeType))) throw new Error('Invalid MIME type');
+    if (content.encoding !== undefined && (typeof content.encoding !== 'string' || !content.encoding.trim())) throw new Error('Invalid encoding');
+    if (content.historyUrl && !content.baseUrl) throw new Error('HTML historyUrl requires baseUrl');
   } else throw new Error('Unsupported content type');
   if (request.security.appBridgeEnabled || request.security.fileChooserEnabled || request.security.mediaCaptureEnabled) {
     if (!request.security.trustedOrigins.urls.some(item => origin(item).startsWith('https:')) &&
