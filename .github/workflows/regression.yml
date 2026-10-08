@@ -7,34 +7,104 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: regression-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
-  JAVA_TOOL_OPTIONS: -Djava.security.properties=${{ github.workspace }}/scripts/ci-java.security
+  JAVA_TOOL_OPTIONS: -Djava.security.properties=${{ github.workspace }}/scripts/ci-java.security -Dsun.net.client.defaultConnectTimeout=30000 -Dsun.net.client.defaultReadTimeout=60000
 jobs:
-  contracts:
+  changes:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.scope.outputs.source }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - id: scope
+        run: python3 scripts/ci-changes.py
+      - run: |
+          mkdir -p ci-diagnostics
+          printf 'event=%s\nsource=%s\n' "$GITHUB_EVENT_NAME" "${{ steps.scope.outputs.source }}" > ci-diagnostics/scope.txt
+      - name: Record job completion
+        if: always()
+        run: |
+          mkdir -p ci-diagnostics
+          printf 'job=%s\nstatus=%s\n' "$GITHUB_JOB" "${{ job.status }}" > "ci-diagnostics/$GITHUB_JOB.txt"
+      - name: Save public CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: changes-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ci-diagnostics/**/*.log
+            ci-diagnostics/**/*.json
+            ci-diagnostics/**/*.jsonl
+            ci-diagnostics/**/*.txt
+            **/build/test-results/**/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
+  contracts:
+    if: always()
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require successful scope detection
+        run: test "${{ needs.changes.result }}" = success
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: needs.changes.outputs.source == 'true'
         with:
           node-version: '22'
       - run: npm install --prefix "$RUNNER_TEMP/contract-tools" --ignore-scripts --no-audit --no-fund typescript@4.9.5
-      - run: |
+        timeout-minutes: 5
+        if: needs.changes.outputs.source == 'true'
+      - timeout-minutes: 8
+        if: needs.changes.outputs.source == 'true'
+        run: |
           python3 -c 'import json, pathlib; assert json.loads(pathlib.Path("ohos/webview-native/oh-package.json5").read_text())["dependencies"]["@gycrosskit/system-actions-native"] == "0.2.0-rc.4", "Update the frozen HAR dependency with its declared version"'
           curl --fail --location --retry 3 -o "$RUNNER_TEMP/system-actions.har" https://github.com/gycrosskit/system-actions/releases/download/0.2.0-rc.4/SystemActionsNative.har
           printf '%s  %s\n' e87ea317422d5f41e796e07f9b9fb30b195f3ef616486b5ab3890962e32648ae "$RUNNER_TEMP/system-actions.har" | shasum -a 256 --check
           python3 -c 'import pathlib, sys, tarfile; archive=tarfile.open(sys.argv[1]); member=archive.getmember("package/src/main/ets/WindowPolicy.ets"); assert member.isfile(); pathlib.Path(sys.argv[2]).write_bytes(archive.extractfile(member).read()); archive.close()' "$RUNNER_TEMP/system-actions.har" "$RUNNER_TEMP/window-policy.ets"
-      - run: |
+      - timeout-minutes: 8
+        if: needs.changes.outputs.source == 'true'
+        run: |
           python3 verification/ci/test_fork_host.py
           python3 verification/publication/test_maven_check.py
           python3 verification/publication/test_metadata.py
           python3 ios/generate-scripts.py --check
           TYPESCRIPT_PATH="$RUNNER_TEMP/contract-tools/node_modules/typescript" WEBVIEW_WINDOW_POLICY_SOURCE="$RUNNER_TEMP/window-policy.ets" node ohos/tests/contract.test.cjs
+      - name: Explain lightweight completion
+        if: ${{ !(needs.changes.outputs.source == 'true') }}
+        run: echo 'No build is required for this event and scope.'
+      - name: Check CI shell syntax
+        run: |
+          PYTHONPYCACHEPREFIX="$RUNNER_TEMP/ci-python-cache" python3 -m py_compile scripts/ci-changes.py scripts/ci-run.py
+          for script in scripts/*.sh; do bash -n "$script"; done
+      - name: Record job completion
+        if: always()
+        run: |
+          mkdir -p ci-diagnostics
+          printf 'job=%s\nstatus=%s\n' "$GITHUB_JOB" "${{ job.status }}" > "ci-diagnostics/$GITHUB_JOB.txt"
+      - name: Save public CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: contracts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ci-diagnostics/**/*.log
+            ci-diagnostics/**/*.json
+            ci-diagnostics/**/*.jsonl
+            ci-diagnostics/**/*.txt
+            **/build/test-results/**/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
   android:
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -42,32 +112,113 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        if: needs.changes.outputs.source == 'true'
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
       - run: bash scripts/ci-pin-fork-host.sh
+        timeout-minutes: 3
+        if: needs.changes.outputs.source == 'true'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: needs.changes.outputs.source == 'true'
         with:
           node-version: '22'
-      - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" testDebugUnitTest :webview-core:testDebugUnitTest :webview-kuikly:testDebugUnitTest compileReleaseKotlinAndroid :webview-kuikly:compileReleaseKotlinAndroid --no-daemon --max-workers=1 --stacktrace --info
-      - run: bash verification/android-callbacks/verify.sh
-      - run: bash verification/early-scripts/verify.sh
+      - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/android.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" testDebugUnitTest :webview-core:testDebugUnitTest :webview-kuikly:testDebugUnitTest compileReleaseKotlinAndroid :webview-kuikly:compileReleaseKotlinAndroid --no-daemon --max-workers=1 --stacktrace --info
+        timeout-minutes: 35
+        if: needs.changes.outputs.source == 'true'
+      - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/android.log -- bash verification/android-callbacks/verify.sh
+        timeout-minutes: 10
+        if: needs.changes.outputs.source == 'true'
+      - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/android.log -- bash verification/early-scripts/verify.sh
+        timeout-minutes: 10
+        if: needs.changes.outputs.source == 'true'
+      - name: Explain lightweight completion
+        if: ${{ !(needs.changes.outputs.source == 'true') }}
+        run: echo 'No build is required for this event and scope.'
+      - name: Record job completion
+        if: always()
+        run: |
+          mkdir -p ci-diagnostics
+          printf 'job=%s\nstatus=%s\n' "$GITHUB_JOB" "${{ job.status }}" > "ci-diagnostics/$GITHUB_JOB.txt"
+      - name: Save public CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ci-diagnostics/**/*.log
+            ci-diagnostics/**/*.json
+            ci-diagnostics/**/*.jsonl
+            ci-diagnostics/**/*.txt
+            **/build/test-results/**/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
   native:
-    runs-on: macos-15
+    needs: changes
+    runs-on: ${{ (needs.changes.outputs.source == 'true') && 'macos-15' || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - name: Restore completed Kotlin Native toolchain
+        if: needs.changes.outputs.source == 'true'
+        id: konan
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.konan
+            !~/.konan/dependencies/cache
+            !~/.konan/**/*.part
+            !~/.konan/**/*.tmp
+            !~/.konan/**/*.lock
+          key: konan-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle.properties', '**/gradle-wrapper.properties', '**/build.gradle.kts', '**/settings.gradle.kts') }}
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        if: needs.changes.outputs.source == 'true'
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
       - run: bash scripts/ci-pin-fork-host.sh
-      - run: |
+        timeout-minutes: 3
+        if: needs.changes.outputs.source == 'true'
+      - timeout-minutes: 45
+        if: needs.changes.outputs.source == 'true'
+        run: |
           ios_test_target=iosSimulatorArm64Test
           if [[ "$(uname -m)" != arm64 ]]; then ios_test_target=iosX64Test; fi
-          bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" "$ios_test_target" :webview-core:"$ios_test_target" compileKotlinIosArm64 compileKotlinIosX64 :webview-kuikly:compileKotlinIosArm64 :webview-kuikly:compileKotlinIosSimulatorArm64 :webview-kuikly:compileKotlinIosX64 :webview-core:compileKotlinOhosArm64 :webview-kuikly:compileKotlinOhosArm64 --no-daemon --max-workers=1 --stacktrace --info
+          python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/native.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" "$ios_test_target" :webview-core:"$ios_test_target" compileKotlinIosArm64 compileKotlinIosX64 :webview-kuikly:compileKotlinIosArm64 :webview-kuikly:compileKotlinIosSimulatorArm64 :webview-kuikly:compileKotlinIosX64 :webview-core:compileKotlinOhosArm64 :webview-kuikly:compileKotlinOhosArm64 --no-daemon --max-workers=1 --stacktrace --info
           python3 -c 'import pathlib, sys, xml.etree.ElementTree as ET; files=pathlib.Path(".").glob("**/build/test-results/"+sys.argv[1]+"/*.xml"); cases=[case for path in files for case in ET.parse(path).iter("testcase")]; assert any(case.find("skipped") is None for case in cases), "No executed iOS test cases"' "$ios_test_target"
+      - name: Explain lightweight completion
+        if: ${{ !(needs.changes.outputs.source == 'true') }}
+        run: echo 'No build is required for this event and scope.'
+      - name: Cache only successful Native downloads
+        if: success() && (needs.changes.outputs.source == 'true') && steps.konan.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.konan
+            !~/.konan/dependencies/cache
+            !~/.konan/**/*.part
+            !~/.konan/**/*.tmp
+            !~/.konan/**/*.lock
+          key: ${{ steps.konan.outputs.cache-primary-key }}
+      - name: Record job completion
+        if: always()
+        run: |
+          mkdir -p ci-diagnostics
+          printf 'job=%s\nstatus=%s\n' "$GITHUB_JOB" "${{ job.status }}" > "ci-diagnostics/$GITHUB_JOB.txt"
+      - name: Save public CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ci-diagnostics/**/*.log
+            ci-diagnostics/**/*.json
+            ci-diagnostics/**/*.jsonl
+            ci-diagnostics/**/*.txt
+            **/build/test-results/**/*.xml
+          if-no-files-found: ignore
+          retention-days: 7

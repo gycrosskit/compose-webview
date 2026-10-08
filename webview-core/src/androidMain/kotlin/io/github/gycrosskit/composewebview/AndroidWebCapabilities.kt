@@ -56,8 +56,10 @@ class AndroidWebCapabilities(
 
     /** 撤销指定实例的文件与媒体请求；系统选择器返回前保留关联门禁。 */
     fun release(owner: WebView) {
-        mediaCapture.release(owner)
+        val mediaRequest = mediaCapture.pendingRequest(owner)
         fileChooser.release(owner)
+        // 文件取消回执可同步发起新媒体请求，只撤销进入 release 时的请求。
+        mediaCapture.release(owner, mediaRequest)
     }
 
     /** 页面结束时撤销全部请求并注销 ActivityResult 入口；此后不可复用。 */

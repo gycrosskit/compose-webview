@@ -49,7 +49,7 @@ expect class AppWebViewState internal constructor() {
     /** 退出当前全屏，回调至多一次交付原生最终结果；未全屏或文档/owner结束取消时 false，不交付迟到成功。 */
     fun exitFullscreen(callback: (Boolean) -> Unit = {})
 
-    /** 停止当前主文档加载；未绑定原生实例时安全忽略。 */
+    /** 停止加载并撤销当前异步 JS/全屏回执、文件及媒体权限请求；实例仍可 reload/发起新操作。系统权限授予不会被撤回。 */
     fun stopLoading()
 
     /**

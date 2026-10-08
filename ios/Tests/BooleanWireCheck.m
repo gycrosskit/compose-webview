@@ -37,6 +37,61 @@ static NSDictionary *JSONRoundTrip(NSDictionary *value) {
 - (NSURL *)URL { return [NSURL URLWithString:@"https://safe.example/page"]; }
 @end
 
+@interface StopProbeWebView : UploadWebView
+@property(nonatomic) NSUInteger stops;
+@property(nonatomic, strong) NSMutableArray *evaluations;
+@end
+@implementation StopProbeWebView
+- (void)stopLoading { self.stops++; }
+- (void)evaluateJavaScript:(NSString *)script completionHandler:(void (^)(id, NSError *))callback {
+    if (callback) { if (!self.evaluations) self.evaluations = [NSMutableArray array]; [self.evaluations addObject:[callback copy]]; }
+}
+@end
+static void CheckStopLoadingCancellation(void) {
+    for (NSNumber *replaceOwner in @[@NO, @YES]) {
+        GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+        StopProbeWebView *old = [[StopProbeWebView alloc] initWithFrame:page.bounds configuration:[WKWebViewConfiguration new]];
+        StopProbeWebView *next = [[StopProbeWebView alloc] initWithFrame:page.bounds configuration:[WKWebViewConfiguration new]];
+        page.webView = old;
+        page.request = @{ @"content": @{ @"type": @"url", @"url": @"https://safe.example/page" },
+            @"settings": @{ @"javaScriptEnabled": @YES },
+            @"security": @{ @"trustedOrigins": @{ @"urls": @[@"https://safe.example"] }, @"fileChooserEnabled": @YES }, @"scripts": @[] };
+        __block NSUInteger javascriptReplies = 0, files = 0, newFiles = 0;
+        [page hrv_callWithMethod:@"evaluateJavascript" params:@"{\"script\":\"old()\"}" callback:^(id result) { javascriptReplies++; }];
+        void (^oldJavascript)(id, NSError *) = old.evaluations.lastObject;
+        NSURL *oldFile = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString]];
+        NSURL *newFile = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString]];
+        [@"old" writeToURL:oldFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [@"new" writeToURL:newFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        page.temporaryFiles = [NSMutableArray arrayWithObject:oldFile];
+        page.filePickerCompletion = ^(NSArray<NSURL *> *urls) {
+            Require(urls == nil, @"stop must cancel pending files"); files++;
+            if (replaceOwner.boolValue) page.webView = next;
+            page.temporaryFiles = [NSMutableArray arrayWithObject:newFile];
+            page.filePickerCompletion = ^(NSArray<NSURL *> *value) { newFiles++; };
+        };
+        [page hrv_callWithMethod:@"stopLoading" params:nil callback:nil];
+        Require(files == 1, @"stopLoading must settle old file capability once");
+        oldJavascript(@"old", nil);
+        Require(javascriptReplies == 0, @"stopLoading must reject late JS result");
+        Require(![NSFileManager.defaultManager fileExistsAtPath:oldFile.path] && [NSFileManager.defaultManager fileExistsAtPath:newFile.path], @"old cleanup deleted reentrant new file");
+        Require(newFiles == 0, @"old stop revoked reentrant request");
+        Require(next.stops == 0, @"old stop reached reentrant new owner");
+        WKWebView *current = page.webView;
+        [page hrv_callWithMethod:@"evaluateJavascript" params:@"{\"script\":\"fresh()\"}" callback:^(id result) { javascriptReplies++; }];
+        void (^freshJavascript)(id, NSError *) = ((StopProbeWebView *)current).evaluations.lastObject;
+        freshJavascript(@"fresh", nil);
+        Require(javascriptReplies == 1, @"same owner must accept a fresh JS operation after stop");
+        [page hrv_callWithMethod:@"stopLoading" params:nil callback:nil];
+        Require(files == 1 && newFiles == 1, @"later stop must settle only the fresh file request");
+        // 本 fixture 手工注入 probe，不经过 createWebView 的 KVO 注册。
+        [old.evaluations removeAllObjects]; [next.evaluations removeAllObjects];
+        page.webView = nil;
+        [page hrv_removeFromSuperview];
+        [NSFileManager.defaultManager removeItemAtURL:newFile error:nil];
+    }
+}
+
 // 捕获生产代码传给 WebKit 的真实 JSON，随后继续调用系统编译器。
 static IMP originalRuleCompiler;
 static NSDictionary *lastTrigger;
@@ -65,7 +120,8 @@ static NSString *RequestJSON(NSDictionary *request) {
     return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:request options:0 error:nil] encoding:NSUTF8StringEncoding];
 }
 static void CheckNativeCommandCancellation(NSDictionary *request, NSString *otherURL) {
-    for (NSString *mode in @[@"hide", @"request", @"release", @"reload", @"reentrantHide"]) {
+    NSArray *modes = getenv("WEBVIEW_STOP_ONLY") ? @[@"stopLoading", @"reentrantStop"] : @[@"hide", @"request", @"release", @"reload", @"stopLoading", @"reentrantHide", @"reentrantStop"];
+    for (NSString *mode in modes) {
         GYWebView *view = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
         [view hrv_setPropWithKey:@"request" propValue:RequestJSON(request)];
         WKWebView *old = view.webView;
@@ -82,12 +138,13 @@ static void CheckNativeCommandCancellation(NSDictionary *request, NSString *othe
         __block NSUInteger count = 0;
         [view hrv_callWithMethod:@"goBack" params:nil callback:^(id result) {
             count++; RequireBoolean(result[@"result"], NO, @"Cancelled native command result");
-            if ([mode isEqual:@"reentrantHide"]) [view hrv_setPropWithKey:@"request" propValue:RequestJSON(replacement)];
+            if ([mode isEqual:@"reentrantHide"] || [mode isEqual:@"reentrantStop"]) [view hrv_setPropWithKey:@"request" propValue:RequestJSON(replacement)];
         }];
         Require([Evaluate(old, @"window.__nativeExitEntered === true") boolValue], @"Production fullscreen script did not await real WebKit Promise");
         if ([mode isEqual:@"hide"] || [mode isEqual:@"reentrantHide"]) [view hrv_setPropWithKey:@"visible" propValue:@NO];
         else if ([mode isEqual:@"request"]) [view hrv_setPropWithKey:@"request" propValue:RequestJSON(replacement)];
         else if ([mode isEqual:@"reload"]) [view hrv_callWithMethod:@"reload" params:nil callback:nil];
+        else if ([mode isEqual:@"stopLoading"] || [mode isEqual:@"reentrantStop"]) [view hrv_callWithMethod:@"stopLoading" params:nil callback:nil];
         else [view hrv_removeFromSuperview];
         Require(count == 1, @"Owner invalidation must synchronously deliver one false terminal result");
         WKWebView *current = view.webView;
@@ -157,6 +214,14 @@ static void CheckHtmlContent(void) {
 }
 
 static void Check(void) {
+    CheckStopLoadingCancellation();
+    if (getenv("WEBVIEW_STOP_ONLY")) {
+        NSString *url = NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"];
+        Require(url.length > 0, @"Stop fixture requires loopback page URL");
+        NSString *other = [[[NSURL URLWithString:url] URLByDeletingLastPathComponent].absoluteString stringByAppendingString:@"other"];
+        CheckNativeCommandCancellation(@{@"content": @{@"type": @"url", @"url": url}, @"settings": @{@"javaScriptEnabled": @YES}}, other);
+        printf("PASS: Native stop JS/file cancellation, reentry and fresh operations; real WK Promise terminal once\n"); fflush(stdout); exit(0);
+    }
     CheckHtmlContent();
     for (NSArray *pair in @[@[@"2001:0db8:0000:0:0:0:0:1", @"2001:db8::1"], @[@"::ffff:192.0.2.1", @"::ffff:c000:201"], @[@"0:0:0:0:0:0:0:0", @"::"], @[@"1:0:0:2:0:0:3:4", @"1::2:0:0:3:4"]]) {
         NSString *raw = [NSString stringWithFormat:@"https://[%@]:8443", pair[0]];
