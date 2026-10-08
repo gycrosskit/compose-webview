@@ -15,6 +15,7 @@ concurrency:
 permissions:
   contents: read
 env:
+  CI_FORK_HOST_FALLBACK_IP: ${{ vars.CI_FORK_HOST_FALLBACK_IP }}
   JAVA_TOOL_OPTIONS: -Djava.security.properties=${{ github.workspace }}/scripts/ci-java.security -Dsun.net.client.defaultConnectTimeout=30000 -Dsun.net.client.defaultReadTimeout=60000
   VERSION: ${{ github.event.release.tag_name || inputs.version }}
   KUIKLY_COMPOSE_FLAGS: ${{ (github.event.release.tag_name == '0.2.0-rc.14' || inputs.version == '0.2.0-rc.14' || github.event.release.tag_name == '0.2.0-rc.15' || inputs.version == '0.2.0-rc.15') && '-PverifyKuiklyCompose' || '' }}

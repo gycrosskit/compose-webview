@@ -15,6 +15,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
+  CI_FORK_HOST_FALLBACK_IP: ${{ vars.CI_FORK_HOST_FALLBACK_IP }}
   JAVA_TOOL_OPTIONS: -Djava.security.properties=${{ github.workspace }}/scripts/ci-java.security -Dsun.net.client.defaultConnectTimeout=30000 -Dsun.net.client.defaultReadTimeout=60000
 jobs:
   changes:
@@ -86,6 +87,8 @@ jobs:
       - name: Explain lightweight completion
         if: ${{ !(needs.changes.outputs.source == 'true') }}
         run: echo 'No build is required for this event and scope.'
+      - name: Check fork host trust boundaries
+        run: python3 verification/ci/test_fork_host.py
       - name: Check CI shell syntax
         run: |
           PYTHONPYCACHEPREFIX="$RUNNER_TEMP/ci-python-cache" python3 -m py_compile scripts/ci-changes.py scripts/ci-run.py
