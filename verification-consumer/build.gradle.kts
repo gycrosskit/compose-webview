@@ -52,6 +52,7 @@ kotlin {
         } else null
         androidMain {
             if (!verifyCmp) kotlin.srcDir("src/kuiklyAndroidMain/kotlin")
+            if (verifyKuiklyCompose) kotlin.srcDir("src/kuiklyComposeAndroidMain/kotlin")
             cmpMain?.let { dependsOn(it) }
         }
         val iosMain by creating { dependsOn(cmpMain ?: commonMain.get()) }
