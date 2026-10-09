@@ -1,6 +1,8 @@
 package io.github.gycrosskit.composewebview
 
 import android.os.Message
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.PermissionRequest
 import android.webkit.WebResourceRequest
@@ -17,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import java.io.ByteArrayInputStream
 import java.util.UUID
 
 /** Android 继续由 shared 绘制 Material 进度条。 */
@@ -62,7 +63,9 @@ internal actual fun PlatformAppWebView(
         }
     }
     val popupRouter = remember {
-        AndroidPopupRouter(request = { currentRequest }, onNavigation = { navigation ->
+        AndroidPopupRouter(request = { currentRequest }, onNavigationBlocked = { navigation ->
+            currentCallbacks.onEvent(WebViewEvent.Navigation(navigation, true))
+        }, onNavigation = { navigation ->
             if (shouldBlockNavigation(navigation, currentRequest, currentCallbacks)) WebViewNavigationDecision.BLOCK
             else WebViewNavigationDecision.ALLOW
         })
@@ -239,7 +242,7 @@ internal actual fun PlatformAppWebView(
     }
 }
 
-private fun commonWebViewClient(
+internal fun commonWebViewClient(
     listener: AppWebViewClient.Listener,
     request: () -> WebViewRequest,
     callbacks: () -> WebViewCallbacks,
@@ -278,6 +281,7 @@ private fun commonWebViewClient(
     isOwner = isOwner,
 ) {
     private var initialHtmlNavigation = request().content is WebViewContent.Html
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
         if (!isOwner(view)) return
@@ -307,12 +311,10 @@ private fun commonWebViewClient(
     override fun shouldInterceptRequest(
         view: WebView,
         resource: WebResourceRequest,
-    ): WebResourceResponse? = if (!isOwner(view)) null else if (
-        request().blockedResourceRules.any { it.matches(resource.url.toString()) }
-    ) {
-        WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
-    } else {
-        super.shouldInterceptRequest(view, resource)
+    ): WebResourceResponse? = request().interceptAndroidRequest(resource) { navigation ->
+        mainHandler.post {
+            if (isOwner(view)) callbacks().onEvent(WebViewEvent.Navigation(navigation, true))
+        }
     }
 
     override fun onPageFinished(view: WebView, url: String?) {
