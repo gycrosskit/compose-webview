@@ -154,15 +154,27 @@ private class CmpFileCheckDelegate : NSObject, UIApplicationDelegateProtocol {
             var videoReady = false
             val metadataDeadline = NSDate.dateWithTimeIntervalSinceNow(10.0)
             while (!videoReady && NSDate().compare(metadataDeadline) == NSOrderedAscending) {
-                videoReady = (evaluateFullscreen("video.readyState >= 1") as NSNumber).boolValue
+                videoReady = (evaluateFullscreen("video.readyState >= 1 && video.webkitSupportsFullscreen") as NSNumber).boolValue
                 if (!videoReady) delay(10)
             }
-            assertTrue(videoReady, "Native video metadata unavailable")
+            assertTrue(videoReady, "Native video fullscreen unavailable")
             for (back in listOf(false, true)) {
-                evaluateFullscreen("video.webkitEnterFullscreen();true")
+                // UIKit 已完成动画时 WebKit 模式切换仍可能未确认；仅重试原生进入 setup。
+                var entered = false
+                val entryDeadline = NSDate.dateWithTimeIntervalSinceNow(10.0)
+                while (!entered && NSDate().compare(entryDeadline) == NSOrderedAscending) {
+                    entered = (evaluateFullscreen("try { video.webkitEnterFullscreen(); } catch(error) { if(error.name !== 'InvalidStateError') throw error; } video.webkitDisplayingFullscreen") as NSNumber).boolValue
+                    if (!entered) delay(10)
+                }
+                assertTrue(entered, "Real native video did not enter fullscreen")
                 waitUntil("JS-disabled real video fullscreen event") { fullscreenEvents.lastOrNull { it is WebViewEvent.FullscreenChanged } == WebViewEvent.FullscreenChanged(true) }
-                // WebKit 的进入事件早于 UIKit 呈现动画完成，此后才模拟宿主返回操作。
-                delay(1000)
+                // 视频状态事件早于 UIKit 动画完成；播放器由 WebKit 的独立 window 呈现。
+                var player: UIViewController? = null
+                waitUntil("native video presentation") {
+                    player = UIApplication.sharedApplication.windows.filterIsInstance<UIWindow>()
+                        .firstNotNullOfOrNull { if (it.hidden) null else it.rootViewController?.presentedViewController }
+                    player?.let { !it.beingPresented && !it.beingDismissed && it.transitionCoordinator == null } == true
+                }
                 assertTrue((evaluateFullscreen("video.webkitDisplayingFullscreen") as NSNumber).boolValue)
                 var consumed: Boolean? = null
                 if (back) fullscreenState.goBack { consumed = it } else fullscreenState.exitFullscreen { consumed = it }
@@ -171,7 +183,7 @@ private class CmpFileCheckDelegate : NSObject, UIApplicationDelegateProtocol {
                 assertFalse((evaluateFullscreen("video.webkitDisplayingFullscreen") as NSNumber).boolValue)
                 assertEquals(otherUrl, fullscreenView.URL?.absoluteString)
                 assertTrue(fullscreenView.canGoBack)
-                delay(1000)
+                waitUntil("native video dismissal") { player?.let { it.presentingViewController == null && !it.beingDismissed && it.transitionCoordinator == null } == true }
             }
             fullscreenCoordinator.release(fullscreenView); fullscreenState.detach(fullscreenView); fullscreenScope.cancel()
             fullscreenConfiguration.userContentController.removeScriptMessageHandlerForName(WEB_EVENT_HANDLER)

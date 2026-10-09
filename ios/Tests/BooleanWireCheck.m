@@ -230,19 +230,27 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
     Require(owner.canGoBack, @"Fullscreen fixture did not create backward history");
     Require(![Evaluate(owner, @"window.contentScriptExecuted === true") boolValue], @"Disabled page JavaScript executed");
     Evaluate(owner, [NSString stringWithFormat:@"var video=document.createElement('video');video.controls=true;video.src='data:video/quicktime;base64,%@';document.body.appendChild(video);true", movie]);
-    WaitUntil(^BOOL { return [Evaluate(owner, @"video.readyState >= 1") boolValue]; }, @"Native video metadata unavailable");
+    WaitUntil(^BOOL { return [Evaluate(owner, @"video.readyState >= 1 && video.webkitSupportsFullscreen") boolValue]; }, @"Native video fullscreen unavailable");
     for (NSString *command in @[@"exitFullscreen", @"goBack"]) {
-        Evaluate(owner, @"video.webkitEnterFullscreen();true");
-        WaitUntil(^BOOL { return [Evaluate(owner, @"video.webkitDisplayingFullscreen") boolValue]; }, @"Real native video did not enter fullscreen");
+        // UIKit 已完成动画时 WebKit 模式切换仍可能未确认；仅重试原生进入 setup。
+        WaitUntil(^BOOL { return [Evaluate(owner, @"try { video.webkitEnterFullscreen(); } catch(error) { if(error.name !== 'InvalidStateError') throw error; } video.webkitDisplayingFullscreen") boolValue]; }, @"Real native video did not enter fullscreen");
         WaitUntil(^BOOL { return fullscreen; }, @"JS-disabled native fullscreen event was not observed");
-        // WebKit 的进入事件早于 UIKit 呈现动画完成，此后才模拟宿主返回操作。
-        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.0]];
+        // 视频状态事件早于 UIKit 动画完成；播放器由 WebKit 的独立 window 呈现。
+        __block UIViewController *player = nil;
+        WaitUntil(^BOOL {
+            for (UIWindow *window in UIApplication.sharedApplication.windows) {
+                if (window.hidden) continue;
+                UIViewController *controller = window.rootViewController.presentedViewController;
+                if (controller && !controller.beingPresented && !controller.beingDismissed && !controller.transitionCoordinator) { player = controller; return YES; }
+            }
+            return NO;
+        }, @"Native video presentation did not complete");
         __block NSInteger replies = 0; __block BOOL consumed = NO;
         [view hrv_callWithMethod:command params:nil callback:^(id value) { replies++; consumed = [value[@"result"] boolValue]; }];
         WaitUntil(^BOOL { return replies == 1 && !fullscreen; }, @"Native fullscreen exit did not settle");
         Require(consumed && ![Evaluate(owner, @"video.webkitDisplayingFullscreen") boolValue], @"Fullscreen command did not exit real video");
         Require([owner.URL.absoluteString isEqual:other] && owner.canGoBack, @"Fullscreen command consumed backward history");
-        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.0]];
+        WaitUntil(^BOOL { return !player.presentingViewController && !player.beingDismissed && !player.transitionCoordinator; }, @"Native video dismissal did not complete");
     }
     [view hrv_removeFromSuperview];
     puts("PASS: Native JS-disabled real video fullscreen events, exitFullscreen and goBack preserve history; page script blocked");
