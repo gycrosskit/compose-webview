@@ -22,6 +22,42 @@ class WebViewPageMessagesTest {
         assertFalse(request.copy(navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf("http://page.test/other"))).canUsePageMessageChannelsAt(url))
     }
 
+    @Test fun browserNormalizedInitialDocumentKeepsExactNavigationPolicy() {
+        for ((declared, actual) in listOf(
+            "https://page.test" to "https://page.test/",
+            "HTTPS://PAGE.TEST:443?q=a%20b#part" to "https://page.test/?q=a%20b#part",
+            "http://PAGE.TEST:80/initial.html?q=1#part" to "http://page.test/initial.html?q=1#part",
+        )) {
+            val request = request().copy(content = WebViewContent.Url(declared))
+            assertTrue(request.canUsePageMessageChannelsAt(actual), declared)
+            for (other in listOf("$actual/other", "$actual?extra=1", "$actual#next")) {
+                assertFalse(request.canUsePageMessageChannelsAt(other), other)
+            }
+            assertFalse(request.copy(navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf(declared)))
+                .canUsePageMessageChannelsAt(actual))
+            val canonicalPolicy = request.copy(navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf(actual)))
+            assertTrue(canonicalPolicy.canUsePageMessageChannelsAt(actual))
+            assertNotNull(canonicalPolicy.pageMessageScript("token"))
+        }
+        val request = request().copy(content = WebViewContent.Url("https://page.test"))
+        for (other in listOf("https://page.test/?", "https://page.test/#", "https://page.test./", "https://page.test:8443/")) {
+            assertFalse(request.canUsePageMessageChannelsAt(other), other)
+        }
+    }
+
+    @Test fun normalizedDocumentKeepsEscapesQueryOrderAndFragmentsDistinct() {
+        val declared = "https://page.test/a%2Fb?q=a%20b&q=second#part"
+        val request = request().copy(content = WebViewContent.Url(declared))
+        for (other in listOf(
+            "https://page.test/a/b?q=a%20b&q=second#part",
+            "https://page.test/a%2fb?q=a%20b&q=second#part",
+            "https://page.test/a%2Fb?q=a+b&q=second#part",
+            "https://page.test/a%2Fb?q=second&q=a%20b#part",
+            "https://user@page.test/a%2Fb?q=a%20b&q=second#part",
+            "https://page.test/A%2Fb?q=a%20b&q=second#part",
+        )) assertFalse(request.canUsePageMessageChannelsAt(other), other)
+    }
+
     @Test fun channelNamesCannotReplaceExistingBridgeOrFrameGlobals() {
         for (channel in listOf("window", "top", "constructor", "__proto__", "webkit", "JSAndroidBridge", "GYWebViewBridge", "ComposeWebViewEvent", "a.b", "a'", "1early", "x".repeat(81))) {
             assertFailsWith<IllegalArgumentException>(channel) { request().copy(pageMessageChannels = setOf(channel)) }

@@ -6,7 +6,7 @@ function document(address = 'http://legacy.test/captcha', subframe = false) {
   const messages = [];
   const window = {webkit: {messageHandlers: {ComposeWebViewPageMessage: {postMessage: value => messages.push(value)}}}};
   window.top = subframe ? {} : window;
-  const context = vm.createContext({window, location: new URL(address)});
+  const context = vm.createContext({window, location: new URL(address), URL});
   vm.runInContext(source, context);
   return {window, messages, context};
 }
@@ -34,3 +34,21 @@ for (const [address, frame] of [['http://legacy.test/other', false], ['https://l
   assert.equal(document(address, frame).window.earlyChannel, undefined);
 }
 console.log('PASS: production page channel bootstrap, early string exchange, frame/exact URL, captured nonce and stale reply');
+
+for (const declared of ['https://page.test', 'HTTPS://PAGE.TEST:443?q=a%20b#part', 'http://PAGE.TEST:80/initial.html?q=1#part']) {
+  const normalizedSource = source.replace('"http://legacy.test/captcha"', JSON.stringify(declared));
+  const current = new URL(declared);
+  const page = document();
+  delete page.window.earlyChannel;
+  delete page.window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__;
+  page.context.location = current;
+  vm.runInContext(normalizedSource, page.context);
+  assert.ok(page.window.earlyChannel, declared);
+  const delivered = [];
+  page.window.earlyChannel.onmessage = event => delivered.push(event.data);
+  assert.equal(page.window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__('document-A', 'earlyChannel', 'normalized reply'), true);
+  assert.deepEqual(delivered, ['normalized reply']);
+  page.context.location = new URL(current.href + '#next');
+  assert.equal(page.window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__('document-A', 'earlyChannel', 'different fragment'), false);
+}
+console.log('PASS: browser normalization retains bootstrap/reply and distinguishes fragment');

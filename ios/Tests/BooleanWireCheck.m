@@ -435,10 +435,25 @@ static void Check(void) {
         Require(![view validRequest:@{@"content": @{@"type": @"url", @"url": @"https://safe.example/page"}, @"pageMessageChannels": channels}], @"Malformed channel wire accepted");
     }
     Require(![view validRequest:@{@"content": @{@"type": @"html", @"html": @"empty origin"}, @"pageMessageChannels": @[@"NativeChannel"]}], @"Channel without HTTP(S) document origin accepted");
+    for (NSString *declared in @[@"https://safe.example", @"HTTPS://SAFE.EXAMPLE:443?q=a%20b#part"]) {
+        view.request = @{@"content": @{@"type": @"url", @"url": declared}, @"settings": @{@"javaScriptEnabled": @YES}, @"pageMessageChannels": @[@"NativeChannel"]};
+        NSString *actual = GYPageMessageDocumentURL(declared);
+        Require([view pageMessageAllowed:actual], @"Browser-normalized initial URL rejected");
+        for (NSString *suffix in @[@"/other", @"?extra=1", @"#next"])
+            Require(![view pageMessageAllowed:[actual stringByAppendingString:suffix]], @"Distinct document accepted");
+        NSMutableDictionary *policy = [view.request mutableCopy];
+        policy[@"navigationPolicy"] = @{@"allowedUrls": @[declared]}; view.request = policy;
+        Require(![view pageMessageAllowed:actual], @"Exact allowedUrls normalized unexpectedly");
+    }
+    NSString *escaped = @"https://safe.example/a%2Fb?q=a%20b&q=second#part";
+    for (NSString *other in @[@"https://safe.example/a/b?q=a%20b&q=second#part", @"https://safe.example/a%2fb?q=a%20b&q=second#part", @"https://safe.example/a%2Fb?q=a+b&q=second#part", @"https://safe.example/a%2Fb?q=second&q=a%20b#part", @"https://user@safe.example/a%2Fb?q=a%20b&q=second#part", @"https://safe.example/A%2Fb?q=a%20b&q=second#part"])
+        Require(![GYPageMessageDocumentURL(escaped) isEqual:GYPageMessageDocumentURL(other)], @"Escaped document components collapsed");
+    for (NSString *other in @[@"https://safe.example/?", @"https://safe.example/#", @"https://safe.example./"])
+        Require(![GYPageMessageDocumentURL(@"https://safe.example") isEqual:GYPageMessageDocumentURL(other)], @"Empty query/fragment or distinct host collapsed");
     GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
     __block NSMutableArray<NSDictionary *> *messages = [NSMutableArray array];
     [page hrv_setPropWithKey:@"onEvent" propValue:^(id value) { if ([value[@"type"] isEqual:@"pageMessage"]) [messages addObject:value]; }];
-    NSDictionary *pageRequest = @{@"content": @{@"type": @"html", @"html": @"<html><body>channel</body></html>", @"baseUrl": @"https://safe.example/page"},
+    NSDictionary *pageRequest = @{@"content": @{@"type": @"html", @"html": @"<html><body>channel</body></html>", @"baseUrl": @"https://safe.example"},
         @"settings": @{@"javaScriptEnabled": @YES}, @"pageMessageChannels": @[@"NativeChannel"],
         @"navigationPolicy": @{@"allowedSchemes": @[@"http", @"https", @"about"]},
         @"scripts": @[@{@"id": @"early", @"source": @"window.NativeChannel.onmessage=function(event){window.replyData=event.data;};window.NativeChannel.postMessage('early');", @"injectionTime": @"DOCUMENT_START", @"onlyForTrustedMainFrame": @NO}]};

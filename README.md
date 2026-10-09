@@ -110,7 +110,7 @@ classDiagram
 
 源码入口：[请求与安全](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt)、[导航规则](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt)、[CMP 入口与状态](src/commonMain/kotlin/io/github/gycrosskit/composewebview/ComposeWebView.kt)、[Kuikly 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt)、[Android 原生接线](webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt)。`AppWebViewState` 属于当前组合位置，不能放进 ViewModel 或跨页面复用；Kuikly 命令通过异步回调返回。
 
-具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，当前使用 rc.15 / HAR rc.13：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability，隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
+具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，当前使用 rc.15 / HAR rc.13：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
 
 ## 平台与模块
 
@@ -181,6 +181,8 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 - JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTPS 来源；TLS 错误拒绝加载。
 - 导航拦截由预先下发的 `navigationPolicy` 同步判断，事件用于报告结果；`allowedOrigins` 精确匹配 scheme、host 和有效端口。
 - rc.11 增加 `allowedUrls`，按完整 URL 字符串同步限制主文档，与 scheme、来源和拒绝规则同时生效；空集合不增加限制，不归一化默认端口、路径、查询或 fragment，也不限制 iframe/子资源。
+- Android CMP/Kuikly 在 HTTP(S) 主文档非 GET 请求发送前补查导航策略。配置 `allowedUrls`、`allowedOrigins`、`blockedRules` 或限制 HTTP(S) scheme 时，即使首地址允许也保守拒绝，并在 UI 线程报告 `Navigation(blocked=true)`；默认策略 POST、iframe/XHR 不受此额外限制。原因是 [Android WebViewClient](https://developer.android.com/reference/android/webkit/WebViewClient) 不为 POST 调用 `shouldOverrideUrlLoading`，且 `shouldInterceptRequest` 仅检查 redirect 的首地址，无法保证 307/308 保留 POST 后仍符合白名单。
+- Android 临时弹窗仅解析 GET 目标并沿用当前窗口；非 GET 主文档始终拒绝并通知，不先联网，也不把 POST 改为 GET 重放。
 - iOS 18.4 以下不能开启受控原生文件选择，返回 `CapabilityUnsupported(FILE_CHOOSER)`；旧系统的 DOM 拦截不能保证原生文件隔离。iOS18.4+ 与 HarmonyOS H5 `capture` 复用系统拍摄能力，核验权限、来源、文档代次、MIME 和大小；取消/失败不回传文件，成功临时文件在文档撤销时清理。
 - 导航、隐藏、请求切换和销毁撤销旧消息端口、系统请求与迟到回调。隐藏不取消当前文档初始化：脚本仍受 JavaScript 开关与可信主文档门禁，显示不会重跑副作用脚本或重载页面。应用负责业务脚本输入编码和页面生命周期。
 

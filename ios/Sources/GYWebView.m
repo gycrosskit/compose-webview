@@ -63,6 +63,15 @@ static NSDictionary *GYOrigin(NSString *value) {
     if (!host.length || (![host hasPrefix:@"["] && [[host componentsSeparatedByString:@"."] containsObject:@""])) return nil;
     return @{@"scheme": scheme, @"host": host, @"port": url.port ?: ([scheme isEqual:@"https"] ? @443 : @80)};
 }
+static NSString *GYPageMessageDocumentURL(NSString *value) {
+    if (!GYOrigin(value)) return nil;
+    NSURLComponents *url = [NSURLComponents componentsWithString:value];
+    url.scheme = url.scheme.lowercaseString;
+    url.host = url.host.lowercaseString;
+    if (url.port.integerValue == ([url.scheme isEqual:@"https"] ? 443 : 80)) url.port = nil;
+    if (!url.percentEncodedPath.length) url.percentEncodedPath = @"/";
+    return url.string;
+}
 static NSString *GYSourceOrigin(WKSecurityOrigin *source) {
     NSString *host = source.host;
     if ([host containsString:@":"] && ![host hasPrefix:@"["]) host = [NSString stringWithFormat:@"[%@]", host];
@@ -277,7 +286,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (BOOL)pageMessageAllowed:(NSString *)url {
     NSDictionary *content = self.request[@"content"], *policy = self.request[@"navigationPolicy"];
     NSString *initial = [content[@"type"] isEqual:@"url"] ? GYString(content[@"url"]) : GYString(content[@"baseUrl"]);
-    if (![self.request[@"pageMessageChannels"] count] || !GYBool(self.request[@"settings"], @"javaScriptEnabled", NO) || !GYOrigin(initial) || ![initial isEqual:url]) return NO;
+    if (![self.request[@"pageMessageChannels"] count] || !GYBool(self.request[@"settings"], @"javaScriptEnabled", NO) || !GYOrigin(initial) || ![GYPageMessageDocumentURL(initial) isEqual:GYPageMessageDocumentURL(url)]) return NO;
     NSString *scheme = [NSURLComponents componentsWithString:url].scheme.lowercaseString;
     if (![(policy[@"allowedSchemes"] ?: @[@"http", @"https"]) containsObject:scheme]) return NO;
     if ([policy[@"allowedUrls"] count] && ![policy[@"allowedUrls"] containsObject:url]) return NO;
@@ -294,7 +303,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (NSString *)pageMessageScript {
     NSDictionary *content = self.request[@"content"];
     NSString *initial = [content[@"type"] isEqual:@"url"] ? GYString(content[@"url"]) : GYString(content[@"baseUrl"]);
-    if (self.pageMessageRevoked || ![self pageMessageAllowed:initial]) return nil;
+    if (self.pageMessageRevoked || (![self pageMessageAllowed:initial] && ![self pageMessageAllowed:GYPageMessageDocumentURL(initial)])) return nil;
     NSString *channels = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:self.request[@"pageMessageChannels"] options:0 error:nil] encoding:NSUTF8StringEncoding];
     return [[[WEB_VIEW_PAGE_MESSAGE_SCRIPT stringByReplacingOccurrencesOfString:@"__GY_PAGE_TOKEN_JSON__" withString:GYQuote(self.documentToken)] stringByReplacingOccurrencesOfString:@"__GY_PAGE_CHANNELS_JSON__" withString:channels] stringByReplacingOccurrencesOfString:@"__GY_PAGE_URL_JSON__" withString:GYQuote(initial)];
 }
