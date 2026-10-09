@@ -3,6 +3,10 @@ name: 评审状态说明
 on:
   issue_comment:
     types: [created, edited]
+  pull_request:
+    paths:
+      - .github/workflows/review-status-zh.yml
+      - verification/ci/test_review_status.py
 
 permissions:
   issues: write
@@ -12,8 +16,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - run: python3 verification/ci/test_review_status.py
   translate:
     if: >-
+      github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       github.event.comment.user.id == 199175422 &&
       github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
@@ -75,20 +91,46 @@ jobs:
                   return stamp.astimezone(datetime.timezone(datetime.timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S（北京时间）')
               return re.sub(r'<relative-time datetime="([^"]+)">[^<]*</relative-time>', local_time, body)
 
-          event = json.load(open(os.environ['GITHUB_EVENT_PATH']))
+          with open(os.environ['GITHUB_EVENT_PATH'], encoding='utf-8') as source:
+              event = json.load(source)
           comment_id = int(event['comment']['id'])
-          url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/comments/{comment_id}"
+          repository = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}"
+          url = f"{repository}/issues/comments/{comment_id}"
           headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
-          # 读取当前评论，避免排队事件把旧提交或旧审查状态写回去。
-          with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
-              comment = json.load(response)
+          def api(url, body=None, method='GET'):
+              data = None if body is None else json.dumps(body, ensure_ascii=False).encode()
+              request = urllib.request.Request(url, data=data, headers={**headers, 'Content-Type': 'application/json'}, method=method)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response), response.headers.get('Link', '')
+
+          comment, _ = api(url)
           assert comment['user']['id'] == 199175422 and comment['user']['login'] == 'chatgpt-codex-connector[bot]' and comment['user']['type'] == 'Bot'
           translated = translate(comment['body'])
-          if translated != comment['body']:
-              request = urllib.request.Request(url, data=json.dumps({'body': translated}, ensure_ascii=False).encode(), headers={**headers, 'Content-Type': 'application/json'}, method='PATCH')
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  assert json.load(response)['body'] == translated
-              print('固定状态提示已翻译。')
-          else:
+          if translated == comment['body']:
               print('当前评论无需翻译。')
+              raise SystemExit(0)
+          # 评论 PATCH 不支持版本前置条件；另存说明，保留 Codex 原始状态为权威来源。
+          marker = f'<!-- gycrosskit-review-status:{comment_id} -->'
+          translated = translated.replace('<!-- codex-pull-request-review-summary -->', '')
+          translated = f"{marker}\n{translated.strip()}\n\n状态同步自 [Codex 原始评论]({comment['html_url']})，原文折叠保留。"
+          assert '@codex' not in translated
+          mirror = None
+          comments_url = event['issue']['comments_url'] + '?per_page=100'
+          while comments_url:
+              comments, links = api(comments_url)
+              mirror = next((c for c in comments if c['user']['login'] == 'github-actions[bot]' and c['user']['type'] == 'Bot' and c['body'].startswith(marker)), None)
+              if mirror:
+                  break
+              next_link = re.search(r'<([^>]+)>; rel="next"', links)
+              comments_url = next_link[1] if next_link else None
+          if mirror is None:
+              api(event['issue']['comments_url'], {'body': translated}, 'POST')
+          elif mirror['body'] != translated:
+              api(mirror['url'], {'body': translated}, 'PATCH')
+          # 只折叠已同步的固定提示；问题正文不匹配此任务，仍按原位置展示。
+          query = 'mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { minimizedComment { isMinimized } } }'
+          result, _ = api('https://api.github.com/graphql', {'query': query, 'variables': {'id': comment['node_id']}}, 'POST')
+          assert not result.get('errors'), result.get('errors')
+          assert result['data']['minimizeComment']['minimizedComment']['isMinimized']
+          print('固定状态说明已同步，原始评论已折叠。')
           PY
