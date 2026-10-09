@@ -1,16 +1,16 @@
 # GY CrossKit WebView
 
-> 2026-10-08 已发布预发行：Maven 0.2.0-rc.15 / Git Pod 0.2.0-rc.15。冻结归档与严格公开产物检查已通过；[精确版本 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.15)、[远程消费 CI](https://github.com/gycrosskit/compose-webview/actions/runs/37769791984)分别记录产物和 Android/Native 结果。真实设备、云账号与宿主业务尚未验收。
+> 2026-10-09 发布版本：Maven 0.2.0-rc.16 / Git Pod 0.2.0-rc.16；OHOS HAR 保持 0.2.0-rc.13。包含 Android 主文档 POST 导航门禁、初始 URL 页面通道规范化和 iOS JavaScript 关闭时的全屏退出修复。见[rc.16 发布验收与边界](docs/0.2.0-rc.16发布验收.md)和[精确版本 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.16)，各渠道以实际发布结果为准。真实设备与宿主业务尚未验收。
 
-2026-10-08 功能索引：core提供请求/安全/导航，根模块提供CMP Android/iOS，webview-kuikly提供raw与KuiklyCompose Android/iOS/OHOS；任意同步导航决策、iOS禁图/文件选择和OHOSCookie等仍有明确差异。 详见[功能与平台差异](docs/功能与平台差异.md)，含固定基线、五入口矩阵、真实回归与未验收范围。当前发布组合：Maven/Git Pod 0.2.0-rc.15；OHOS HAR 0.2.0-rc.13，配套system-actions-native 0.2.0-rc.4。各渠道消费与设备验收分别核对。
+2026-10-08 功能索引：core提供请求/安全/导航，根模块提供CMP Android/iOS，webview-kuikly提供raw与KuiklyCompose Android/iOS/OHOS；任意同步导航决策、iOS禁图/文件选择和OHOSCookie等仍有明确差异。 详见[功能与平台差异](docs/功能与平台差异.md)，含固定基线、五入口矩阵、真实回归与未验收范围。当前发布组合：Maven/Git Pod 0.2.0-rc.16；OHOS HAR 0.2.0-rc.13，配套system-actions-native 0.2.0-rc.4。各渠道消费与设备验收分别核对。
 
 最终核对（2026-10-08）：本轮重跑生产模型Compose接线与OHOS合同；真实WK/手势/consumer复用前轮，原生节点替身不是Renderer验收。 逐项时点与边界见[验证范围](docs/功能与平台差异.md#sdk系统与真实验证范围)。
 
-Maven `0.2.0-rc.14`新增 `io.github.gycrosskit.composewebview.kuikly.AppWebView` Composable，此入口从该版本提供；已发布 CMP 同名入口位于 `io.github.gycrosskit.composewebview`，raw `GYWebView` 保留兼容。`webview-kuikly` 现在传递依赖 KuiklyCompose / Compose runtime，宿主统一 Kuikly 与 compiler 版本；没有引入第二套 JetBrains CMP UI。独立消费可用 `-PverifyKuiklyCompose -PverifyLocalSource` 验证本地源码；远程验收使用 `-PremoteOnly -PwebViewVersion=0.2.0-rc.15`。新的 `verifyNoCmpUi` 门禁允许 KuiklyCompose/runtime 并拒绝第二套 CMP UI；开启 API probe 时另确认 KuiklyCompose 确实存在，历史远程基线 raw API 仍可验证。
+Maven `0.2.0-rc.14`新增 `io.github.gycrosskit.composewebview.kuikly.AppWebView` Composable，此入口从该版本提供；已发布 CMP 同名入口位于 `io.github.gycrosskit.composewebview`，raw `GYWebView` 保留兼容。`webview-kuikly` 现在传递依赖 KuiklyCompose / Compose runtime，宿主统一 Kuikly 与 compiler 版本；没有引入第二套 JetBrains CMP UI。独立消费可用 `-PverifyKuiklyCompose -PverifyLocalSource` 验证本地源码；远程验收使用 `-PremoteOnly -PwebViewVersion=0.2.0-rc.16`。新的 `verifyNoCmpUi` 门禁允许 KuiklyCompose/runtime 并拒绝第二套 CMP UI；开启 API probe 时另确认 KuiklyCompose 确实存在，历史远程基线 raw API 仍可验证。
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
-当前 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.15**：默认关闭的 `pageMessageChannels` 提供初始完整 HTTP(S) 主页面的具名早期双向 string 通道。Android/iOS 每次声明加载与显式 reload 重建物理 owner；隐藏、停止、后续主文档导航和释放同步撤销。OHOS HAR **0.2.0-rc.13** 的 v2 实现通过 document-start 引导初始主文档 capability；隐藏、停止和导航后须显式 reload 新建 owner，不由 show 恢复。默认空配置保留既有行为；配套 system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。详见[早期通道候选验收](docs/早期页面通道候选验收.md)。
+当前 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.16**：默认关闭的 `pageMessageChannels` 提供初始完整 HTTP(S) 主页面的具名早期双向 string 通道。Android/iOS 每次声明加载与显式 reload 重建物理 owner；隐藏、停止、后续主文档导航和释放同步撤销。OHOS HAR **0.2.0-rc.13** 的 v2 实现通过 document-start 引导初始主文档 capability；隐藏、停止和导航后须显式 reload 新建 owner，不由 show 恢复。默认空配置保留既有行为；配套 system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。详见[早期通道候选验收](docs/早期页面通道候选验收.md)。
 
 历史 Maven / Git Pod **rc.12** 不包含早期具名通道（与 OHOS HAR rc.12 的独立版本号区分）。其 CMP 前进历史、返回/退出全屏回执、共享异步退出脚本与旧 owner/取消修复在 rc.13 中保留；历史源码验证见 [rc.12 候选验收](docs/0.2.0-rc.12候选验收.md)。
 
@@ -110,7 +110,7 @@ classDiagram
 
 源码入口：[请求与安全](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt)、[导航规则](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt)、[CMP 入口与状态](src/commonMain/kotlin/io/github/gycrosskit/composewebview/ComposeWebView.kt)、[Kuikly 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt)、[Android 原生接线](webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt)。`AppWebViewState` 属于当前组合位置，不能放进 ViewModel 或跨页面复用；Kuikly 命令通过异步回调返回。
 
-具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，当前使用 rc.15 / HAR rc.13：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
+具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，当前使用 rc.16 / HAR rc.13：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
 
 ## 平台与模块
 
@@ -141,26 +141,26 @@ dependencyResolutionManagement {
 }
 ```
 
-以下为当前Maven/Git Pod 0.2.0-rc.15安装方式，包含新增KuiklyCompose AppWebView；OHOS HAR单独使用0.2.0-rc.13。在 KMP 的 `commonMain.dependencies` 按 UI 引擎选择：
+以下为当前Maven/Git Pod 0.2.0-rc.16安装方式，包含新增KuiklyCompose AppWebView；OHOS HAR单独使用0.2.0-rc.13。在 KMP 的 `commonMain.dependencies` 按 UI 引擎选择：
 
 ```kotlin
 // CMP Android/iOS
-implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.15")
+implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.16")
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.15")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.16")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖，也不适用于 CMP 入口：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.15'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.16'
 ```
 
-HarmonyOS HAR rc.13的Registry可安装性单独核验；从[本次Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.15) 下载 `WebViewNative.har`，配套实际 system-actions-native rc.4 HAR，按[HAR 接入指南](ohos/webview-native/README.md)的 root override 安装。不能把审核受理当作 Registry 可安装。
+HarmonyOS HAR rc.13的Registry可安装性单独核验；从[本次Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.16) 下载 `WebViewNative.har`，配套实际 system-actions-native rc.4 HAR，按[HAR 接入指南](ohos/webview-native/README.md)的 root override 安装。不能把审核受理当作 Registry 可安装。
 
 ## 快速使用
 
-以下是已发布 CMP `io.github.gycrosskit.composewebview.AppWebView` 示例；KuiklyCompose同名函数自0.2.0-rc.15提供，使用不同package，见[入口与差异](docs/功能与平台差异.md)。CMP 页面可直接加载 URL：
+以下是已发布 CMP `io.github.gycrosskit.composewebview.AppWebView` 示例；KuiklyCompose同名函数自0.2.0-rc.14提供，使用不同package，见[入口与差异](docs/功能与平台差异.md)。CMP 页面可直接加载 URL：
 
 ```kotlin
 import androidx.compose.runtime.Composable
