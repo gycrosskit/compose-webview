@@ -1,3 +1,9 @@
+# 0.2.0-rc.14
+
+- 配套 Maven/Git Pod 0.2.0-rc.16，包含 #37 初始页面 URL 规范化修复：scheme/host 大小写、默认端口与空路径采用同一文档身份；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。
+- pageStarted、导航、原生 bootstrap 与 document-start 脚本使用相同初始页面合同，保留主帧 capability、nonce、owner 和单次回复门禁。
+- SystemActions Native 保持 0.2.0-rc.4，Render 保持 2.28.0；源码/实际 HAR/Release 下载/Registry 安装分别核验，真实 ArkWeb/H5/设备未验收。
+
 # 0.2.0-rc.13
 
 - 配套Maven/Git Pod 0.2.0-rc.14；保留具名早期通道v2，补齐fileAccess映射和HTML MIME合同，严格拒绝不能兑现的设置。
