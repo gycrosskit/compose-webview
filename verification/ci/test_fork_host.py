@@ -32,20 +32,33 @@ if url.startswith('https://cloudflare-dns.com/'):
     print('200', end='')
 elif '--resolve' in args:
     assert args[args.index('--resolve') + 1] == 'maven.eazytec-cloud.com:443:61.177.127.227'
-    if os.environ['MOCK_CASE'] == 'doh_tls':
+    if os.environ['MOCK_CASE'] in ['doh_tls', 'marker_404_tls']:
         sys.exit(35)
+    if os.environ['MOCK_CASE'] == 'marker_404_certificate':
+        sys.exit(60)
+    if os.environ['MOCK_CASE'] == 'marker_404_http':
+        print('404 61.177.127.227 0.100000', end='')
+        sys.exit(22)
     if os.environ['MOCK_CASE'] in ['fallback_tls', 'fallback_http', 'fallback_unreachable', 'fallback_read_timeout']:
         case = os.environ['MOCK_CASE']
         print('000 0.000000' if case == 'fallback_unreachable' else '000 61.177.127.227 0.100000', end='')
         sys.exit({'fallback_tls': 35, 'fallback_http': 22, 'fallback_unreachable': 28, 'fallback_read_timeout': 28}[case])
-    print('200 ' + ('8.8.8.8' if os.environ['MOCK_CASE'] in ['doh_mismatch', 'fallback_mismatch'] else '61.177.127.227') + ' 0.100000', end='')
+    print('200 ' + ('8.8.8.8' if os.environ['MOCK_CASE'] in ['doh_mismatch', 'fallback_mismatch', 'marker_404_mismatch'] else '61.177.127.227') + ' 0.100000', end='')
 else:
-    assert url.startswith('https://maven.eazytec-cloud.com/') and url.endswith('.pom')
+    assert url == 'https://maven.eazytec-cloud.com/nexus/repository/maven-public/org/jetbrains/kotlin/multiplatform/org.jetbrains.kotlin.multiplatform.gradle.plugin/2.2.21-1.0.0/org.jetbrains.kotlin.multiplatform.gradle.plugin-2.2.21-1.0.0.pom'
     case = os.environ['MOCK_CASE']
     if case.startswith('doh_'):
         sys.exit(6)
     if case in ['tls', 'http']:
         sys.exit(35 if case == 'tls' else 22)
+    if case == 'certificate':
+        sys.exit(60)
+    if case in ['marker_404_tls_status', 'marker_404_certificate_status']:
+        print('404 61.177.127.227 0.100000', end='')
+        sys.exit(35 if case == 'marker_404_tls_status' else 60)
+    if case.startswith('marker_'):
+        print(case.split('_')[1] + ' 61.177.127.227 0.100000', end='')
+        sys.exit(56 if case.endswith('_macos') else 22)
     if case in ['tls_timeout', 'read_timeout']:
         print('000 61.177.127.227 0.100000', end='')
         sys.exit(28)
@@ -73,7 +86,11 @@ Path(os.environ['MOCK_HOSTS']).write_text(sys.stdin.read())
     environment = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
                        GITHUB_ACTIONS='true', RUNNER_ENVIRONMENT='github-hosted', RUNNER_OS='Linux',
                        MOCK_HOSTS=str(root / 'hosts'), MOCK_CALLS=str(root / 'calls'))
-    cases = ['outside_ci', 'self_hosted', 'normal', 'write_failure', 'private', 'tls', 'http',
+    cases = ['outside_ci', 'self_hosted', 'normal', 'write_failure', 'private', 'tls', 'certificate', 'http',
+             'marker_404', 'marker_404_unconfigured', 'marker_404_private', 'marker_404_invalid',
+             'marker_404_tls', 'marker_404_certificate', 'marker_404_http', 'marker_404_mismatch',
+             'marker_404_macos', 'marker_000_macos', 'marker_403_macos',
+             'marker_404_tls_status', 'marker_404_certificate_status', 'marker_401', 'marker_403', 'marker_500',
              'timeout_recovered', 'connect_recovered', 'timeout_exhausted',
              'tls_timeout', 'read_timeout', 'fallback_valid', 'fallback_private', 'fallback_invalid',
              'fallback_dns', 'fallback_refused',
@@ -95,16 +112,16 @@ Path(os.environ['MOCK_HOSTS']).write_text(sys.stdin.read())
         if case == 'doh_boolean_answer_type':
             answer['Answer'][0]['type'] = True
         environment.update(MOCK_CASE=case, MOCK_ANSWER=json.dumps(answer),
-                           CI_FORK_HOST_FALLBACK_IP=('127.0.0.1' if case == 'fallback_private' else 'invalid' if case == 'fallback_invalid' else ADDRESS),
+                           CI_FORK_HOST_FALLBACK_IP=('127.0.0.1' if case in ['fallback_private', 'marker_404_private'] else 'invalid' if case in ['fallback_invalid', 'marker_404_invalid'] else ADDRESS),
                            GITHUB_ACTIONS='false' if case == 'outside_ci' else 'true',
                            RUNNER_ENVIRONMENT='self-hosted' if case == 'self_hosted' else 'github-hosted')
-        if not case.startswith('fallback_') and case not in ['tls', 'http', 'tls_timeout', 'read_timeout', 'outside_ci', 'self_hosted']:
+        if (not case.startswith(('fallback_', 'marker_')) and case not in ['tls', 'certificate', 'http', 'tls_timeout', 'read_timeout', 'outside_ci', 'self_hosted']) or case == 'marker_404_unconfigured':
             environment['CI_FORK_HOST_FALLBACK_IP'] = ''
         for name in ['hosts', 'calls']:
             (root / name).unlink(missing_ok=True)
         result = subprocess.run(['bash', str(SCRIPT)], env=environment, capture_output=True, text=True)
         assert result.returncode == 0, (case, result.stderr)
-        pinned = case in ['normal', 'doh_valid', 'timeout_recovered', 'connect_recovered', 'fallback_valid', 'fallback_dns', 'fallback_refused']
+        pinned = case in ['normal', 'doh_valid', 'timeout_recovered', 'connect_recovered', 'fallback_valid', 'fallback_dns', 'fallback_refused', 'marker_404', 'marker_404_macos']
         assert (root / 'hosts').exists() == pinned, case
         assert ('job host address reused' in result.stdout) == pinned, case
         if pinned:
@@ -115,8 +132,10 @@ Path(os.environ['MOCK_HOSTS']).write_text(sys.stdin.read())
             assert not calls, case
         if case in ['timeout_recovered', 'connect_recovered', 'timeout_exhausted']:
             assert len(calls.splitlines()) == 3, (case, calls, result.stdout, result.stderr)
-        if case in ['tls', 'http', 'tls_timeout', 'read_timeout']:
+        if case in ['tls', 'certificate', 'http', 'tls_timeout', 'read_timeout', 'marker_401', 'marker_403', 'marker_500', 'marker_404_unconfigured', 'marker_404_private', 'marker_404_invalid', 'marker_000_macos', 'marker_403_macos', 'marker_404_tls_status', 'marker_404_certificate_status']:
             assert len(calls.splitlines()) == 1, case
+        if case.startswith('marker_404') and case not in ['marker_404_unconfigured', 'marker_404_private', 'marker_404_invalid', 'marker_404_tls_status', 'marker_404_certificate_status']:
+            assert len(calls.splitlines()) == 2, case
         if case.startswith('fallback_'):
             assert len(calls.splitlines()) == (3 if case in ['fallback_private', 'fallback_invalid'] else 2), case
     print(f'fork host trust boundaries: {len(cases)} cases passed (all hosts writes mocked)')
