@@ -30,6 +30,27 @@ class AndroidPageMessageChannelsTest {
 
     @Before fun resetProvider() { PageChannelProvider.listeners.clear() }
 
+    @Test fun `browser normalized owner URL preserves initial inbound and reply`() {
+        val request = request.copy(
+            content = WebViewContent.Url("https://page.test"),
+            navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf("https://page.test/")),
+        )
+        val owner = WebView(RuntimeEnvironment.getApplication())
+        owner.loadUrl("https://page.test/")
+        val events = mutableListOf<WebViewEvent>()
+        val session = AndroidPageMessageChannels(owner, { request }, { true }, events::add)
+        session.onPageStarted("https://page.test/")
+        val listener = PageChannelProvider.listeners.getValue(owner).getValue("PageReady")
+        val proxy = PageChannelReply()
+        listener.onPostMessage(owner, WebMessageCompat("normalized"), Uri.parse("https://page.test"), true, proxy)
+        val replyId = (events.single() as WebViewEvent.PageMessage).replyId
+        assertTrue(session.reply(replyId, "reply"))
+        owner.loadUrl("https://page.test/?next")
+        listener.onPostMessage(owner, WebMessageCompat("different query"), Uri.parse("https://page.test"), true, proxy)
+        assertEquals(1, events.size)
+        session.revoke()
+    }
+
     @Test fun `early raw message is frame checked and replies through its own proxy`() {
         val owner = WebView(RuntimeEnvironment.getApplication())
         val events = mutableListOf<WebViewEvent>()

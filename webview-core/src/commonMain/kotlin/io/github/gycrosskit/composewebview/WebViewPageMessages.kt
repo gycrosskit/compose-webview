@@ -1,13 +1,25 @@
 package io.github.gycrosskit.composewebview
 
+import io.ktor.http.Url
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 
 /** 具名通道只属于初始完整页面，既不扩张到同源其他路径，也不授予高权限 Bridge。 */
 fun WebViewRequest.canUsePageMessageChannelsAt(url: String?): Boolean =
     settings.javaScriptEnabled && pageMessageChannels.isNotEmpty() &&
-        content.initialOrigin()?.toHttpOrigin() != null && url == content.initialOrigin() &&
+        content.initialOrigin()?.toHttpOrigin() != null &&
+        url?.pageMessageDocumentUrl() == content.initialOrigin()?.pageMessageDocumentUrl() &&
         url != null && allowsNavigation(WebViewNavigationRequest(url, true, false))
+
+/** 仅规范化 authority 和空路径；path/query/fragment 保留原字节，不能退化成同源授权。 */
+internal fun String.pageMessageDocumentUrl(): String? = runCatching {
+    if (toHttpOrigin() == null) return null
+    val parsed = Url(this)
+    val suffix = substringAfter("://").dropWhile { it !in "/?#" }
+    val path = if (suffix.startsWith('/')) suffix else "/$suffix"
+    val port = if (parsed.port == parsed.protocol.defaultPort) "" else ":${parsed.port}"
+    "${parsed.protocol.name.lowercase()}://${parsed.host.lowercase()}$port$path"
+}.getOrNull()
 
 /** 两种平台的原生入站与回复都按 UTF-8 字节限制消息，正文不参与日志。 */
 fun isValidPageMessageData(data: String): Boolean =
@@ -26,7 +38,8 @@ private val RESERVED_PAGE_CHANNELS = setOf(
 
 /** iOS document-start 安装；nonce 被每个文档闭包捕获，不动态读取后续文档的 token。 */
 fun WebViewRequest.pageMessageScript(documentToken: String): String? {
-    if (!canUsePageMessageChannelsAt(content.initialOrigin())) return null
+    if (!canUsePageMessageChannelsAt(content.initialOrigin()) &&
+        !canUsePageMessageChannelsAt(content.initialOrigin()?.pageMessageDocumentUrl())) return null
     return WEB_VIEW_PAGE_MESSAGE_SCRIPT
         .replace("__GY_PAGE_TOKEN_JSON__", JsonPrimitive(documentToken).toString())
         .replace("__GY_PAGE_CHANNELS_JSON__", JsonArray(pageMessageChannels.map(::JsonPrimitive)).toString())
@@ -41,6 +54,11 @@ fun pageMessageReplyScript(documentToken: String, channel: String, data: String)
 /** 由 ios/generate-scripts.py 同步到原生 Pod，协议只维护一份。 */
 val WEB_VIEW_PAGE_MESSAGE_SCRIPT = """
     (function(token, channels, url) {
+      try {
+        var parsed = new URL(url);
+        var tail = url.substring(url.indexOf('://') + 3).replace(/^[^/?#]*/, '');
+        url = parsed.protocol + '//' + parsed.host + (tail[0] === '/' ? tail : '/' + tail);
+      } catch (_) { return; }
       if (window !== window.top || location.href !== url) return;
       var handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ComposeWebViewPageMessage;
       if (!handler || typeof handler.postMessage !== 'function') return;

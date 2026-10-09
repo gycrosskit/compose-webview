@@ -179,7 +179,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
       assert.deepEqual(calls, [channels?.length ? 'ordered' : 'legacy'], 'exactly one native injection API');
       const listeners = {}; const page = {addEventListener: (name, callback) => {listeners[name] = callback;}}; page.top = page;
       page.GYWebViewPageMessageNative = {pageMessageBootstrap: view.pageMessageBootstrap.bind(view), pageMessagePost: view.pageMessagePost.bind(view), pageMessageRevoke: view.pageMessageRevoke.bind(view)};
-      const context = {window: page, location: new URL('https://trusted.test/page'), document: {readyState: 'loading'}, crypto: crypto.webcrypto, Uint8Array, TextEncoder};
+      const context = {window: page, URL, location: new URL('https://trusted.test/page'), document: {readyState: 'loading'}, crypto: crypto.webcrypto, Uint8Array, TextEncoder};
       const nativeScripts = channels?.length ? selectedScripts : [...selectedScripts].sort((a,b) => a.script < b.script ? -1 : a.script > b.script ? 1 : 0);
       for (const item of nativeScripts) {try {vm.runInNewContext(item.script, context);} catch (_) {}}
       assert.equal(page.laterInitialization, true, 'independent ScriptItems retain later initialization after throw/syntax error');
@@ -193,10 +193,10 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   const channelRequest = request({ settings: { javaScriptEnabled: true }, pageMessageChannels: ['earlyChannel'], scripts: [
     { id: 'early', source: "window.earlyChannel.postMessage('first');", injectionTime: 'DOCUMENT_START', onlyForTrustedMainFrame: true }
   ] });
-  function channelPage(view, parent) {
+  function channelPage(view, parent, address = 'https://trusted.test/page') {
     const listeners = {}; const page = { addEventListener: (name, callback) => { (listeners[name] ||= []).push(callback); } }; page.top = parent || page;
     page.GYWebViewPageMessageNative = { pageMessageBootstrap: view.pageMessageBootstrap.bind(view), pageMessagePost: view.pageMessagePost.bind(view), pageMessageRevoke: view.pageMessageRevoke.bind(view) };
-    const context = { window: page, location: new URL('https://trusted.test/page'), document: {readyState: 'loading'}, crypto: crypto.webcrypto,
+    const context = { window: page, URL, location: new URL(address), document: {readyState: 'loading'}, crypto: crypto.webcrypto,
       Uint8Array, TextEncoder, addEventListener: page.addEventListener, Event: class { constructor(type) { this.type = type; } } };
     view.documentStartScripts().forEach(item => vm.runInNewContext(item.script, context)); return {page, context, listeners};
   }
@@ -206,6 +206,41 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     return {view, events, ...document};
   }
   const messages = events => events.filter(event => event.type === 'pageMessage');
+  for (const declared of ['https://trusted.test', 'HTTPS://TRUSTED.TEST:443?q=a%20b#part']) {
+    const view = new ChannelView(); const events = [];
+    view.setProp('onEvent', event => events.push(event));
+    const actual = new URL(declared).href;
+    const declaredRequest = {...channelRequest, content: {type: 'url', url: declared}};
+    view.setProp('request', encoded(declaredRequest)); view.onControllerAttached(); view.controller.url = actual;
+    view.onPageBegin(actual); view.interceptNavigation(requestForNavigation(actual, false));
+    const document = channelPage(view, null, actual); view.controller.scriptContext = document.context;
+    assert.equal(messages(events).length, 1, 'normalized initial callbacks and bootstrap retain channel');
+    const replies = []; const delivered = [];
+    document.page.earlyChannel.onmessage = event => delivered.push(event.data);
+    view.call('replyPageMessage', encoded({replyId: messages(events)[0].replyId, data: 'normalized reply'}), value => replies.push(value.result));
+    await Promise.resolve(); await Promise.resolve();
+    assert.deepEqual(replies, [true]); assert.deepEqual(delivered, ['normalized reply']);
+    for (const other of [actual + '/other', actual + '?extra', actual + '#next', 'https://user@trusted.test/']) {
+      view.controller.url = other; document.page.earlyChannel.postMessage('different document');
+      assert.equal(messages(events).length, 1, other);
+    }
+    view.onDestroy();
+    const exact = new ChannelView(); exact.setProp('request', encoded({...declaredRequest, navigationPolicy: {...declaredRequest.navigationPolicy, allowedUrls: [declared]}}));
+    exact.onControllerAttached(); exact.controller.url = actual;
+    const denied = channelPage(exact, null, actual); denied.page.earlyChannel.postMessage('normalized policy bypass');
+    assert.equal(exact.pageMessageNonce, '', 'raw allowedUrls does not authorize normalized actual URL'); exact.onDestroy();
+  }
+  const exactDocument = new ChannelView();
+  const escaped = 'https://trusted.test/a%2Fb?q=a%20b&q=second#part';
+  exactDocument.setProp('request', encoded({...channelRequest, content: {type: 'url', url: escaped}}));
+  for (const other of [escaped.replace('%2F', '/'), escaped.replace('%2F', '%2f'), escaped.replace('%20', '+'),
+    escaped.replace('q=a%20b&q=second', 'q=second&q=a%20b'), escaped.replace('/a', '/A'), escaped.replace('https://', 'https://user@')]) {
+    assert.equal(exactDocument.isInitialPageMessageUrl(other), false, other);
+  }
+  exactDocument.setProp('request', encoded({...channelRequest, content: {type: 'url', url: 'https://trusted.test'}}));
+  for (const other of ['https://trusted.test/?', 'https://trusted.test/#', 'https://trusted.test./'])
+    assert.equal(exactDocument.isInitialPageMessageUrl(other), false, other);
+  exactDocument.onDestroy();
   const first = channelOwner();
   assert.equal(first.page.earlyChannel.postMessage.toString().includes(first.view.pageMessageSecret), false, 'facade source does not disclose owner secret');
   assert.deepEqual(Object.keys(messages(first.events)[0]).sort(), ['channel', 'data', 'replyId', 'type'], 'wire event contains no capability');
