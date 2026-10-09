@@ -1,0 +1,136 @@
+name: 评审状态说明
+
+on:
+  issue_comment:
+    types: [created, edited]
+  pull_request:
+    paths:
+      - .github/workflows/review-status-zh.yml
+      - verification/ci/test_review_status.py
+
+permissions:
+  issues: write
+
+concurrency:
+  group: review-status-zh-${{ github.event.comment.id }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - run: python3 verification/ci/test_review_status.py
+  translate:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      github.event.comment.user.id == 199175422 &&
+      github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+      github.event.comment.user.type == 'Bot' &&
+      (contains(github.event.comment.body, '## Codex Review Summary') ||
+       startsWith(github.event.comment.body, 'Codex Review: Didn'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: 翻译固定状态提示
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import re
+          import urllib.request
+
+          def translate(body):
+              summary = body.startswith('<!-- codex-pull-request-review-summary -->') and ('## Codex Review Summary' in body or '## 评审结果' in body)
+              no_findings = body.startswith("Codex Review: Didn't find any major issues.")
+              if not summary and not no_findings:
+                  return body
+              if no_findings:
+                  body = re.sub(r'\ACodex Review: Didn\x27t find any major issues\.[^\n]*', '评审结果：本次未发现重大问题。', body)
+              replacements = {
+                  '## Codex Review Summary': '## 评审结果',
+                  'This comment shows the latest Codex review activity on this pull request.': '此评论显示该 PR 的最新评审状态。',
+                  '| Review | Status | Commit | Review trigger |': '| 审查 | 状态 | 提交 | 触发方式 |',
+                  '**Code Review**': '**代码审查**',
+                  '**Security Review**': '**安全审查**',
+                  '**Running** since': '**审查中**，开始于',
+                  '**Completed**': '**已完成**',
+                  '**Queued**': '**等待中**',
+                  '**Failed**': '**失败**',
+                  '**Cancelled**': '**已取消**',
+                  'Manual request': '手动请求',
+                  'Automatic review': '自动审查',
+                  'Pull request opened': '创建 PR',
+                  'Ready for review': '草稿转为可审查',
+                  '**Reviewed commit:**': '**已审查提交：**',
+                  'About Codex in GitHub': '关于 GitHub 中的 Codex',
+                  'Your team has set up Codex to review pull requests in this repo': '本仓库已接入 Codex 代码审查',
+                  'Reviews are triggered when you': '可用的审查触发方式如下，是否自动触发以仓库设置为准：',
+                  '- Open a pull request for review': '- 创建待审查的 PR',
+                  '- Mark a draft as ready': '- 将草稿 PR 标记为可审查',
+                  '- Comment "@codex review" or "@codex security review".': '- 在 PR 评论中手动请求代码审查或安全审查。',
+                  '- Comment "@codex review".': '- 在 PR 评论中手动请求代码审查。',
+                  'Codex reacts with 👀 while any review is running, comments if it has suggestions, and reacts with 👍 once all reviews finish with no findings.': '👀 表示正在审查；有问题时 Codex 会留下意见；所有审查完成且没有发现问题时，会以 👍 表示完成。',
+                  'If Codex has suggestions, it will comment; otherwise it will react with 👍.': '有问题时 Codex 会留下意见；没有发现问题时，会以 👍 表示完成。',
+                  'Codex can also answer questions or update the PR. Try commenting "@codex address that feedback".': 'Codex 也可以回答问题或更新 PR，修复操作需要单独请求。',
+              }
+              for old, new in replacements.items():
+                  body = body.replace(old, new)
+              def local_time(match):
+                  stamp = datetime.datetime.fromisoformat(match[1].replace('Z', '+00:00'))
+                  return stamp.astimezone(datetime.timezone(datetime.timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S（北京时间）')
+              return re.sub(r'<relative-time datetime="([^"]+)">[^<]*</relative-time>', local_time, body)
+
+          with open(os.environ['GITHUB_EVENT_PATH'], encoding='utf-8') as source:
+              event = json.load(source)
+          comment_id = int(event['comment']['id'])
+          repository = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}"
+          url = f"{repository}/issues/comments/{comment_id}"
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+          def api(url, body=None, method='GET'):
+              data = None if body is None else json.dumps(body, ensure_ascii=False).encode()
+              request = urllib.request.Request(url, data=data, headers={**headers, 'Content-Type': 'application/json'}, method=method)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response), response.headers.get('Link', '')
+
+          comment, _ = api(url)
+          assert comment['user']['id'] == 199175422 and comment['user']['login'] == 'chatgpt-codex-connector[bot]' and comment['user']['type'] == 'Bot'
+          translated = translate(comment['body'])
+          if translated == comment['body']:
+              print('当前评论无需翻译。')
+              raise SystemExit(0)
+          # 评论 PATCH 不支持版本前置条件；另存说明，保留 Codex 原始状态为权威来源。
+          marker = f'<!-- gycrosskit-review-status:{comment_id} -->'
+          translated = translated.replace('<!-- codex-pull-request-review-summary -->', '')
+          translated = f"{marker}\n{translated.strip()}\n\n状态同步自 [Codex 原始评论]({comment['html_url']})，原文折叠保留。"
+          assert '@codex' not in translated
+          mirror = None
+          comments_url = event['issue']['comments_url'] + '?per_page=100'
+          while comments_url:
+              comments, links = api(comments_url)
+              mirror = next((c for c in comments if c['user']['login'] == 'github-actions[bot]' and c['user']['type'] == 'Bot' and c['body'].startswith(marker)), None)
+              if mirror:
+                  break
+              next_link = re.search(r'<([^>]+)>; rel="next"', links)
+              comments_url = next_link[1] if next_link else None
+          if mirror is None:
+              api(event['issue']['comments_url'], {'body': translated}, 'POST')
+          elif mirror['body'] != translated:
+              api(mirror['url'], {'body': translated}, 'PATCH')
+          # 只折叠已同步的固定提示；问题正文不匹配此任务，仍按原位置展示。
+          query = 'mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { minimizedComment { isMinimized } } }'
+          result, _ = api('https://api.github.com/graphql', {'query': query, 'variables': {'id': comment['node_id']}}, 'POST')
+          assert not result.get('errors'), result.get('errors')
+          assert result['data']['minimizeComment']['minimizedComment']['isMinimized']
+          print('固定状态说明已同步，原始评论已折叠。')
+          PY

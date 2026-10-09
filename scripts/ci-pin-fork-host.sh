@@ -47,7 +47,8 @@ for ci_attempt in 1 2 3; do
     if [[ "$ci_connect_error" != true || -n "$ci_fallback_address" ]]; then break; fi
     if [[ "$ci_attempt" != 3 ]]; then sleep 2; fi
 done
-if [[ "$ci_connect_error" == true && -n "$ci_fallback_address" ]]; then
+if [[ -n "$ci_fallback_address" && ( "$ci_connect_error" == true || ( ( "$ci_probe_error" == 22 || "$ci_probe_error" == 56 ) && "${ci_probe%% *}" == 404 ) ) ]]; then
+    # 默认地址可能缺少此固定 marker；404 只允许尝试已配置的受控地址。
     # 受控 CI 配置只提供候选；每个 job 仍验证原域名证书、HTTP 200 和实际地址。
     ci_expected_address="$ci_fallback_address"
     if ci_probe="$("${ci_curl[@]}" --resolve "$ci_dns_host:443:$ci_expected_address" --output "$ci_probe_dir/marker.pom" --write-out '%{http_code} %{remote_ip} %{time_connect}' "$ci_marker_url")"; then
