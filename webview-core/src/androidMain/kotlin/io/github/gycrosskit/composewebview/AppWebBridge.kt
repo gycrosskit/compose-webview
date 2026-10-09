@@ -19,7 +19,8 @@ class AndroidPageMessageChannels(
     private val channels = initialRequest.pageMessageChannels.toSet()
     private val proxies = mutableMapOf<String, JavaScriptReplyProxy>()
     private val replies = mutableMapOf<String, JavaScriptReplyProxy>()
-    private var active = initialRequest.canUsePageMessageChannelsAt(initialUrl)
+    private var active = initialRequest.canUsePageMessageChannelsAt(initialUrl) ||
+        initialRequest.canUsePageMessageChannelsAt(initialUrl?.pageMessageDocumentUrl())
     private var started = false
     private val installed = mutableSetOf<String>()
 
@@ -67,8 +68,7 @@ class AndroidPageMessageChannels(
         if (!active || !isOwner() || !owner.isActiveAppWebView()) return false
         val current = request()
         return current.content == initialRequest.content && current.pageMessageChannels == channels &&
-            current.canUsePageMessageChannelsAt(initialUrl) &&
-            (owner.url == null || current.canUsePageMessageChannelsAt(owner.url))
+            current.canUsePageMessageChannelsAt(owner.url ?: initialUrl?.pageMessageDocumentUrl())
     }
 
     fun reply(replyId: String, data: String): Boolean {

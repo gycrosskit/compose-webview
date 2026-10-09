@@ -295,7 +295,7 @@ export class GYWebView extends KuiklyRenderBaseView {
       target: 'CURRENT_WINDOW', blocked: !allowed });
     if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
     if (mainFrame && allowed) {
-      const initial = !this.pageMessageIntercepted && target === this.initialPageMessageUrl();
+      const initial = !this.pageMessageIntercepted && this.isInitialPageMessageUrl(target);
       this.pageMessageIntercepted = true; this.documentReady = false; this.revokePending(!initial);
       if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
     }
@@ -341,7 +341,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.loadingRequest = false;
     this.pendingHtmlNavigation = false;
     const controllerOwner = this.controller; const ownerToken = this.renderToken;
-    const initial = !this.pageMessageStarted && value === this.initialPageMessageUrl();
+    const initial = !this.pageMessageStarted && this.isInitialPageMessageUrl(value);
     this.pageMessageStarted = true;
     this.revokePending(!initial);
     if (controllerOwner === this.controller && this.isRenderActive(ownerToken)) this.emit({ type: 'pageStarted', url: value });
@@ -390,18 +390,33 @@ export class GYWebView extends KuiklyRenderBaseView {
     return this.request?.content.type === 'url' ? this.request.content.url || '' : this.request?.content.baseUrl || '';
   }
 
+  private isInitialPageMessageUrl(value: string): boolean {
+    const actualOrigin = origin(value);
+    if (!actualOrigin || actualOrigin !== origin(this.initialPageMessageUrl())) return false;
+    try {
+      const actual = new url.URL(value); const initial = new url.URL(this.initialPageMessageUrl());
+      const suffix = (address: string): string => {
+        const tail = address.substring(address.indexOf('://') + 3).replace(/^[^/?#]*/, '');
+        return tail.startsWith('/') ? tail : '/' + tail;
+      };
+      return actual.hostname.toLowerCase() === initial.hostname.toLowerCase() &&
+        suffix(value) === suffix(this.initialPageMessageUrl());
+    }
+    catch (_) { return false; }
+  }
+
   private pageMessageAllowed(): boolean {
     return this.pageMessageActive && this.visible && this.attached && this.isRenderActive(this.renderToken) &&
       this.request?.settings.javaScriptEnabled === true && !!this.pageMessageSecret &&
-      navigationAllowed(this.initialPageMessageUrl(), true, this.request) &&
-      (!this.currentUrl() || this.currentUrl() === this.initialPageMessageUrl());
+      navigationAllowed(this.currentUrl() || this.initialPageMessageUrl(), true, this.request) &&
+      (!this.currentUrl() || this.isInitialPageMessageUrl(this.currentUrl()));
   }
 
   /** URL 只辅助初始文档检查；消息授权依赖私有主文档 capability，不能把 URL 当 frame 认证。 */
   pageMessageBootstrap(key: string, nonce: string): boolean {
     if (key !== this.pageMessageSecret || !this.pageMessageAllowed() || this.pageMessageNonce || !/^[a-f0-9]{64}$/.test(nonce)) return false;
     try {
-      if (this.controller.getLastJavascriptProxyCallingFrameUrl() !== this.initialPageMessageUrl()) return false;
+      if (!this.isInitialPageMessageUrl(this.controller.getLastJavascriptProxyCallingFrameUrl())) return false;
     } catch (_) { return false; }
     // 首次门禁在同步宿主回调前消费；同一 owner 的后续同 URL 文档不能再次引导。
     this.pageMessageNonce = nonce;
@@ -427,6 +442,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   private pageMessageScript(): string {
     if (!this.pageMessageActive || !this.pageMessageSecret || !this.request?.pageMessageChannels?.length) return '';
     return `(function(key,channels,url){
+try{const parsed=new URL(url);const tail=url.substring(url.indexOf('://')+3).replace(/^[^/?#]*/,'');url=parsed.protocol+'//'+parsed.host+(tail.startsWith('/')?tail:'/'+tail);}catch(_){return;}
 if(window!==window.top||location.href!==url)return;
 const proxy=window.GYWebViewPageMessageNative;
 if(!proxy)return;
