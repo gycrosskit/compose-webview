@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Message
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
@@ -15,7 +17,6 @@ import com.tencent.kuikly.core.render.android.export.IKuiklyRenderViewExport
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
 import com.tencent.kuikly.core.render.android.IKuiklyRenderExport
 import io.github.gycrosskit.composewebview.*
-import java.io.ByteArrayInputStream
 import org.json.JSONObject
 import java.util.UUID
 
@@ -25,7 +26,7 @@ class GYWebViewNative @JvmOverloads constructor(
     private val fullscreenOrientation: Int? = null,
     private val fullscreenControlsFactory: ((Context, AndroidWebFullscreenActions) -> AndroidWebFullscreenControls)? = null,
 ) : FrameLayout(context), IKuiklyRenderViewExport {
-    private var request: WebViewRequest? = null
+    @Volatile private var request: WebViewRequest? = null
     private var onEvent: KuiklyRenderCallback? = null
     private var webView: WebView? = null
     private var destroyed = false
@@ -142,7 +143,7 @@ class GYWebViewNative @JvmOverloads constructor(
             AndroidWebCapabilities(it, { requireNotNull(request) }, { target -> target === webView && pageVisible && !destroyed && !crashed },
                 { emit(WebViewEvent.PermissionSettingsRequired(it)) })
         }
-        popupRouter = AndroidPopupRouter({ requireNotNull(request) }) { navigation ->
+        popupRouter = AndroidPopupRouter({ requireNotNull(request) }, { emit(WebViewEvent.Navigation(it, true)) }) { navigation ->
             if (route(navigation)) WebViewNavigationDecision.BLOCK else WebViewNavigationDecision.ALLOW
         }
         owner.applyWebViewConfig(current.settings, owner.settings.userAgentString, resources.configuration.fontScale,
@@ -171,9 +172,13 @@ class GYWebViewNative @JvmOverloads constructor(
                 if (view !== owner || owner !== webView || destroyed) true else route(WebViewNavigationRequest(navigation.url.toString(), navigation.isForMainFrame, navigation.hasGesture()))
             @Deprecated("Deprecated in Java")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean = if (view !== owner || owner !== webView || destroyed) true else route(WebViewNavigationRequest(url, true, false))
+            private val mainHandler = Handler(Looper.getMainLooper())
             override fun shouldInterceptRequest(view: WebView, resource: WebResourceRequest): WebResourceResponse? =
-                if (view !== owner || owner !== webView || destroyed) null else if (request?.blockedResourceRules?.any { it.matches(resource.url.toString()) } == true)
-                    WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0))) else null
+                request?.interceptAndroidRequest(resource) { navigation ->
+                    mainHandler.post {
+                        if (view === owner && owner === webView && !destroyed && !crashed) emit(WebViewEvent.Navigation(navigation, true))
+                    }
+                }
             override fun onPageCommitVisible(view: WebView, url: String?) { super.onPageCommitVisible(view, url); inject(view, false) }
             override fun onPageFinished(view: WebView, url: String?) { super.onPageFinished(view, url); inject(view, true) }
         }
