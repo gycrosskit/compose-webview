@@ -271,6 +271,8 @@ internal class IosWebViewCoordinator(
         }
         add(transportScript(!webView.hidden))
         add(IOS_FILE_CHOOSER_GATE_SCRIPT, false)
+        // allowsContentJavaScript 只禁用网页脚本；原生视频仍需组件脚本监测和退出全屏。
+        add(IOS_WEB_EVENT_SCRIPT.replace("window.webkit.messageHandlers.ComposeWebViewEvent", "window.__GY_WEBVIEW_EVENT_TRANSPORT__"))
         if (!request().settings.supportZoom) {
             webView.configuration.ignoresViewportScaleLimits = false
             add(IOS_DISABLE_ZOOM_SCRIPT)
@@ -278,7 +280,6 @@ internal class IosWebViewCoordinator(
         val current = request()
         if (current.settings.javaScriptEnabled) {
             add(WEB_VIEW_PERFORMANCE_SCRIPT.replace("window.webkit.messageHandlers.ComposeWebViewEvent", "window.__GY_WEBVIEW_EVENT_TRANSPORT__"))
-            add(IOS_WEB_EVENT_SCRIPT.replace("window.webkit.messageHandlers.ComposeWebViewEvent", "window.__GY_WEBVIEW_EVENT_TRANSPORT__"))
             if (!pageMessageRevoked) current.pageMessageScript(documentToken)?.let { add(it) }
             current.earlyScriptSource()?.let { add(it) }
             if (current.canUseAppBridgeAt(current.content.initialOrigin())) add(IOS_BRIDGE_SCRIPT.replace("window.webkit.messageHandlers.JSAndroidBridge", "window.__GY_WEBVIEW_BRIDGE_TRANSPORT__"))
