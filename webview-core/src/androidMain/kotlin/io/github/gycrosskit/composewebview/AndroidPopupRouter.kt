@@ -1,8 +1,12 @@
 package io.github.gycrosskit.composewebview
 
 import android.os.Message
+import android.os.Handler
+import android.os.Looper
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import java.io.ByteArrayInputStream
 
 /** `window.open` 只解析目标并交给中立导航回调，临时 WebView 不安装 Bridge。
  * UI 线程调用，页面退出时 release 解除全部临时实例。
@@ -11,9 +15,16 @@ import android.webkit.WebView
  */
 class AndroidPopupRouter(
     private val request: () -> WebViewRequest,
+    private val onNavigationBlocked: (WebViewNavigationRequest) -> Unit,
     private val onNavigation: (WebViewNavigationRequest) -> WebViewNavigationDecision,
 ) {
+    constructor(
+        request: () -> WebViewRequest,
+        onNavigation: (WebViewNavigationRequest) -> WebViewNavigationDecision,
+    ) : this(request, {}, onNavigation)
+
     private val popups = mutableSetOf<WebView>()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /** 接管 Chromium 临时弹窗并在当前页面路由，返回 false 表示拒绝；临时实例由 close/release 销毁。 */
     fun createWindow(parent: WebView, hasUserGesture: Boolean, resultMessage: Message): Boolean {
@@ -59,8 +70,20 @@ class AndroidPopupRouter(
                     return true
                 }
 
-                override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
-                    route(url)
+                override fun shouldInterceptRequest(view: WebView, resource: WebResourceRequest): WebResourceResponse? {
+                    if (!resource.isForMainFrame) return null
+                    val url = resource.url.toString()
+                    val method = resource.method
+                    // 临时窗口只解析目标；POST body 不可取得，不能先联网或偷换成 parent GET。
+                    mainHandler.post {
+                        if (popup !in popups || routed || !parent.isActiveAppWebView() || !parent.isShown) return@post
+                        if (method == "GET") route(url) else {
+                            routed = true
+                            onNavigationBlocked(WebViewNavigationRequest(url, true, hasUserGesture, WebViewNavigationTarget.NEW_WINDOW))
+                            close(popup)
+                        }
+                    }
+                    return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
                 }
             }
         }
