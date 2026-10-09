@@ -9,7 +9,7 @@ on:
       - verification/ci/test_review_status.py
 
 permissions:
-  issues: write
+  pull-requests: write
 
 concurrency:
   group: review-status-zh-${{ github.event.comment.id }}
