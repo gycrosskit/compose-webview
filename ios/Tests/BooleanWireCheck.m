@@ -213,6 +213,41 @@ static void CheckHtmlContent(void) {
     }
 }
 
+static void CheckFullscreenWithoutContentJavaScript(void) {
+    NSString *initial = NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"];
+    NSString *other = [[[NSURL URLWithString:initial] URLByDeletingLastPathComponent].absoluteString stringByAppendingString:@"other"];
+    NSString *movie = [[NSData dataWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"capture" withExtension:@"mov"]] base64EncodedStringWithOptions:0];
+    Require(initial.length && movie.length, @"Fullscreen fixture requires page URL and movie");
+    GYWebView *view = [[GYWebView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:view];
+    __block BOOL fullscreen = NO;
+    [view hrv_setPropWithKey:@"onEvent" propValue:^(id event) { if ([event[@"type"] isEqual:@"fullscreenChanged"]) fullscreen = [event[@"isFullscreen"] boolValue]; }];
+    [view hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"url", @"url": initial}, @"settings": @{@"javaScriptEnabled": @NO}})];
+    WKWebView *owner = view.webView;
+    WaitUntil(^BOOL { return !owner.loading && [owner.URL.absoluteString isEqual:initial]; }, @"Fullscreen initial document failed");
+    [owner loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:other]]];
+    WaitUntil(^BOOL { return !owner.loading && [owner.URL.absoluteString isEqual:other]; }, @"Fullscreen history document failed");
+    Require(owner.canGoBack, @"Fullscreen fixture did not create backward history");
+    Require(![Evaluate(owner, @"window.contentScriptExecuted === true") boolValue], @"Disabled page JavaScript executed");
+    Evaluate(owner, [NSString stringWithFormat:@"var video=document.createElement('video');video.controls=true;video.src='data:video/quicktime;base64,%@';document.body.appendChild(video);true", movie]);
+    WaitUntil(^BOOL { return [Evaluate(owner, @"video.readyState >= 1") boolValue]; }, @"Native video metadata unavailable");
+    for (NSString *command in @[@"exitFullscreen", @"goBack"]) {
+        Evaluate(owner, @"video.webkitEnterFullscreen();true");
+        WaitUntil(^BOOL { return [Evaluate(owner, @"video.webkitDisplayingFullscreen") boolValue]; }, @"Real native video did not enter fullscreen");
+        WaitUntil(^BOOL { return fullscreen; }, @"JS-disabled native fullscreen event was not observed");
+        // WebKit 的进入事件早于 UIKit 呈现动画完成，此后才模拟宿主返回操作。
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.0]];
+        __block NSInteger replies = 0; __block BOOL consumed = NO;
+        [view hrv_callWithMethod:command params:nil callback:^(id value) { replies++; consumed = [value[@"result"] boolValue]; }];
+        WaitUntil(^BOOL { return replies == 1 && !fullscreen; }, @"Native fullscreen exit did not settle");
+        Require(consumed && ![Evaluate(owner, @"video.webkitDisplayingFullscreen") boolValue], @"Fullscreen command did not exit real video");
+        Require([owner.URL.absoluteString isEqual:other] && owner.canGoBack, @"Fullscreen command consumed backward history");
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.0]];
+    }
+    [view hrv_removeFromSuperview];
+    puts("PASS: Native JS-disabled real video fullscreen events, exitFullscreen and goBack preserve history; page script blocked");
+}
+
 static void Check(void) {
     CheckStopLoadingCancellation();
     if (getenv("WEBVIEW_STOP_ONLY")) {
@@ -222,6 +257,7 @@ static void Check(void) {
         CheckNativeCommandCancellation(@{@"content": @{@"type": @"url", @"url": url}, @"settings": @{@"javaScriptEnabled": @YES}}, other);
         printf("PASS: Native stop JS/file cancellation, reentry and fresh operations; real WK Promise terminal once\n"); fflush(stdout); exit(0);
     }
+    CheckFullscreenWithoutContentJavaScript();
     CheckHtmlContent();
     for (NSArray *pair in @[@[@"2001:0db8:0000:0:0:0:0:1", @"2001:db8::1"], @[@"::ffff:192.0.2.1", @"::ffff:c000:201"], @[@"0:0:0:0:0:0:0:0", @"::"], @[@"1:0:0:2:0:0:3:4", @"1::2:0:0:3:4"]]) {
         NSString *raw = [NSString stringWithFormat:@"https://[%@]:8443", pair[0]];

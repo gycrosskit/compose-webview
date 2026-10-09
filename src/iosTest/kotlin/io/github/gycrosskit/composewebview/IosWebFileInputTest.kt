@@ -121,6 +121,62 @@ private class CmpFileCheckDelegate : NSObject, UIApplicationDelegateProtocol {
                 while (!condition() && NSDate().compare(until) == NSOrderedAscending) delay(10)
                 assertTrue(condition(), "UIKit/WebKit callback did not complete: $phase")
             }
+            val fullscreenState = AppWebViewState()
+            val fullscreenEvents = mutableListOf<WebViewEvent>()
+            val pageUrl = NSProcessInfo.processInfo.environment["WEBVIEW_WIRE_PAGE_URL"] as String
+            val fullscreenRequest = WebViewRequest(WebViewContent.Url(pageUrl), settings = WebViewSettings(javaScriptEnabled = false))
+            val fullscreenScope = CoroutineScope(Dispatchers.Main)
+            val fullscreenCoordinator = IosWebViewCoordinator(fullscreenState, { fullscreenRequest }, { WebViewCallbacks(onEvent = { fullscreenEvents += it }) }, fullscreenScope, 0L)
+            val fullscreenConfiguration = WKWebViewConfiguration().apply {
+                defaultWebpagePreferences.allowsContentJavaScript = false
+                userContentController.addScriptMessageHandler(fullscreenCoordinator, WEB_EVENT_HANDLER)
+            }
+            val fullscreenView = WKWebView(root.view.bounds, fullscreenConfiguration)
+            root.view.addSubview(fullscreenView)
+            fullscreenView.navigationDelegate = fullscreenCoordinator
+            fullscreenState.attach(fullscreenView); fullscreenCoordinator.attach(fullscreenView, 0L)
+            fullscreenCoordinator.setMediaSuspended(false)
+            fullscreenCoordinator.loadWhenReady(fullscreenView, fullscreenRequest.content)
+            waitUntil("fullscreen first page") { fullscreenState.snapshot.hasVisibleContent && !fullscreenState.snapshot.isLoading }
+            val otherUrl = pageUrl.substringBeforeLast('/') + "/other"
+            fullscreenView.loadRequest(NSURLRequest.requestWithURL(NSURL.URLWithString(otherUrl)!!))
+            waitUntil("fullscreen history page") { fullscreenState.snapshot.currentUrl == otherUrl && !fullscreenState.snapshot.isLoading }
+            assertTrue(fullscreenView.canGoBack)
+            suspend fun evaluateFullscreen(source: String): Any? {
+                var done = false; var result: Any? = null
+                fullscreenView.evaluateJavaScript(source) { value, error -> assertNull(error); result = value; done = true }
+                waitUntil("fullscreen application script") { done }
+                return result
+            }
+            assertFalse((evaluateFullscreen("window.contentScriptExecuted === true") as NSNumber).boolValue)
+            val movie = NSData.dataWithContentsOfURL(NSBundle.mainBundle.URLForResource("capture", "mov")!!)!!.base64EncodedStringWithOptions(0u)
+            evaluateFullscreen("var video=document.createElement('video');video.controls=true;video.src='data:video/quicktime;base64,$movie';document.body.appendChild(video);true")
+            var videoReady = false
+            val metadataDeadline = NSDate.dateWithTimeIntervalSinceNow(10.0)
+            while (!videoReady && NSDate().compare(metadataDeadline) == NSOrderedAscending) {
+                videoReady = (evaluateFullscreen("video.readyState >= 1") as NSNumber).boolValue
+                if (!videoReady) delay(10)
+            }
+            assertTrue(videoReady, "Native video metadata unavailable")
+            for (back in listOf(false, true)) {
+                evaluateFullscreen("video.webkitEnterFullscreen();true")
+                waitUntil("JS-disabled real video fullscreen event") { fullscreenEvents.lastOrNull { it is WebViewEvent.FullscreenChanged } == WebViewEvent.FullscreenChanged(true) }
+                // WebKit 的进入事件早于 UIKit 呈现动画完成，此后才模拟宿主返回操作。
+                delay(1000)
+                assertTrue((evaluateFullscreen("video.webkitDisplayingFullscreen") as NSNumber).boolValue)
+                var consumed: Boolean? = null
+                if (back) fullscreenState.goBack { consumed = it } else fullscreenState.exitFullscreen { consumed = it }
+                waitUntil("JS-disabled fullscreen exit") { consumed != null && fullscreenEvents.lastOrNull { it is WebViewEvent.FullscreenChanged } == WebViewEvent.FullscreenChanged(false) }
+                assertEquals(true, consumed)
+                assertFalse((evaluateFullscreen("video.webkitDisplayingFullscreen") as NSNumber).boolValue)
+                assertEquals(otherUrl, fullscreenView.URL?.absoluteString)
+                assertTrue(fullscreenView.canGoBack)
+                delay(1000)
+            }
+            fullscreenCoordinator.release(fullscreenView); fullscreenState.detach(fullscreenView); fullscreenScope.cancel()
+            fullscreenConfiguration.userContentController.removeScriptMessageHandlerForName(WEB_EVENT_HANDLER)
+            fullscreenView.removeFromSuperview()
+            println("PASS: CMP JS-disabled real video fullscreen events, exitFullscreen and goBack preserve history; page script blocked")
             for ((content, fails) in listOf(
                 WebViewContent.Html("中文 <script>window.mimeExecuted=true</script>", mimeType = "text/plain") to false,
                 WebViewContent.Html("中文 <script>window.mimeExecuted=true</script>") to false,

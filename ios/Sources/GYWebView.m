@@ -393,10 +393,11 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
     [configuration.userContentController removeAllUserScripts];
     [self addScript:[self transportScript] start:YES];
+    // allowsContentJavaScript 只禁用网页脚本；原生视频仍需组件脚本监测和退出全屏。
+    [self addScript:[IOS_WEB_EVENT_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.ComposeWebViewEvent" withString:@"window.__GY_WEBVIEW_EVENT_TRANSPORT__"] start:YES];
     if (!GYBool(settings, @"supportZoom", YES)) { configuration.ignoresViewportScaleLimits = NO; [self addScript:IOS_DISABLE_ZOOM_SCRIPT start:YES]; }
     [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:IOS_FILE_CHOOSER_GATE_SCRIPT injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
     if (GYBool(settings, @"javaScriptEnabled", NO)) {
-        [self addScript:[IOS_WEB_EVENT_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.ComposeWebViewEvent" withString:@"window.__GY_WEBVIEW_EVENT_TRANSPORT__"] start:YES];
         [self addScript:[WEB_VIEW_PERFORMANCE_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.ComposeWebViewEvent" withString:@"window.__GY_WEBVIEW_EVENT_TRANSPORT__"] start:YES];
         if (GYBool(security, @"appBridgeEnabled", NO) || GYBool(security, @"pageBridgeEnabled", NO)) [self addScript:[IOS_BRIDGE_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.JSAndroidBridge" withString:@"window.__GY_WEBVIEW_BRIDGE_TRANSPORT__"] start:YES];
         NSString *pageMessages = [self pageMessageScript];
