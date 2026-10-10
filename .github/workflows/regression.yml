@@ -90,6 +90,7 @@ jobs:
         run: |
           python3 verification/ci/test_fork_host.py
           python3 verification/ci/test_ios_wire_policy.py
+          python3 verification/ci/test_page_channel_server.py
           python3 verification/ci/test_release_archive_policy.py
           python3 verification/publication/test_maven_check.py
           python3 verification/publication/test_metadata.py
