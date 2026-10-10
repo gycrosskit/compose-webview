@@ -1,5 +1,7 @@
 # GY CrossKit WebView
 
+未发布候选：CMP Android 为原生 WebView 设置 `MATCH_PARENT`，避免旧 Chromium 在 `WRAP_CONTENT` 下把 CSS viewport 高度归零；iOS CMP/Kuikly 的新建 WKWebView 按 Debug 构建自动配置检查能力。现有 rc.16 不含这些修改，详见[布局合同](docs/功能与平台差异.md#android-viewport-布局未发布候选)和[远程调试合同](docs/功能与平台差异.md#webview-远程调试未发布候选)。
+
 > 2026-10-09 发布版本：Maven 0.2.0-rc.16 / Git Pod 0.2.0-rc.16；OHOS HAR 0.2.0-rc.14。包含 Android 主文档 POST 导航门禁、初始 URL 页面通道规范化和 iOS JavaScript 关闭时的全屏退出修复。见[rc.16 发布验收与边界](docs/0.2.0-rc.16发布验收.md)和[精确版本 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.16)，各渠道以实际发布结果为准。真实设备与宿主业务尚未验收。
 
 2026-10-08 功能索引：core提供请求/安全/导航，根模块提供CMP Android/iOS，webview-kuikly提供raw与KuiklyCompose Android/iOS/OHOS；任意同步导航决策、iOS禁图/文件选择和OHOSCookie等仍有明确差异。 详见[功能与平台差异](docs/功能与平台差异.md)，含固定基线、五入口矩阵、真实回归与未验收范围。当前发布组合：Maven/Git Pod 0.2.0-rc.16；OHOS HAR 0.2.0-rc.14，配套system-actions-native 0.2.0-rc.4。各渠道消费与设备验收分别核对。

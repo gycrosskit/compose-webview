@@ -4,6 +4,7 @@ import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.SystemClock
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -90,6 +91,11 @@ fun AppWebView(
             factory = { context ->
                 val creationStartedAtNanos = SystemClock.elapsedRealtimeNanos()
                 WebView(context).apply {
+                    // WRAP_CONTENT 会让旧 Chromium 将 CSS viewport 高度归零；尺寸仍由 Compose 父约束决定。
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
                     WebViewDiagnostics.created(
                         view = this,
                         pageEnteredAtMillis = pageEnteredAtMillis,

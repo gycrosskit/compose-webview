@@ -369,6 +369,13 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     configuration.allowsInlineMediaPlayback = YES;
     configuration.mediaTypesRequiringUserActionForPlayback = GYBool(settings, @"mediaPlaybackRequiresUserGesture", YES) ? WKAudiovisualMediaTypeAll : WKAudiovisualMediaTypeNone;
     self.webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
+    if (@available(iOS 16.4, *)) {
+#if DEBUG
+        self.webView.inspectable = YES;
+#else
+        self.webView.inspectable = NO;
+#endif
+    }
     self.webView.navigationDelegate = self; self.webView.UIDelegate = self;
     self.webView.opaque = NO; self.webView.backgroundColor = UIColor.clearColor;
     self.webView.scrollView.backgroundColor = UIColor.clearColor;
