@@ -198,8 +198,8 @@ jobs:
           WEBVIEW_SIMULATOR="$(xcrun simctl list devices available -j | python3 -c 'import json, sys; devices=json.load(sys.stdin)["devices"]; print(next(device["udid"] for runtime, group in devices.items() if "iOS-" in runtime and tuple(map(int, runtime.split("iOS-")[1].split("-"))) >= (16, 4) for device in group if device["name"].startswith("iPhone")))')"
           export WEBVIEW_SIMULATOR
           xcrun simctl bootstatus "$WEBVIEW_SIMULATOR" -b
-          WEBVIEW_DEBUG_BUILD=0 python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/ios-wire-release.log -- bash scripts/verify-ios-wire.sh
-          WEBVIEW_DEBUG_BUILD=1 python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/ios-wire-debug.log -- bash scripts/verify-ios-wire.sh
+          WEBVIEW_DEBUG_BUILD=0 python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/ios-wire-release.log -- bash -x scripts/verify-ios-wire.sh
+          WEBVIEW_DEBUG_BUILD=1 python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/ios-wire-debug.log -- bash -x scripts/verify-ios-wire.sh
       - name: Package checked Maven archive
         if: github.event_name == 'workflow_dispatch' && inputs.package_maven && needs.changes.outputs.source == 'true'
         timeout-minutes: 30
