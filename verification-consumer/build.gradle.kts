@@ -10,6 +10,7 @@ val simRenderFrameworkDir = providers.gradleProperty("simRenderFrameworkDir").or
 val verifyCmp = providers.gradleProperty("verifyCmp").orElse("false").get().toBoolean()
 val verifyNavigation = providers.gradleProperty("verifyNavigation").orElse("false").get().toBoolean()
 val verifyPageChannels = providers.gradleProperty("verifyPageChannels").orElse("false").get().toBoolean()
+val verifyFullscreenControls = providers.gradleProperty("verifyFullscreenControls").isPresent
 val verifyKuiklyCompose = providers.gradleProperty("verifyKuiklyCompose").isPresent
 if (verifyCmp || verifyKuiklyCompose) apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 kotlin {
@@ -30,6 +31,10 @@ kotlin {
     ohosArm64 { binaries.sharedLib { baseName = "webview_consumer" } }
     sourceSets {
         if (verifyKuiklyCompose) commonMain.get().kotlin.srcDir("src/kuiklyComposeMain/kotlin")
+        if (verifyFullscreenControls) {
+            check(verifyKuiklyCompose && !verifyCmp) { "Fullscreen controls probe requires KuiklyCompose mode" }
+            commonMain.get().kotlin.srcDir("src/fullscreenKuiklyComposeMain/kotlin")
+        }
 
         if (verifyPageChannels) {
             commonMain.get().kotlin.srcDir("src/pageChannelsMain/kotlin")
@@ -52,6 +57,7 @@ kotlin {
         } else null
         androidMain {
             if (!verifyCmp) kotlin.srcDir("src/kuiklyAndroidMain/kotlin")
+            if (verifyFullscreenControls) kotlin.srcDir("src/fullscreenAndroidMain/kotlin")
             if (verifyKuiklyCompose) kotlin.srcDir("src/kuiklyComposeAndroidMain/kotlin")
             cmpMain?.let { dependsOn(it) }
         }

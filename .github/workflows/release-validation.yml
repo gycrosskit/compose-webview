@@ -9,6 +9,11 @@ on:
         description: Immutable Maven release tag
         required: true
         type: string
+      verify_fullscreen_controls:
+        description: Verify the new fullscreen controls APIs in the selected published version
+        required: false
+        type: boolean
+        default: false
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -18,7 +23,8 @@ env:
   CI_FORK_HOST_FALLBACK_IP: ${{ vars.CI_FORK_HOST_FALLBACK_IP }}
   JAVA_TOOL_OPTIONS: -Djava.security.properties=${{ github.workspace }}/scripts/ci-java.security -Dsun.net.client.defaultConnectTimeout=30000 -Dsun.net.client.defaultReadTimeout=60000
   VERSION: ${{ github.event.release.tag_name || inputs.version }}
-  KUIKLY_COMPOSE_FLAGS: ${{ (github.event.release.tag_name == '0.2.0-rc.14' || inputs.version == '0.2.0-rc.14' || github.event.release.tag_name == '0.2.0-rc.15' || inputs.version == '0.2.0-rc.15' || github.event.release.tag_name == '0.2.0-rc.16' || inputs.version == '0.2.0-rc.16' || github.event.release.tag_name == '0.2.0-rc.17' || inputs.version == '0.2.0-rc.17') && '-PverifyKuiklyCompose' || '' }}
+  KUIKLY_COMPOSE_FLAGS: ${{ (inputs.verify_fullscreen_controls || github.event.release.tag_name == '0.2.0-rc.14' || inputs.version == '0.2.0-rc.14' || github.event.release.tag_name == '0.2.0-rc.15' || inputs.version == '0.2.0-rc.15' || github.event.release.tag_name == '0.2.0-rc.16' || inputs.version == '0.2.0-rc.16' || github.event.release.tag_name == '0.2.0-rc.17' || inputs.version == '0.2.0-rc.17') && '-PverifyKuiklyCompose' || '' }}
+  FULLSCREEN_CONTROLS_FLAGS: ${{ inputs.verify_fullscreen_controls && '-PverifyFullscreenControls' || '' }}
 # 同一 job 的两轮 consumer 复用 daemon，保留成功 DNS 缓存。
 jobs:
   verify-public:
@@ -71,7 +77,7 @@ jobs:
       - run: bash scripts/ci-pin-fork-host.sh
         timeout-minutes: 3
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
-      - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/release-android.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly $KUIKLY_COMPOSE_FLAGS -PverifyPageChannels=${{ github.event.release.tag_name == '0.2.0-rc.13' || inputs.version == '0.2.0-rc.13' || github.event.release.tag_name == '0.2.0-rc.14' || inputs.version == '0.2.0-rc.14' || github.event.release.tag_name == '0.2.0-rc.15' || inputs.version == '0.2.0-rc.15' || github.event.release.tag_name == '0.2.0-rc.16' || inputs.version == '0.2.0-rc.16' || github.event.release.tag_name == '0.2.0-rc.17' || inputs.version == '0.2.0-rc.17' }} assembleDebug verifyNoCmpUi verifyExactComponentVersion --refresh-dependencies --daemon --max-workers=1 --stacktrace --info
+      - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/release-android.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly $KUIKLY_COMPOSE_FLAGS $FULLSCREEN_CONTROLS_FLAGS -PverifyPageChannels=${{ github.event.release.tag_name == '0.2.0-rc.13' || inputs.version == '0.2.0-rc.13' || github.event.release.tag_name == '0.2.0-rc.14' || inputs.version == '0.2.0-rc.14' || github.event.release.tag_name == '0.2.0-rc.15' || inputs.version == '0.2.0-rc.15' || github.event.release.tag_name == '0.2.0-rc.16' || inputs.version == '0.2.0-rc.16' || github.event.release.tag_name == '0.2.0-rc.17' || inputs.version == '0.2.0-rc.17' }} assembleDebug verifyNoCmpUi verifyExactComponentVersion --refresh-dependencies --daemon --max-workers=1 --stacktrace --info
         timeout-minutes: 35
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
       - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/release-android.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly -PverifyPageChannels=${{ github.event.release.tag_name == '0.2.0-rc.13' || inputs.version == '0.2.0-rc.13' || github.event.release.tag_name == '0.2.0-rc.14' || inputs.version == '0.2.0-rc.14' || github.event.release.tag_name == '0.2.0-rc.15' || inputs.version == '0.2.0-rc.15' || github.event.release.tag_name == '0.2.0-rc.16' || inputs.version == '0.2.0-rc.16' || github.event.release.tag_name == '0.2.0-rc.17' || inputs.version == '0.2.0-rc.17' }} -PverifyCmp=true -PverifyNavigation=${{ github.event.release.tag_name == '0.2.0-rc.12' || inputs.version == '0.2.0-rc.12' || github.event.release.tag_name == '0.2.0-rc.13' || inputs.version == '0.2.0-rc.13' || github.event.release.tag_name == '0.2.0-rc.14' || inputs.version == '0.2.0-rc.14' || github.event.release.tag_name == '0.2.0-rc.15' || inputs.version == '0.2.0-rc.15' || github.event.release.tag_name == '0.2.0-rc.16' || inputs.version == '0.2.0-rc.16' || github.event.release.tag_name == '0.2.0-rc.17' || inputs.version == '0.2.0-rc.17' }} assembleDebug verifyNoKuikly verifyExactComponentVersion --daemon --max-workers=1 --stacktrace --info
@@ -154,7 +160,7 @@ jobs:
           receipt = { version: ENV.fetch('VERSION'), resolved_tag_sha: expected, lock_tag: checkout.fetch(:tag), native_source_sha256: manifests.first, configuration: 'Debug', renderer_version: '2.28.0', evidence: 'CocoaPods tag/version, native source bytes and Simulator framework build' }
           File.write('ci-diagnostics/release-pod.json', JSON.pretty_generate(receipt) + "\n")
           RUBY
-      - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/release-native.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly $KUIKLY_COMPOSE_FLAGS -PverifyPageChannels=${{ github.event.release.tag_name == '0.2.0-rc.13' || inputs.version == '0.2.0-rc.13' || github.event.release.tag_name == '0.2.0-rc.14' || inputs.version == '0.2.0-rc.14' || github.event.release.tag_name == '0.2.0-rc.15' || inputs.version == '0.2.0-rc.15' || github.event.release.tag_name == '0.2.0-rc.16' || inputs.version == '0.2.0-rc.16' || github.event.release.tag_name == '0.2.0-rc.17' || inputs.version == '0.2.0-rc.17' }} compileKotlinIosArm64 compileKotlinIosSimulatorArm64 compileKotlinIosX64 compileKotlinOhosArm64 --refresh-dependencies --daemon --max-workers=1 --stacktrace --info
+      - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/release-native.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly $KUIKLY_COMPOSE_FLAGS $FULLSCREEN_CONTROLS_FLAGS -PverifyPageChannels=${{ github.event.release.tag_name == '0.2.0-rc.13' || inputs.version == '0.2.0-rc.13' || github.event.release.tag_name == '0.2.0-rc.14' || inputs.version == '0.2.0-rc.14' || github.event.release.tag_name == '0.2.0-rc.15' || inputs.version == '0.2.0-rc.15' || github.event.release.tag_name == '0.2.0-rc.16' || inputs.version == '0.2.0-rc.16' || github.event.release.tag_name == '0.2.0-rc.17' || inputs.version == '0.2.0-rc.17' }} compileKotlinIosArm64 compileKotlinIosSimulatorArm64 compileKotlinIosX64 compileKotlinOhosArm64 --refresh-dependencies --daemon --max-workers=1 --stacktrace --info
         timeout-minutes: 45
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
       - timeout-minutes: 45

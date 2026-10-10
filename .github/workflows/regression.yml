@@ -95,6 +95,7 @@ jobs:
           python3 verification/publication/test_maven_check.py
           python3 verification/publication/test_metadata.py
           python3 ios/generate-scripts.py --check
+          node verification/video-scripts.test.cjs
           TYPESCRIPT_PATH="$RUNNER_TEMP/contract-tools/node_modules/typescript" WEBVIEW_WINDOW_POLICY_SOURCE="$RUNNER_TEMP/window-policy.ets" node ohos/tests/contract.test.cjs
       - name: Explain lightweight completion
         if: ${{ !(needs.changes.outputs.source == 'true') }}

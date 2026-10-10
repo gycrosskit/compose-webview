@@ -2,6 +2,8 @@
 
 本版：CMP Android 为原生 WebView 设置 `MATCH_PARENT`，避免旧 Chromium 在 `WRAP_CONTENT` 下把 CSS viewport 高度归零；iOS CMP/Kuikly 的新建 WKWebView 按 Debug 构建自动配置检查能力。这些修改自 rc.17 提供，详见[布局合同](docs/功能与平台差异.md#android-viewport-布局)和[远程调试合同](docs/功能与平台差异.md#webview-远程调试)。
 
+源码候选（2026-10-10，尚未发布）：H5 全屏视频控制从宿主迁入 `webview-core` / `webview-kuikly`，共享媒体脚本、镜像解析和时间格式。Android 通过现有 `fullscreenControlsFactory` 显式创建 `AndroidDefaultWebFullscreenControls`；未提供 factory 的旧行为保持不变。Kuikly 网页层级可挂载 `FullscreenPlayerOverlay`，文案由 `WebFullscreenLabels` 注入。iOS 系统播放器与 OHOS 原生层级的覆盖/触控需要设备验证，详见[全屏合同](docs/功能与平台差异.md#h5-全屏视频控制源码候选)。下列 rc.17 安装坐标不包含这些新 API。
+
 > 本版坐标：Maven / Git Pod `0.2.0-rc.17`；OHOS HAR 沿用 `0.2.0-rc.14`，system-actions-native 沿用 `0.2.0-rc.4`。公开状态以[对应 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.17)及其 `release-verification.json`、CI 收据为准，安装示例不代表已通过发布门禁。见[rc.17 发布验收与边界](docs/0.2.0-rc.17发布验收.md)；源码、冻结归档、公开消费与宿主/设备验收分别核对。
 
 2026-10-08 功能索引：core提供请求/安全/导航，根模块提供CMP Android/iOS，webview-kuikly提供raw与KuiklyCompose Android/iOS/OHOS；任意同步导航决策、iOS禁图/文件选择和OHOSCookie等仍有明确差异。 详见[功能与平台差异](docs/功能与平台差异.md)，含固定基线、五入口矩阵、真实回归与未验收范围。本版组合：Maven/Git Pod 0.2.0-rc.17；OHOS HAR 0.2.0-rc.14，配套system-actions-native 0.2.0-rc.4。各渠道消费与设备验收分别核对。

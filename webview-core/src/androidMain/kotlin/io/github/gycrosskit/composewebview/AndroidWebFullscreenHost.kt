@@ -17,7 +17,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import org.json.JSONArray
 
 /** 宿主控制层读取的原生视频镜像；不拥有业务播放器。
  * @property controlsVisible 只表示控制层显隐，false 不代表退出全屏。
@@ -79,7 +78,7 @@ class AndroidWebFullscreenHost(
                 if (current()) {
                     val native = findVideo(video)
                     if (native != null) { if (native.isPlaying) native.pause() else native.start() }
-                    else owner.evaluateJavascript("(function(){$FIND_VIDEO var v=findVideo(document);if(v){if(v.paused)v.play();else v.pause();}})();", null)
+                    else owner.evaluateJavascript(WEB_VIDEO_TOGGLE_SCRIPT, null)
                 } else if (generation == revision) hide()
             }
         }, { if (current()) reveal(generation) })
@@ -120,12 +119,10 @@ class AndroidWebFullscreenHost(
                 if (!current()) { if (generation == revision) hide(); return }
                 val native = findVideo(video)
                 if (native != null) publish(state.copy(playing = native.isPlaying, currentSeconds = native.currentPosition.coerceAtLeast(0) / 1000f, durationSeconds = native.duration.coerceAtLeast(0) / 1000f))
-                else owner.evaluateJavascript("(function(){$FIND_VIDEO var v=findVideo(document);return v?[v.currentTime||0,v.duration||0,!!v.paused]:[0,0,true];})();") { raw ->
-                    if (!current() || raw == null || raw.length > 1024) return@evaluateJavascript
-                    runCatching { JSONArray(raw) }.getOrNull()?.let { values ->
-                        if (values.length() != 3 || values.opt(0) !is Number || values.opt(1) !is Number || values.opt(2) !is Boolean) return@let
-                        val position = values.optDouble(0, 0.0).toFloat(); val duration = values.optDouble(1, 0.0).toFloat()
-                        if (position.isFinite() && duration.isFinite() && values.opt(2) is Boolean) publish(state.copy(playing = !values.getBoolean(2), currentSeconds = position.coerceAtLeast(0f), durationSeconds = duration.coerceAtLeast(0f)))
+                else owner.evaluateJavascript(WEB_VIDEO_STATE_SCRIPT) { raw ->
+                    if (!current()) return@evaluateJavascript
+                    parseWebVideoState(raw)?.let { value ->
+                        publish(state.copy(playing = !value.paused, currentSeconds = value.currentSeconds, durationSeconds = value.durationSeconds))
                     }
                 }
                 if (current()) handler.postDelayed(this, 500)
@@ -171,21 +168,6 @@ class AndroidWebFullscreenHost(
         result?.onCustomViewHidden()
         if (revision == hiddenGeneration && container == null) onVisibilityChanged(false)
         return true
-    }
-
-    private companion object {
-        const val FIND_VIDEO = """
-            function findVideo(doc) {
-              try {
-                var v = doc.querySelector('video'); if (v) return v;
-                var frames = doc.querySelectorAll('iframe');
-                for (var i = 0; i < frames.length; i++) {
-                  try { var nested = findVideo(frames[i].contentDocument); if (nested) return nested; } catch (_) {}
-                }
-              } catch (_) {}
-              return null;
-            }
-        """
     }
 
     private fun findVideo(view: View): VideoView? {
