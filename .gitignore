@@ -11,3 +11,6 @@ local.properties
 **/BuildProfile.ets
 **/__pycache__/
 *.pyc
+/scripts/ci-changes.py
+/scripts/ci-run.py
+/scripts/ci-native-cache.py
