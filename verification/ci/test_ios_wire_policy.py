@@ -31,6 +31,7 @@ elif [[ "$1" == --sdk && "$3" == --show-sdk-path ]]; then
 fi
 ''')
     (tools / 'codesign').write_text('#!/usr/bin/env bash\nexit 0\n')
+    (tools / 'rg').write_text('#!/usr/bin/env bash\necho "ripgrep is unavailable in the runner fixture" >&2\nexit 127\n')
     for tool in tools.iterdir():
         tool.chmod(0o755)
     environment = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],

@@ -45,5 +45,5 @@ codesign --force --sign - "$app/Frameworks/OpenKuiklyIOSRender.framework" >/dev/
 codesign --force --sign - "$app" >/dev/null
 xcrun simctl install "${WEBVIEW_SIMULATOR:-booted}" "$app"
 xcrun simctl launch --console --terminate-running-process "${WEBVIEW_SIMULATOR:-booted}" io.github.gycrosskit.webview.wire-check | tee "$output/result.log"
-rg -q '^PASS: Native Boolean wire' "$output/result.log"
-rg -q "^PASS: Native inspectable policy DEBUG=$debug_build$" "$output/result.log"
+grep -q '^PASS: Native Boolean wire' "$output/result.log"
+grep -q "^PASS: Native inspectable policy DEBUG=$debug_build$" "$output/result.log"
