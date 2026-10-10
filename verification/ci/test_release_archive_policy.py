@@ -25,6 +25,24 @@ def step(data, job, name):
 
 source = workflow('regression.yml')
 release = workflow('release-validation.yml')
+# New RC enables every added API probe without changing historical release conditions.
+rc18 = "github.event.release.tag_name == '0.2.0-rc.18' || inputs.version == '0.2.0-rc.18'"
+assert rc18 in release['env']['KUIKLY_COMPOSE_FLAGS']
+assert rc18 in release['env']['FULLSCREEN_CONTROLS_FLAGS']
+for job in ('release-android', 'release-native'):
+    consumers = [item['run'] for item in release['jobs'][job]['steps']
+                 if '-p verification-consumer' in item.get('run', '')]
+    assert consumers and all('-PremoteOnly' in command for command in consumers)
+    assert any('-PverifyNavigation=' in command and rc18 in command for command in consumers)
+    assert any('-PverifyPageChannels=' in command and rc18 in command for command in consumers)
+for name in ('Build exact remote Git Pod and pinned Renderer', 'Verify remote Pod checkout receipt'):
+    item = next(item for item in release['jobs']['release-native']['steps'] if item.get('name') == name)
+    assert rc18 in item['if'] and '0.2.0-rc.17' in item['if']
+kuikly_link = step(release, 'release-native', 'Link new Kuikly fullscreen APIs with the real Renderer')
+assert '$FULLSCREEN_CONTROLS_FLAGS' in kuikly_link and '$KUIKLY_COMPOSE_FLAGS' in kuikly_link
+assert '-PsimRenderFrameworkDir=$RUNNER_TEMP/webview-release-render/Products' in kuikly_link
+assert 'linkDebugFramework$ios_framework_target' in kuikly_link
+
 with TemporaryDirectory() as directory:
     root = Path(directory)
     environment = dict(os.environ, GITHUB_EVENT_NAME='workflow_dispatch',

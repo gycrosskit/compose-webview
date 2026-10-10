@@ -2,19 +2,19 @@
 
 本版：CMP Android 为原生 WebView 设置 `MATCH_PARENT`，避免旧 Chromium 在 `WRAP_CONTENT` 下把 CSS viewport 高度归零；iOS CMP/Kuikly 的新建 WKWebView 按 Debug 构建自动配置检查能力。这些修改自 rc.17 提供，详见[布局合同](docs/功能与平台差异.md#android-viewport-布局)和[远程调试合同](docs/功能与平台差异.md#webview-远程调试)。
 
-源码候选（2026-10-10，尚未发布）：H5 全屏视频控制从宿主迁入 `webview-core` / `webview-kuikly`，共享媒体脚本、镜像解析和时间格式。Android 通过现有 `fullscreenControlsFactory` 显式创建 `AndroidDefaultWebFullscreenControls`；未提供 factory 的旧行为保持不变。Kuikly 网页层级可挂载 `FullscreenPlayerOverlay`，文案由 `WebFullscreenLabels` 注入。iOS 系统播放器与 OHOS 原生层级的覆盖/触控需要设备验证，详见[全屏合同](docs/功能与平台差异.md#h5-全屏视频控制源码候选)。下列 rc.17 安装坐标不包含这些新 API。
+本版新增（2026-10-10，发布状态以 Release 收据为准）：H5 全屏视频控制从宿主迁入 `webview-core` / `webview-kuikly`，共享媒体脚本、镜像解析和时间格式。Android 通过现有 `fullscreenControlsFactory` 显式创建 `AndroidDefaultWebFullscreenControls`；未提供 factory 的旧行为保持不变。Kuikly 网页层级可挂载 `FullscreenPlayerOverlay`，文案由 `WebFullscreenLabels` 注入。iOS 系统播放器与 OHOS 原生层级的覆盖/触控需要设备验证，详见[全屏合同](docs/功能与平台差异.md#h5-全屏视频控制)。rc.18 Maven 包含这些新 API，旧 rc.17 保持不变。
 
-> 本版坐标：Maven / Git Pod `0.2.0-rc.17`；OHOS HAR 沿用 `0.2.0-rc.14`，system-actions-native 沿用 `0.2.0-rc.4`。公开状态以[对应 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.17)及其 `release-verification.json`、CI 收据为准，安装示例不代表已通过发布门禁。见[rc.17 发布验收与边界](docs/0.2.0-rc.17发布验收.md)；源码、冻结归档、公开消费与宿主/设备验收分别核对。
+> 本版坐标：Maven / Git Pod `0.2.0-rc.18`；OHOS HAR 沿用 `0.2.0-rc.14`，system-actions-native 沿用 `0.2.0-rc.4`。公开状态以[对应 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.18)及其 `release-verification.json`、CI 收据为准，安装示例不代表已通过发布门禁。见[rc.18 发布验收与边界](docs/0.2.0-rc.18发布验收.md)；源码、冻结归档、公开消费与宿主/设备验收分别核对。
 
-2026-10-08 功能索引：core提供请求/安全/导航，根模块提供CMP Android/iOS，webview-kuikly提供raw与KuiklyCompose Android/iOS/OHOS；任意同步导航决策、iOS禁图/文件选择和OHOSCookie等仍有明确差异。 详见[功能与平台差异](docs/功能与平台差异.md)，含固定基线、五入口矩阵、真实回归与未验收范围。本版组合：Maven/Git Pod 0.2.0-rc.17；OHOS HAR 0.2.0-rc.14，配套system-actions-native 0.2.0-rc.4。各渠道消费与设备验收分别核对。
+2026-10-08 功能索引：core提供请求/安全/导航，根模块提供CMP Android/iOS，webview-kuikly提供raw与KuiklyCompose Android/iOS/OHOS；任意同步导航决策、iOS禁图/文件选择和OHOSCookie等仍有明确差异。 详见[功能与平台差异](docs/功能与平台差异.md)，含固定基线、五入口矩阵、真实回归与未验收范围。本版组合：Maven/Git Pod 0.2.0-rc.18；OHOS HAR 0.2.0-rc.14，配套system-actions-native 0.2.0-rc.4。各渠道消费与设备验收分别核对。
 
 历史核对（2026-10-08）：当轮重跑生产模型Compose接线与OHOS合同；真实WK/手势/consumer复用前轮，原生节点替身不是Renderer验收。 逐项时点与边界见[验证范围](docs/功能与平台差异.md#sdk系统与真实验证范围)。
 
-Maven `0.2.0-rc.14`新增 `io.github.gycrosskit.composewebview.kuikly.AppWebView` Composable，此入口从该版本提供；已发布 CMP 同名入口位于 `io.github.gycrosskit.composewebview`，raw `GYWebView` 保留兼容。`webview-kuikly` 现在传递依赖 KuiklyCompose / Compose runtime，宿主统一 Kuikly 与 compiler 版本；没有引入第二套 JetBrains CMP UI。独立消费可用 `-PverifyKuiklyCompose -PverifyLocalSource` 验证本地源码；远程验收使用 `-PremoteOnly -PwebViewVersion=0.2.0-rc.17`。新的 `verifyNoCmpUi` 门禁允许 KuiklyCompose/runtime 并拒绝第二套 CMP UI；开启 API probe 时另确认 KuiklyCompose 确实存在，历史远程基线 raw API 仍可验证。
+Maven `0.2.0-rc.14`新增 `io.github.gycrosskit.composewebview.kuikly.AppWebView` Composable，此入口从该版本提供；已发布 CMP 同名入口位于 `io.github.gycrosskit.composewebview`，raw `GYWebView` 保留兼容。`webview-kuikly` 现在传递依赖 KuiklyCompose / Compose runtime，宿主统一 Kuikly 与 compiler 版本；没有引入第二套 JetBrains CMP UI。独立消费可用 `-PverifyKuiklyCompose -PverifyLocalSource` 验证本地源码；远程验收使用 `-PremoteOnly -PwebViewVersion=0.2.0-rc.18`。新的 `verifyNoCmpUi` 门禁允许 KuiklyCompose/runtime 并拒绝第二套 CMP UI；开启 API probe 时另确认 KuiklyCompose 确实存在，历史远程基线 raw API 仍可验证。
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
-本版 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.17**：默认关闭的 `pageMessageChannels` 提供初始完整 HTTP(S) 主页面的具名早期双向 string 通道。Android/iOS 每次声明加载与显式 reload 重建物理 owner；隐藏、停止、后续主文档导航和释放同步撤销。OHOS HAR **0.2.0-rc.14** 的 v2 实现通过 document-start 引导初始主文档 capability；隐藏、停止和导航后须显式 reload 新建 owner，不由 show 恢复。默认空配置保留既有行为；配套 system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。详见[早期通道候选验收](docs/早期页面通道候选验收.md)。
+本版 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.18**：默认关闭的 `pageMessageChannels` 提供初始完整 HTTP(S) 主页面的具名早期双向 string 通道。Android/iOS 每次声明加载与显式 reload 重建物理 owner；隐藏、停止、后续主文档导航和释放同步撤销。OHOS HAR **0.2.0-rc.14** 的 v2 实现通过 document-start 引导初始主文档 capability；隐藏、停止和导航后须显式 reload 新建 owner，不由 show 恢复。默认空配置保留既有行为；配套 system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。详见[早期通道候选验收](docs/早期页面通道候选验收.md)。
 
 历史 Maven / Git Pod **rc.12** 不包含早期具名通道（与 OHOS HAR rc.12 的独立版本号区分）。其 CMP 前进历史、返回/退出全屏回执、共享异步退出脚本与旧 owner/取消修复在 rc.13 中保留；历史源码验证见 [rc.12 候选验收](docs/0.2.0-rc.12候选验收.md)。
 
@@ -141,19 +141,19 @@ dependencyResolutionManagement {
 }
 ```
 
-以下为本版 Maven/Git Pod 0.2.0-rc.17 安装方式，包含新增KuiklyCompose AppWebView；OHOS HAR单独使用0.2.0-rc.14。在 KMP 的 `commonMain.dependencies` 按 UI 引擎选择：
+以下为本版 Maven/Git Pod 0.2.0-rc.18 安装方式，包含新增KuiklyCompose AppWebView；OHOS HAR单独使用0.2.0-rc.14。在 KMP 的 `commonMain.dependencies` 按 UI 引擎选择：
 
 ```kotlin
 // CMP Android/iOS
-implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.17")
+implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.18")
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.17")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.18")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖，也不适用于 CMP 入口：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.17'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.18'
 ```
 
 HarmonyOS HAR rc.14的Registry可安装性单独核验；下载[保存在 rc.16 Release 的 rc.14 `WebViewNative.har`](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR，按[HAR 接入指南](ohos/webview-native/README.md)的 root override 安装。不能把审核受理当作 Registry 可安装。
