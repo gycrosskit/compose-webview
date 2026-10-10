@@ -21,7 +21,12 @@ kotlin {
             renderFrameworkDir?.let { linkerOpts("-F$it", "-framework", "OpenKuiklyIOSRender") }
         }
     }
-    iosX64 { binaries.framework { baseName = "WebViewConsumer" } }
+    iosX64 {
+        binaries.framework {
+            baseName = "WebViewConsumer"
+            simRenderFrameworkDir?.let { linkerOpts("-F$it", "-framework", "OpenKuiklyIOSRender") }
+        }
+    }
     iosSimulatorArm64 {
         binaries.framework {
             baseName = "WebViewConsumer"

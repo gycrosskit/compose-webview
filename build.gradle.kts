@@ -8,7 +8,7 @@ plugins {
 
 allprojects {
     group = providers.environmentVariable("GROUP").orElse("com.github.gycrosskit.compose-webview").get()
-    version = providers.environmentVariable("VERSION").orElse("0.2.0-rc.17").get()
+    version = providers.environmentVariable("VERSION").orElse("0.2.0-rc.18").get()
     plugins.withId("maven-publish") {
         extensions.configure<org.gradle.api.publish.PublishingExtension> {
             publications.withType<org.gradle.api.publish.maven.MavenPublication>().configureEach {
