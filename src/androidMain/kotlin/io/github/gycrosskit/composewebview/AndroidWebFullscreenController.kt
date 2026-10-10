@@ -51,8 +51,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.util.Locale
-import org.json.JSONArray
 
 /**
  * Android H5 全屏内核。它只控制 Chromium 的媒体 View，不依赖宿主业务主题、资源或播放器模型。
@@ -213,9 +211,9 @@ internal class AndroidWebFullscreenController(
         }
         val owner = webView
         val generation = fullscreenGeneration
-        owner?.evaluateJavascript(VIDEO_TOGGLE_SCRIPT) { result ->
+        owner?.evaluateJavascript(WEB_VIDEO_TOGGLE_SCRIPT) { result ->
             if (container == null || owner !== webView || generation != fullscreenGeneration) return@evaluateJavascript
-            result?.trim()?.trim('"')?.toBooleanStrictOrNull()?.let { playing = it }
+            parseWebVideoState(result)?.let { playing = !it.paused }
         }
     }
 
@@ -231,9 +229,9 @@ internal class AndroidWebFullscreenController(
                 if (nativeVideoView == null) {
                     val owner = webView
                     val generation = fullscreenGeneration
-                    owner?.evaluateJavascript(VIDEO_STATE_SCRIPT) { raw ->
+                    owner?.evaluateJavascript(WEB_VIDEO_STATE_SCRIPT) { raw ->
                         if (container == null || owner !== webView || generation != fullscreenGeneration) return@evaluateJavascript
-                        parseVideoState(raw)?.let { state ->
+                        parseWebVideoState(raw)?.let { state ->
                             currentSeconds = state.currentSeconds
                             durationSeconds = state.durationSeconds
                             playing = !state.paused
@@ -264,59 +262,7 @@ internal class AndroidWebFullscreenController(
         const val CONTROLS_HIDE_DELAY_MILLIS = 3_500L
         const val CONTROLS_ELEVATION = 1_000f
         const val MILLIS_PER_SECOND = 1_000f
-
-        const val VIDEO_FIND_FUNCTION = """
-            function nativeFindVideo(doc) {
-              try {
-                var direct = doc.querySelector('video');
-                if (direct) return direct;
-                var frames = doc.querySelectorAll('iframe');
-                for (var i = 0; i < frames.length; i++) {
-                  try {
-                    var nested = nativeFindVideo(frames[i].contentDocument);
-                    if (nested) return nested;
-                  } catch (_) {}
-                }
-              } catch (_) {}
-              return null;
-            }
-        """
-
-        const val VIDEO_STATE_SCRIPT = """
-            (function() {
-              $VIDEO_FIND_FUNCTION
-              var video = nativeFindVideo(document);
-              return video ? [video.currentTime || 0, video.duration || 0, !!video.paused] : [0, 0, true];
-            })();
-        """
-
-        const val VIDEO_TOGGLE_SCRIPT = """
-            (function() {
-              $VIDEO_FIND_FUNCTION
-              var video = nativeFindVideo(document);
-              if (!video) return false;
-              if (video.paused) video.play(); else video.pause();
-              return !video.paused;
-            })();
-        """
     }
-}
-
-private data class VideoState(
-    val currentSeconds: Float,
-    val durationSeconds: Float,
-    val paused: Boolean,
-)
-
-/** 只接收系统 JSON 的固定三元镜像，页面改变 getter/toJSON 不能扩大解析输入。 */
-private fun parseVideoState(raw: String?): VideoState? {
-    if (raw == null || raw.length > 1024) return null
-    val values = runCatching { JSONArray(raw) }.getOrNull() ?: return null
-    if (values.length() != 3) return null
-    val current = (values.opt(0) as? Number)?.toFloat()?.takeIf(Float::isFinite) ?: return null
-    val duration = (values.opt(1) as? Number)?.toFloat()?.takeIf(Float::isFinite) ?: return null
-    val paused = values.opt(2) as? Boolean ?: return null
-    return VideoState(current.coerceAtLeast(0f), duration.coerceAtLeast(0f), paused)
 }
 
 @Composable
@@ -369,7 +315,7 @@ private fun FullscreenVideoControls(
                 drawLine(Color(0xff5b9cff), Offset(0f, centerY), Offset(size.width * progress, centerY), strokeWidth = 5f)
             }
             BasicText(
-                text = "${formatVideoTime(currentSeconds)}/${formatVideoTime(durationSeconds)}",
+                text = "${formatWebVideoTime(currentSeconds)}/${formatWebVideoTime(durationSeconds)}",
                 style = TextStyle(color = Color.White, fontSize = 14.sp),
             )
         }
@@ -392,17 +338,5 @@ private fun PlaybackIcon(playing: Boolean) {
             }
             drawPath(path, Color.White)
         }
-    }
-}
-
-internal fun formatVideoTime(seconds: Float): String {
-    val total = seconds.takeIf(Float::isFinite)?.toInt()?.coerceAtLeast(0) ?: 0
-    val hours = total / 3_600
-    val minutes = total % 3_600 / 60
-    val remaining = total % 60
-    return if (hours > 0) {
-        String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, remaining)
-    } else {
-        String.format(Locale.US, "%02d:%02d", minutes, remaining)
     }
 }

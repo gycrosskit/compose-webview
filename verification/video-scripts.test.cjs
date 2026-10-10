@@ -1,0 +1,18 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const source = fs.readFileSync(path.resolve(__dirname, '../webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebVideoState.kt'), 'utf8');
+const find = source.match(/WEB_VIDEO_FIND_FUNCTION = """([\s\S]*?)"""/)[1];
+const script = name => source.match(new RegExp(name + ' = """([\\s\\S]*?)"""'))[1].replace('$WEB_VIDEO_FIND_FUNCTION', find);
+const run = (name, document) => Function('document', 'return ' + script(name).trim())(document);
+const doc = (video, frames = []) => ({ querySelector: () => video, querySelectorAll: () => frames });
+const video = { currentTime: 1, duration: 20, paused: true, play() { this.paused = false; }, pause() { this.paused = true; } };
+assert.deepEqual(run('WEB_VIDEO_STATE_SCRIPT', doc(video)), [1, 20, true]);
+assert.deepEqual(run('WEB_VIDEO_TOGGLE_SCRIPT', doc(video)), [1, 20, false]);
+assert.deepEqual(run('WEB_VIDEO_TOGGLE_SCRIPT', doc(video)), [1, 20, true]);
+const blocked = { get contentDocument() { throw Error('cross-origin'); } };
+assert.deepEqual(run('WEB_VIDEO_STATE_SCRIPT', doc(null, [blocked, { contentDocument: doc(video) }])), [1, 20, true]);
+assert.deepEqual(run('WEB_VIDEO_STATE_SCRIPT', doc(null, [blocked])), [0, 0, true]);
+assert.deepEqual(run('WEB_VIDEO_TOGGLE_SCRIPT', doc(null, [blocked])), [0, 0, true]);
+assert.deepEqual(run('WEB_VIDEO_STATE_SCRIPT', doc({ currentTime: 0, duration: NaN, paused: false })), [0, 0, false]);
+console.log('PASS production H5 video scripts: mirror, playback, same-origin iframe, cross-origin denial, absent media. DOM fixtures only.');

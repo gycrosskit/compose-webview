@@ -19,6 +19,7 @@ kotlin {
             api(project(":webview-core"))
             api(libs.kuikly.core)
             api(libs.kuikly.compose)
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2-1.0.0")
         }
         androidMain.dependencies {
             api(libs.kuikly.render.android)

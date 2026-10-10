@@ -147,6 +147,80 @@ class AndroidFullscreenHostTest {
         activity.finish()
     }
 
+    @Test fun componentControlsUseNativeVideoAndPreserveFactoryOptIn() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        var javascript = 0
+        val owner = object : WebView(activity) {
+            override fun evaluateJavascript(script: String, resultCallback: android.webkit.ValueCallback<String>?) { javascript++ }
+        }
+        val video = object : android.widget.VideoView(activity) {
+            var started = false
+            override fun isPlaying() = started
+            override fun start() { started = true }
+            override fun pause() { started = false }
+            override fun getCurrentPosition() = 1000
+            override fun getDuration() = 20000
+        }
+        var controls: AndroidDefaultWebFullscreenControls? = null
+        val host = AndroidWebFullscreenHost(activity, controlsFactory = { context, actions ->
+            AndroidDefaultWebFullscreenControls(context, actions, WebFullscreenLabels("Back", "Play", "Pause", "Controls"))
+                .also { controls = it }
+        }, onVisibilityChanged = {})
+        host.show(owner, video, {}) { true }
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val ui = controls!!
+        val back = ui.getChildAt(0)
+        val bar = ui.getChildAt(1) as android.widget.LinearLayout
+        val play = bar.getChildAt(0)
+        assertEquals("Back", back.contentDescription)
+        assertEquals("Play", play.contentDescription)
+        assertEquals("00:01/00:20", (bar.getChildAt(2) as android.widget.TextView).text.toString())
+        play.performClick()
+        assertTrue(video.started)
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        assertEquals("Pause", play.contentDescription)
+        play.performClick()
+        assertFalse(video.started)
+        assertEquals(0, javascript)
+        back.performClick()
+        assertNull(video.parent)
+        val noControls = AndroidWebFullscreenHost(activity, onVisibilityChanged = {})
+        noControls.show(owner, video, {}) { true }
+        assertEquals(1, (video.parent as FrameLayout).childCount)
+        noControls.hide()
+        activity.finish()
+    }
+
+    @Test fun oldPageReceiptCannotUpdateReplacementFullscreenAndHideStopsPolling() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        val receipts = mutableListOf<android.webkit.ValueCallback<String>>()
+        val owner = object : WebView(activity) {
+            override fun evaluateJavascript(script: String, resultCallback: android.webkit.ValueCallback<String>?) {
+                resultCallback?.let(receipts::add)
+            }
+        }
+        val states = mutableListOf<AndroidWebFullscreenState>()
+        val host = AndroidWebFullscreenHost(activity, controlsFactory = { context, _ ->
+            object : AndroidWebFullscreenControls {
+                override val view = View(context)
+                override fun update(state: AndroidWebFullscreenState) { states += state }
+            }
+        }, onVisibilityChanged = {})
+        host.show(owner, View(activity), {}) { true }
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val old = receipts.first()
+        host.hide()
+        host.show(owner, View(activity), {}) { true }
+        val count = states.size
+        old.onReceiveValue("[99,100,false]")
+        assertEquals(count, states.size)
+        assertEquals(0f, states.last().currentSeconds)
+        host.hide()
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofSeconds(4))
+        assertEquals(count, states.size)
+        activity.finish()
+    }
+
     @Test fun policyUpdateKeepsOwnerAndChromeCallbacksUseCurrentDocument() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val native = GYWebViewNative(activity)
