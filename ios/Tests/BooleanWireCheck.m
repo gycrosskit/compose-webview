@@ -286,6 +286,15 @@ static void Check(void) {
         [zoom hrv_setPropWithKey:@"onEvent" propValue:^(id event) { if ([event[@"type"] isEqual:@"pageFinished"]) zoomFinished = YES; }];
         [zoom hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"html", @"html": @"<meta name='viewport' content='width=device-width,initial-scale=1'><p style='width:1000px'>zoom</p>"}, @"settings": @{@"supportZoom": enabled, @"javaScriptEnabled": javascript}})];
         WaitUntil(^BOOL { return zoomFinished; }, @"Zoom document never finished");
+        if (@available(iOS 16.4, *)) {
+#if DEBUG
+            Require(zoom.webView.inspectable, @"Debug WebView must be inspectable");
+            puts("PASS: Native inspectable policy DEBUG=1");
+#else
+            Require(!zoom.webView.inspectable, @"Release WebView must not be inspectable");
+            puts("PASS: Native inspectable policy DEBUG=0");
+#endif
+        }
         [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
         NSString *viewport = Evaluate(zoom.webView, @"document.querySelector('meta[name=viewport]').content");
         Require([viewport containsString:@"width=device-width"] && [viewport containsString:@"initial-scale=1"] &&

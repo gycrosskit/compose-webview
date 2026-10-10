@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSError
+import platform.Foundation.NSSelectorFromString
 import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
@@ -45,12 +46,13 @@ import platform.WebKit.WKUserScriptInjectionTime
 import platform.WebKit.WKWebView
 import platform.WebKit.WKWebViewConfiguration
 import platform.darwin.NSObject
+import kotlin.native.Platform
 import kotlin.time.TimeSource
 
 /** iOS 在 WKWebView 内绘制原生进度，避免 Compose 与 UIKit 互操作层留下最后一帧。 */
 actual val platformWebViewRendersLoadingProgress: Boolean = true
 
-@OptIn(ExperimentalForeignApi::class)
+@OptIn(ExperimentalForeignApi::class, kotlin.experimental.ExperimentalNativeApi::class)
 @Composable
 internal actual fun PlatformAppWebView(
     request: WebViewRequest,
@@ -128,6 +130,10 @@ internal actual fun PlatformAppWebView(
                 }
                 val creationMark = TimeSource.Monotonic.markNow()
                 WKWebView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0), configuration = configuration).apply {
+                    // iOS 16.4 起需逐实例开启；检查 Selector 保留旧系统兼容。
+                    if (respondsToSelector(NSSelectorFromString("setInspectable:"))) {
+                        inspectable = Platform.isDebugBinary
+                    }
                     opaque = false
                     backgroundColor = UIColor.clearColor
                     scrollView.backgroundColor = UIColor.clearColor

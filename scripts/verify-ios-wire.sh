@@ -3,6 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR:?Pass the parent directory of the real simulator OpenKuiklyIOSRender.framework}"
 test -f "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR/OpenKuiklyIOSRender.framework/OpenKuiklyIOSRender"
+debug_build="${WEBVIEW_DEBUG_BUILD:-0}"
+[[ "$debug_build" =~ ^[01]$ ]] || { echo 'WEBVIEW_DEBUG_BUILD must be 0 or 1' >&2; exit 1; }
 output="$PWD/build/ios-wire-check"
 app="$output/WireCheck.app"
 mkdir -p "$app"
@@ -21,7 +23,7 @@ xcrun swift verification/ios-cmp-app/CreateMovie.swift "$app/capture.mov"
 cp -R "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR/OpenKuiklyIOSRender.framework" "$app/Frameworks/"
 sdk="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 xcrun --sdk iphonesimulator clang -target "$(uname -m)-apple-ios15.0-simulator" -isysroot "$sdk" \
-    -fobjc-arc -fmodules -F "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR" -I ios/Sources \
+    -fobjc-arc -fmodules -DDEBUG="$debug_build" -F "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR" -I ios/Sources \
     ios/Tests/BooleanWireCheck.m -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework AVFoundation \
     -framework OpenKuiklyIOSRender -framework Foundation -framework CoreFoundation -lc++ -ObjC \
     -Wl,-rpath,@executable_path/Frameworks -o "$app/WireCheck"
@@ -43,4 +45,5 @@ codesign --force --sign - "$app/Frameworks/OpenKuiklyIOSRender.framework" >/dev/
 codesign --force --sign - "$app" >/dev/null
 xcrun simctl install "${WEBVIEW_SIMULATOR:-booted}" "$app"
 xcrun simctl launch --console --terminate-running-process "${WEBVIEW_SIMULATOR:-booted}" io.github.gycrosskit.webview.wire-check | tee "$output/result.log"
-rg -q '^PASS: Native Boolean wire' "$output/result.log"
+grep -q '^PASS: Native Boolean wire' "$output/result.log"
+grep -q "^PASS: Native inspectable policy DEBUG=$debug_build$" "$output/result.log"

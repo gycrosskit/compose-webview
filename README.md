@@ -1,22 +1,24 @@
 # GY CrossKit WebView
 
-> 2026-10-09 发布版本：Maven 0.2.0-rc.16 / Git Pod 0.2.0-rc.16；OHOS HAR 0.2.0-rc.14。包含 Android 主文档 POST 导航门禁、初始 URL 页面通道规范化和 iOS JavaScript 关闭时的全屏退出修复。见[rc.16 发布验收与边界](docs/0.2.0-rc.16发布验收.md)和[精确版本 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.16)，各渠道以实际发布结果为准。真实设备与宿主业务尚未验收。
+本版：CMP Android 为原生 WebView 设置 `MATCH_PARENT`，避免旧 Chromium 在 `WRAP_CONTENT` 下把 CSS viewport 高度归零；iOS CMP/Kuikly 的新建 WKWebView 按 Debug 构建自动配置检查能力。这些修改自 rc.17 提供，详见[布局合同](docs/功能与平台差异.md#android-viewport-布局)和[远程调试合同](docs/功能与平台差异.md#webview-远程调试)。
 
-2026-10-08 功能索引：core提供请求/安全/导航，根模块提供CMP Android/iOS，webview-kuikly提供raw与KuiklyCompose Android/iOS/OHOS；任意同步导航决策、iOS禁图/文件选择和OHOSCookie等仍有明确差异。 详见[功能与平台差异](docs/功能与平台差异.md)，含固定基线、五入口矩阵、真实回归与未验收范围。当前发布组合：Maven/Git Pod 0.2.0-rc.16；OHOS HAR 0.2.0-rc.14，配套system-actions-native 0.2.0-rc.4。各渠道消费与设备验收分别核对。
+> 本版坐标：Maven / Git Pod `0.2.0-rc.17`；OHOS HAR 沿用 `0.2.0-rc.14`，system-actions-native 沿用 `0.2.0-rc.4`。公开状态以[对应 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.17)及其 `release-verification.json`、CI 收据为准，安装示例不代表已通过发布门禁。见[rc.17 发布验收与边界](docs/0.2.0-rc.17发布验收.md)；源码、冻结归档、公开消费与宿主/设备验收分别核对。
 
-最终核对（2026-10-08）：本轮重跑生产模型Compose接线与OHOS合同；真实WK/手势/consumer复用前轮，原生节点替身不是Renderer验收。 逐项时点与边界见[验证范围](docs/功能与平台差异.md#sdk系统与真实验证范围)。
+2026-10-08 功能索引：core提供请求/安全/导航，根模块提供CMP Android/iOS，webview-kuikly提供raw与KuiklyCompose Android/iOS/OHOS；任意同步导航决策、iOS禁图/文件选择和OHOSCookie等仍有明确差异。 详见[功能与平台差异](docs/功能与平台差异.md)，含固定基线、五入口矩阵、真实回归与未验收范围。本版组合：Maven/Git Pod 0.2.0-rc.17；OHOS HAR 0.2.0-rc.14，配套system-actions-native 0.2.0-rc.4。各渠道消费与设备验收分别核对。
 
-Maven `0.2.0-rc.14`新增 `io.github.gycrosskit.composewebview.kuikly.AppWebView` Composable，此入口从该版本提供；已发布 CMP 同名入口位于 `io.github.gycrosskit.composewebview`，raw `GYWebView` 保留兼容。`webview-kuikly` 现在传递依赖 KuiklyCompose / Compose runtime，宿主统一 Kuikly 与 compiler 版本；没有引入第二套 JetBrains CMP UI。独立消费可用 `-PverifyKuiklyCompose -PverifyLocalSource` 验证本地源码；远程验收使用 `-PremoteOnly -PwebViewVersion=0.2.0-rc.16`。新的 `verifyNoCmpUi` 门禁允许 KuiklyCompose/runtime 并拒绝第二套 CMP UI；开启 API probe 时另确认 KuiklyCompose 确实存在，历史远程基线 raw API 仍可验证。
+历史核对（2026-10-08）：当轮重跑生产模型Compose接线与OHOS合同；真实WK/手势/consumer复用前轮，原生节点替身不是Renderer验收。 逐项时点与边界见[验证范围](docs/功能与平台差异.md#sdk系统与真实验证范围)。
+
+Maven `0.2.0-rc.14`新增 `io.github.gycrosskit.composewebview.kuikly.AppWebView` Composable，此入口从该版本提供；已发布 CMP 同名入口位于 `io.github.gycrosskit.composewebview`，raw `GYWebView` 保留兼容。`webview-kuikly` 现在传递依赖 KuiklyCompose / Compose runtime，宿主统一 Kuikly 与 compiler 版本；没有引入第二套 JetBrains CMP UI。独立消费可用 `-PverifyKuiklyCompose -PverifyLocalSource` 验证本地源码；远程验收使用 `-PremoteOnly -PwebViewVersion=0.2.0-rc.17`。新的 `verifyNoCmpUi` 门禁允许 KuiklyCompose/runtime 并拒绝第二套 CMP UI；开启 API probe 时另确认 KuiklyCompose 确实存在，历史远程基线 raw API 仍可验证。
 
 封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
 
-当前 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.16**：默认关闭的 `pageMessageChannels` 提供初始完整 HTTP(S) 主页面的具名早期双向 string 通道。Android/iOS 每次声明加载与显式 reload 重建物理 owner；隐藏、停止、后续主文档导航和释放同步撤销。OHOS HAR **0.2.0-rc.14** 的 v2 实现通过 document-start 引导初始主文档 capability；隐藏、停止和导航后须显式 reload 新建 owner，不由 show 恢复。默认空配置保留既有行为；配套 system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。详见[早期通道候选验收](docs/早期页面通道候选验收.md)。
+本版 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.17**：默认关闭的 `pageMessageChannels` 提供初始完整 HTTP(S) 主页面的具名早期双向 string 通道。Android/iOS 每次声明加载与显式 reload 重建物理 owner；隐藏、停止、后续主文档导航和释放同步撤销。OHOS HAR **0.2.0-rc.14** 的 v2 实现通过 document-start 引导初始主文档 capability；隐藏、停止和导航后须显式 reload 新建 owner，不由 show 恢复。默认空配置保留既有行为；配套 system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。详见[早期通道候选验收](docs/早期页面通道候选验收.md)。
 
 历史 Maven / Git Pod **rc.12** 不包含早期具名通道（与 OHOS HAR rc.12 的独立版本号区分）。其 CMP 前进历史、返回/退出全屏回执、共享异步退出脚本与旧 owner/取消修复在 rc.13 中保留；历史源码验证见 [rc.12 候选验收](docs/0.2.0-rc.12候选验收.md)。
 
 iOS 常规网页最低仍为 15.0；受控文件上传通过公开 `WKUIDelegate.runOpenPanelWithParameters`，要求 iOS18.4+。15～18.3 开启 `fileChooserEnabled` 会明确拒绝并发送 `FILE_CHOOSER` Unsupported；关闭能力时的 DOM 兼容拦截无法保证默认 WebKit 上传被原生隔离。需要这种隔离的页面应使用 18.4+。本版在仅接受 MP4 时通过 AVAssetExportSession 转换系统 MOV；输入与最终文件分别校验 50 MiB 上限，转码临时文件不承诺流过程磁盘上限。见[完整源码审查与平台边界](docs/完整源码审查.md)。
 
-历史 rc.8 / rc.6 / rc.5 的修复与渠道证据见 [rc.8 远程发布验收](docs/0.2.0-rc.8远程发布验收.md)和 [rc.6 / rc.5 远程闭合验收](docs/远程闭合验收.md)；其中版本、OHPM 状态与消费结果均为当时记录，当前组合以本文 rc.16 / HAR rc.14 及对应验收为准。
+历史 rc.8 / rc.6 / rc.5 的修复与渠道证据见 [rc.8 远程发布验收](docs/0.2.0-rc.8远程发布验收.md)和 [rc.6 / rc.5 远程闭合验收](docs/远程闭合验收.md)；其中版本、OHPM 状态与消费结果均为当时记录，当前组合以本文 rc.17 / HAR rc.14 及对应验收为准。
 
 ## 架构与调用流程
 
@@ -106,7 +108,7 @@ classDiagram
 
 源码入口：[请求与安全](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt)、[导航规则](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt)、[CMP 入口与状态](src/commonMain/kotlin/io/github/gycrosskit/composewebview/ComposeWebView.kt)、[Kuikly 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt)、[Android 原生接线](webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt)。`AppWebViewState` 属于当前组合位置，不能放进 ViewModel 或跨页面复用；Kuikly 命令通过异步回调返回。
 
-具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，当前使用 rc.16 / HAR rc.14：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
+具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，本版使用 rc.17 / HAR rc.14：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
 
 ## 平台与模块
 
@@ -137,22 +139,22 @@ dependencyResolutionManagement {
 }
 ```
 
-以下为当前Maven/Git Pod 0.2.0-rc.16安装方式，包含新增KuiklyCompose AppWebView；OHOS HAR单独使用0.2.0-rc.14。在 KMP 的 `commonMain.dependencies` 按 UI 引擎选择：
+以下为本版 Maven/Git Pod 0.2.0-rc.17 安装方式，包含新增KuiklyCompose AppWebView；OHOS HAR单独使用0.2.0-rc.14。在 KMP 的 `commonMain.dependencies` 按 UI 引擎选择：
 
 ```kotlin
 // CMP Android/iOS
-implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.16")
+implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.17")
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.16")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.17")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖，也不适用于 CMP 入口：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.16'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.17'
 ```
 
-HarmonyOS HAR rc.14的Registry可安装性单独核验；从[本次Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.16) 下载 `WebViewNative.har`，配套实际 system-actions-native rc.4 HAR，按[HAR 接入指南](ohos/webview-native/README.md)的 root override 安装。不能把审核受理当作 Registry 可安装。
+HarmonyOS HAR rc.14的Registry可安装性单独核验；下载[保存在 rc.16 Release 的 rc.14 `WebViewNative.har`](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR，按[HAR 接入指南](ohos/webview-native/README.md)的 root override 安装。不能把审核受理当作 Registry 可安装。
 
 ## 快速使用
 
@@ -227,13 +229,13 @@ await OhosWebViewDataCleaner.clearWebsiteData();
 
 ## 自动回归
 
-[Source regression](.github/workflows/regression.yml) 按事件分阶段：PR 先判断变更范围，仅源码变更运行已有 Android/Native 测试与编译；纯文档 PR 和 `main` push 只运行轻量脚本/配置检查。手动运行不填版本时执行源码回归，未知路径保守按源码处理。线上生效与耗时以实际 Actions 运行为准。
+[Source regression](.github/workflows/regression.yml) 按事件分阶段：PR 先判断变更范围，仅源码变更运行已有 Android/Native 测试与编译；纯文档 PR 和 `main` push 只运行轻量脚本/配置检查。手动运行默认执行源码回归；`package_maven=true` 在 Native 检查通过后另生成冻结归档及来源收据，整次运行成功后才能推进发布。未知路径保守按源码处理。线上生效与耗时以实际 Actions 运行为准。
 
 [Release validation](.github/workflows/release-validation.yml) 在 Maven Release 发布或手动填写精确已发布版本时，`verify-public` 统一校验一次冻结归档、精确 tag/commit、完整 publication 清单和公开文件；通过后 Android/Native 独立消费者从 JitPack 解析该版本。PR 不再反复消费旧基线；不使用 `mavenLocal`、本库源码或归档替换远程依赖。此流程不发布二进制。
 
 GitHub-hosted runner 的实际结果以 Actions 为准；没有 DevEco/ohpm runner，因此 HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收仍按既有验证文档执行，不能由这些 job 的成功代算。
 
-远程 Android 消费分别以 Kuikly-only 和 CMP-only 配置编译，并检查两者运行时依赖隔离。原生 Kuikly iOS 消费编译 API；其真实 Render Framework 最终链接仍需既有脚本的 SDK 参数。CMP-only iOS Simulator 消费单独链接 Framework。
+远程 Android 消费分别以 Kuikly-only 和 CMP-only 配置编译，并检查两者运行时依赖隔离。原生 Kuikly iOS 消费编译 API，并用固定 Render Framework 链接 Simulator Framework；rc.17 的 Git Pod 另安装精确标签，核对 lock 的 git/tag/version、标签提交及生产源文件集合和字节摘要。CMP-only iOS Simulator 消费单独链接 Framework。这些 Framework 构建不代表 UIKit App 或真机运行。
 
 阶段、缓存、有限网络重试、失败记录与证据边界见[共用 CI 规则](https://github.com/gycrosskit/.github/blob/main/docs/持续集成门禁.md)；本库实际平台命令以 workflow 为准。源码通过、远程消费、HAR/ohpm 与设备验收分别记录。
 

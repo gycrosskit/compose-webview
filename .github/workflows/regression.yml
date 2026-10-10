@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      package_maven:
+        description: Package the candidate Maven archive after source checks
+        type: boolean
+        default: false
       warm_native_cache:
         description: Warm Native toolchains on main only (leave version empty)
         type: boolean
@@ -30,9 +34,23 @@ jobs:
           fetch-depth: 0
       - name: Install shared CI tools
         uses: gycrosskit/.github/actions/ci-tools@607ff44db144c68fc6523de38c04aac29e427b68
+      - name: Reject packaging during cache warmup
+        env:
+          PACKAGE_MAVEN: ${{ inputs.package_maven }}
+          WARM_NATIVE_CACHE: ${{ inputs.warm_native_cache }}
+        run: |
+          if [[ "$PACKAGE_MAVEN" == true && "$WARM_NATIVE_CACHE" == true ]]; then
+            echo 'Maven packaging requires source checks, not cache warmup.' >&2
+            exit 1
+          fi
       - id: scope
         run: python3 scripts/ci-changes.py
-      - run: |
+      - name: Record source scope
+        env:
+          PACKAGE_MAVEN: ${{ inputs.package_maven }}
+          SOURCE_SCOPE: ${{ steps.scope.outputs.source }}
+        run: |
+          if [[ "$PACKAGE_MAVEN" == true ]]; then test "$SOURCE_SCOPE" = true; fi
           mkdir -p ci-diagnostics
           printf 'event=%s\nsource=%s\n' "$GITHUB_EVENT_NAME" "${{ steps.scope.outputs.source }}" > ci-diagnostics/scope.txt
       - name: Save public CI diagnostics
@@ -71,6 +89,9 @@ jobs:
         if: needs.changes.outputs.source == 'true'
         run: |
           python3 verification/ci/test_fork_host.py
+          python3 verification/ci/test_ios_wire_policy.py
+          python3 verification/ci/test_page_channel_server.py
+          python3 verification/ci/test_release_archive_policy.py
           python3 verification/publication/test_maven_check.py
           python3 verification/publication/test_metadata.py
           python3 ios/generate-scripts.py --check
@@ -130,7 +151,7 @@ jobs:
   native:
     needs: changes
     runs-on: ${{ ((needs.changes.outputs.source == 'true') || (github.event_name == 'workflow_dispatch' && inputs.warm_native_cache && github.ref == 'refs/heads/main')) && 'macos-15' || 'ubuntu-24.04' }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.package_maven && 90 || 60 }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -169,6 +190,47 @@ jobs:
           if [[ "$(uname -m)" != arm64 ]]; then ios_test_target=iosX64Test; fi
           python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/native.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" "$ios_test_target" :webview-core:"$ios_test_target" compileKotlinIosArm64 compileKotlinIosX64 :webview-kuikly:compileKotlinIosArm64 :webview-kuikly:compileKotlinIosSimulatorArm64 :webview-kuikly:compileKotlinIosX64 :webview-core:compileKotlinOhosArm64 :webview-kuikly:compileKotlinOhosArm64 --no-daemon --max-workers=1 --stacktrace --info
           python3 -c 'import pathlib, sys, xml.etree.ElementTree as ET; files=pathlib.Path(".").glob("**/build/test-results/"+sys.argv[1]+"/*.xml"); cases=[case for path in files for case in ET.parse(path).iter("testcase")]; assert any(case.find("skipped") is None for case in cases), "No executed iOS test cases"' "$ios_test_target"
+      - name: Verify real iOS wire in Debug and Release
+        timeout-minutes: 30
+        if: needs.changes.outputs.source == 'true'
+        run: |
+          python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/ios-render.log -- bash scripts/ci-build-kuikly-render.sh "$RUNNER_TEMP/webview-wire-render"
+          export WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR="$RUNNER_TEMP/webview-wire-render/Products"
+          WEBVIEW_SIMULATOR="$(xcrun simctl list devices available -j | python3 -c 'import json, sys; devices=json.load(sys.stdin)["devices"]; print(next(device["udid"] for runtime, group in devices.items() if "iOS-" in runtime and tuple(map(int, runtime.split("iOS-")[1].split("-"))) >= (16, 4) for device in group if device["name"].startswith("iPhone")))')"
+          export WEBVIEW_SIMULATOR
+          xcrun simctl bootstatus "$WEBVIEW_SIMULATOR" -b
+          WEBVIEW_DEBUG_BUILD=0 python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/ios-wire-release.log -- bash -x scripts/verify-ios-wire.sh
+          WEBVIEW_DEBUG_BUILD=1 python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/ios-wire-debug.log -- bash -x scripts/verify-ios-wire.sh
+      - name: Package checked Maven archive
+        if: github.event_name == 'workflow_dispatch' && inputs.package_maven && needs.changes.outputs.source == 'true'
+        timeout-minutes: 30
+        run: |
+          python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/package-maven.log -- bash scripts/package-maven.sh --init-script "$PWD/scripts/ci-repositories.gradle" --stacktrace --info
+          (cd build && shasum -a 256 compose-webview-maven.tar.gz > SHA256SUMS)
+          python3 - <<'PYTHON'
+          import hashlib, json, os
+          from pathlib import Path
+          module = next(Path('build/maven/com/github/gycrosskit/compose-webview/compose-webview').glob('*/*.module'))
+          archive = Path('build/compose-webview-maven.tar.gz')
+          receipt = {
+              'version': json.loads(module.read_text())['component']['version'],
+              'source_sha': os.environ['GITHUB_SHA'],
+              'run_url': f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'archive_sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+          }
+          Path('build/maven-provenance.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          PYTHON
+      - name: Save candidate Maven archive
+        if: github.event_name == 'workflow_dispatch' && inputs.package_maven && needs.changes.outputs.source == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: compose-webview-maven-${{ github.sha }}
+          path: |
+            build/compose-webview-maven.tar.gz
+            build/SHA256SUMS
+            build/maven-provenance.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Explain lightweight completion
         if: ${{ !(needs.changes.outputs.source == 'true') }}
         run: echo 'No build is required for this event and scope.'
