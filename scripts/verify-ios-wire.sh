@@ -5,13 +5,30 @@ cd "$(dirname "$0")/.."
 test -f "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR/OpenKuiklyIOSRender.framework/OpenKuiklyIOSRender"
 debug_build="${WEBVIEW_DEBUG_BUILD:-0}"
 [[ "$debug_build" =~ ^[01]$ ]] || { echo 'WEBVIEW_DEBUG_BUILD must be 0 or 1' >&2; exit 1; }
+cleanup_wire_check() {
+    local wire_exit=$?
+    set +e
+    if [[ -n "${fixture_pid:-}" ]]; then
+        kill "$fixture_pid" 2>/dev/null
+        wait "$fixture_pid" 2>/dev/null
+    fi
+    if [[ "$wire_exit" != 0 ]]; then
+        mkdir -p ci-diagnostics
+        shopt -s nullglob
+        for report in "$HOME"/Library/Logs/DiagnosticReports/WireCheck-*.ips "$HOME"/Library/Logs/DiagnosticReports/WireCheck-*.crash; do
+            cp "$report" "ci-diagnostics/$(basename "$report").txt"
+        done
+        xcrun simctl spawn "${WEBVIEW_SIMULATOR:-booted}" log show --last 5m --style compact --predicate 'process == "WireCheck"' > "ci-diagnostics/wire-simulator-debug-$debug_build.txt" 2>&1
+    fi
+    return "$wire_exit"
+}
+trap cleanup_wire_check EXIT
 output="$PWD/build/ios-wire-check"
 app="$output/WireCheck.app"
 mkdir -p "$app"
 rm -f "$output/page-server.port"
 python3 ios/Tests/page-channel-server.py "$output/page-server.port" &
 fixture_pid=$!
-trap 'kill "$fixture_pid" 2>/dev/null || true; wait "$fixture_pid" 2>/dev/null || true' EXIT
 for _ in {1..100}; do
     test -s "$output/page-server.port" && break
     sleep 0.1
@@ -44,6 +61,18 @@ PLIST
 codesign --force --sign - "$app/Frameworks/OpenKuiklyIOSRender.framework" >/dev/null
 codesign --force --sign - "$app" >/dev/null
 xcrun simctl install "${WEBVIEW_SIMULATOR:-booted}" "$app"
-xcrun simctl launch --console --terminate-running-process "${WEBVIEW_SIMULATOR:-booted}" io.github.gycrosskit.webview.wire-check | tee "$output/result.log"
-grep -q '^PASS: Native Boolean wire' "$output/result.log"
-grep -q "^PASS: Native inspectable policy DEBUG=$debug_build$" "$output/result.log"
+xcrun simctl launch --console --terminate-running-process "${WEBVIEW_SIMULATOR:-booted}" io.github.gycrosskit.webview.wire-check 2>&1 | tee "$output/result.log" || {
+    wire_failure=("$?" "${PIPESTATUS[@]}")
+    printf 'FAIL: WireCheck launch=%s tee=%s\n' "${wire_failure[1]}" "${wire_failure[2]}" >&2
+    exit "${wire_failure[0]}"
+}
+grep -q '^PASS: Native Boolean wire' "$output/result.log" || {
+    wire_exit=$?
+    printf 'FAIL: WireCheck Boolean PASS marker missing\n' >&2
+    exit "$wire_exit"
+}
+grep -q "^PASS: Native inspectable policy DEBUG=$debug_build$" "$output/result.log" || {
+    wire_exit=$?
+    printf 'FAIL: WireCheck DEBUG=%s policy PASS marker missing\n' "$debug_build" >&2
+    exit "$wire_exit"
+}
