@@ -223,7 +223,7 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
     __block BOOL fullscreen = NO;
     [view hrv_setPropWithKey:@"onEvent" propValue:^(id event) {
         if ([event[@"type"] isEqual:@"fullscreenChanged"]) fullscreen = [event[@"isFullscreen"] boolValue];
-        if ([event[@"type"] isEqual:@"loadFailed"]) fprintf(stderr, "EVENT: %s\n", event.description.UTF8String);
+        if ([event[@"type"] isEqual:@"loadFailed"]) fprintf(stderr, "EVENT: %s\n", [event description].UTF8String);
     }];
     [view hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"url", @"url": initial}, @"settings": @{@"javaScriptEnabled": @NO}})];
     WKWebView *owner = view.webView;
