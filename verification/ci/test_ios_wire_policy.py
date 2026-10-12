@@ -26,6 +26,11 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$MOCK_CALLS"
 if [[ "$1" == simctl && "$2" == launch ]]; then
   printf '%s\n' "$MOCK_WIRE_RESULT"
+  echo wire-stderr >&2
+  exit "$MOCK_LAUNCH_EXIT"
+elif [[ "$1" == simctl && "$2" == spawn ]]; then
+  echo wire-simulator-log
+  exit 99
 elif [[ "$1" == --sdk && "$3" == --show-sdk-path ]]; then
   printf /mock/sdk
 fi
@@ -34,26 +39,47 @@ fi
     (tools / 'rg').write_text('#!/usr/bin/env bash\necho "ripgrep is unavailable in the runner fixture" >&2\nexit 127\n')
     for tool in tools.iterdir():
         tool.chmod(0o755)
+    reports = root / 'home/Library/Logs/DiagnosticReports'
+    reports.mkdir(parents=True)
+    (reports / 'WireCheck-fixture.ips').write_text('wire-crash')
+    (reports / 'WireCheck-fixture.crash').write_text('wire-legacy-crash')
+    (reports / 'Unrelated.ips').write_text('must-not-copy')
+    (reports / 'WireCheckOther-fixture.ips').write_text('must-not-copy')
     environment = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+                       HOME=str(root / 'home'),
                        WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR=str(root / 'Products'),
                        MOCK_CALLS=str(root / 'calls'))
     environment.pop('WEBVIEW_DEBUG_BUILD', None)
-    for mode, marker, expected in [
-        (None, '0', True), ('0', '0', True), ('1', '1', True),
-        ('0', None, False), ('1', '0', False), ('2', '0', False),
+    for mode, marker, launch_exit, boolean_pass, expected in [
+        (None, '0', 0, True, 0), ('0', '0', 0, True, 0), ('1', '1', 0, True, 0),
+        ('0', None, 0, True, 1), ('1', '0', 0, True, 1), ('2', '0', 0, True, 1),
+        ('0', '0', 7, True, 7), ('0', '0', 0, False, 1),
     ]:
         case = environment.copy()
         if mode is not None:
             case['WEBVIEW_DEBUG_BUILD'] = mode
-        case['MOCK_WIRE_RESULT'] = 'PASS: Native Boolean wire fixture'
+        case['MOCK_LAUNCH_EXIT'] = str(launch_exit)
+        case['MOCK_WIRE_RESULT'] = 'PASS: Native Boolean wire fixture' if boolean_pass else 'START'
         if marker is not None:
             case['MOCK_WIRE_RESULT'] += '\nPASS: Native inspectable policy DEBUG=' + marker
         (root / 'calls').unlink(missing_ok=True)
+        shutil.rmtree(root / 'ci-diagnostics', ignore_errors=True)
         result = subprocess.run(['bash', str(root / 'scripts/verify-ios-wire.sh')],
                                 env=case, capture_output=True, text=True, timeout=10)
-        assert (result.returncode == 0) == expected, (mode, marker, result.stderr)
+        assert result.returncode == expected, (mode, marker, result.returncode, result.stderr)
         if mode == '2':
             assert not (root / 'calls').exists(), 'Invalid mode must fail before SDK invocation'
         else:
             assert '-DDEBUG=' + (mode or '0') in (root / 'calls').read_text()
-print('PASS: wire policy gate accepts matching Debug/Release, rejects skipped/mismatched policy and invalid mode; SDK calls are fixtures.')
+            assert 'wire-stderr' in (root / 'build/ios-wire-check/result.log').read_text()
+        diagnostics = root / 'ci-diagnostics'
+        if expected and mode != '2':
+            assert (diagnostics / 'WireCheck-fixture.ips.txt').read_text() == 'wire-crash'
+            assert (diagnostics / 'WireCheck-fixture.crash.txt').read_text() == 'wire-legacy-crash'
+            assert 'wire-simulator-log' in (diagnostics / f'wire-simulator-debug-{mode or "0"}.txt').read_text()
+            assert 'process == "WireCheck"' in (root / 'calls').read_text()
+            assert not list(diagnostics.glob('Unrelated*'))
+            assert not list(diagnostics.glob('WireCheckOther*'))
+        else:
+            assert not diagnostics.exists(), 'Successful or rejected-before-launch runs must not collect logs'
+print('PASS: Debug/Release policy gates, launch exit 7, missing PASS, stderr capture and WireCheck-only diagnostics preserve original exits even when log collection fails; SDK calls are fixtures.')

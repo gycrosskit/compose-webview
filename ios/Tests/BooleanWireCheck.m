@@ -221,9 +221,13 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
     GYWebView *view = [[GYWebView alloc] initWithFrame:UIScreen.mainScreen.bounds];
     [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:view];
     __block BOOL fullscreen = NO;
-    [view hrv_setPropWithKey:@"onEvent" propValue:^(id event) { if ([event[@"type"] isEqual:@"fullscreenChanged"]) fullscreen = [event[@"isFullscreen"] boolValue]; }];
+    [view hrv_setPropWithKey:@"onEvent" propValue:^(id event) {
+        if ([event[@"type"] isEqual:@"fullscreenChanged"]) fullscreen = [event[@"isFullscreen"] boolValue];
+        if ([event[@"type"] isEqual:@"loadFailed"]) fprintf(stderr, "EVENT: %s\n", [event description].UTF8String);
+    }];
     [view hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"url", @"url": initial}, @"settings": @{@"javaScriptEnabled": @NO}})];
     WKWebView *owner = view.webView;
+    puts("PHASE: Fullscreen initial document");
     WaitUntil(^BOOL { return !owner.loading && [owner.URL.absoluteString isEqual:initial]; }, @"Fullscreen initial document failed");
     [owner loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:other]]];
     WaitUntil(^BOOL { return !owner.loading && [owner.URL.absoluteString isEqual:other]; }, @"Fullscreen history document failed");
@@ -232,6 +236,7 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
     Evaluate(owner, [NSString stringWithFormat:@"var video=document.createElement('video');video.controls=true;video.src='data:video/quicktime;base64,%@';document.body.appendChild(video);true", movie]);
     WaitUntil(^BOOL { return [Evaluate(owner, @"video.readyState >= 1 && video.webkitSupportsFullscreen") boolValue]; }, @"Native video fullscreen unavailable");
     for (NSString *command in @[@"exitFullscreen", @"goBack"]) {
+        printf("PHASE: Fullscreen %s enter\n", command.UTF8String);
         // UIKit 已完成动画时 WebKit 模式切换仍可能未确认；仅重试原生进入 setup。
         WaitUntil(^BOOL { return [Evaluate(owner, @"try { video.webkitEnterFullscreen(); } catch(error) { if(error.name !== 'InvalidStateError') throw error; } video.webkitDisplayingFullscreen") boolValue]; }, @"Real native video did not enter fullscreen");
         WaitUntil(^BOOL { return fullscreen; }, @"JS-disabled native fullscreen event was not observed");
@@ -248,15 +253,18 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
         __block NSInteger replies = 0; __block BOOL consumed = NO;
         [view hrv_callWithMethod:command params:nil callback:^(id value) { replies++; consumed = [value[@"result"] boolValue]; }];
         WaitUntil(^BOOL { return replies == 1 && !fullscreen; }, @"Native fullscreen exit did not settle");
+        printf("PHASE: Fullscreen %s reply settled\n", command.UTF8String);
         Require(consumed && ![Evaluate(owner, @"video.webkitDisplayingFullscreen") boolValue], @"Fullscreen command did not exit real video");
         Require([owner.URL.absoluteString isEqual:other] && owner.canGoBack, @"Fullscreen command consumed backward history");
         WaitUntil(^BOOL { return !player.presentingViewController && !player.beingDismissed && !player.transitionCoordinator; }, @"Native video dismissal did not complete");
+        printf("PHASE: Fullscreen %s dismissal completed\n", command.UTF8String);
     }
     [view hrv_removeFromSuperview];
     puts("PASS: Native JS-disabled real video fullscreen events, exitFullscreen and goBack preserve history; page script blocked");
 }
 
 static void Check(void) {
+    puts("PHASE: Stop-loading cancellation");
     CheckStopLoadingCancellation();
     if (getenv("WEBVIEW_STOP_ONLY")) {
         NSString *url = NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"];
@@ -265,8 +273,11 @@ static void Check(void) {
         CheckNativeCommandCancellation(@{@"content": @{@"type": @"url", @"url": url}, @"settings": @{@"javaScriptEnabled": @YES}}, other);
         printf("PASS: Native stop JS/file cancellation, reentry and fresh operations; real WK Promise terminal once\n"); fflush(stdout); exit(0);
     }
+    puts("PHASE: Real fullscreen");
     CheckFullscreenWithoutContentJavaScript();
+    puts("PHASE: HTML MIME");
     CheckHtmlContent();
+    puts("PHASE: Native policy, zoom and image rules");
     for (NSArray *pair in @[@[@"2001:0db8:0000:0:0:0:0:1", @"2001:db8::1"], @[@"::ffff:192.0.2.1", @"::ffff:c000:201"], @[@"0:0:0:0:0:0:0:0", @"::"], @[@"1:0:0:2:0:0:3:4", @"1::2:0:0:3:4"]]) {
         NSString *raw = [NSString stringWithFormat:@"https://[%@]:8443", pair[0]];
         NSString *canonical = [NSString stringWithFormat:@"https://[%@]:8443/next", pair[1]];
@@ -699,5 +710,8 @@ static void Check(void) {
 @end
 
 int main(int argc, char *argv[]) {
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+    printf("START: Native Boolean wire DEBUG=%d\n", DEBUG);
     @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(WireCheckApp.class)); }
 }
