@@ -156,6 +156,9 @@ iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖，也不适用于 CM
 pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.18'
 ```
 
+当前源码另含 iOS Renderer 2.29 兼容候选；发布 Tag 与候选提交的消费边界见
+[Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
+
 HarmonyOS HAR rc.14的Registry可安装性单独核验；下载[保存在 rc.16 Release 的 rc.14 `WebViewNative.har`](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR，按[HAR 接入指南](ohos/webview-native/README.md)的 root override 安装。不能把审核受理当作 Registry 可安装。
 
 ## 快速使用

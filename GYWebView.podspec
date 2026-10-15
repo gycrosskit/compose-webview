@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.source_files = 'ios/Sources/**/*.{h,m,inc}'
   s.public_header_files = 'ios/Sources/GYWebView.h'
   s.frameworks = 'UIKit', 'WebKit', 'UniformTypeIdentifiers', 'AVFoundation'
-  s.dependency 'OpenKuiklyIOSRender', '2.28.0'
+  s.dependency 'OpenKuiklyIOSRender', '>= 2.28.0', '< 2.30.0'
   s.user_target_xcconfig = { 'OTHER_LDFLAGS' => '$(inherited) -ObjC' }
   s.requires_arc = true
 end
