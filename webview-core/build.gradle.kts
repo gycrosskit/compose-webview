@@ -25,7 +25,10 @@ kotlin {
             implementation(libs.androidx.webkit)
         }
         commonTest.dependencies { implementation(kotlin("test")) }
-        androidUnitTest.dependencies { implementation(libs.junit) }
+        androidUnitTest.dependencies {
+            implementation(libs.junit)
+            implementation("org.robolectric:robolectric:4.16.1")
+        }
     }
 }
 

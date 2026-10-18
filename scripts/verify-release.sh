@@ -29,7 +29,7 @@ with tarfile.open(sys.argv[1]) as archive:
             raise ValueError(f"Unsafe archive member: {entry.name}")
     archive.extractall(root)
 PYTHON
-python3 scripts/check-maven.py "$output/maven" com.github.gycrosskit.compose-webview "$VERSION" compose-webview,webview-core,webview-kuikly ios_arm64,ios_x64,ios_simulator_arm64,ohos_arm64
+python3 scripts/check-maven.py "$output/maven" com.github.gycrosskit.compose-webview "$VERSION" webview-core,webview-kuikly ios_arm64,ios_x64,ios_simulator_arm64,ohos_arm64
 # 消费方只使用 JitPack；归档校验不会安装到 MavenLocal 或替代远程解析。
 
 # 预期 inventory 来自通过冻结 SHA 的归档，不从 JitPack 自报 inventory 反推。

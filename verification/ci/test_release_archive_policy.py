@@ -25,19 +25,21 @@ def step(data, job, name):
 
 source = workflow('regression.yml')
 release = workflow('release-validation.yml')
-# New RC enables every added API probe without changing historical release conditions.
-rc18 = "github.event.release.tag_name == '0.2.0-rc.18' || inputs.version == '0.2.0-rc.18'"
-assert rc18 in release['env']['KUIKLY_COMPOSE_FLAGS']
-assert rc18 in release['env']['FULLSCREEN_CONTROLS_FLAGS']
+source_consumer = step(source, 'android', 'Verify current source Kuikly consumer (not remote artifacts)')
+for argument in ('-PverifyLocalSource', '-PwebViewVersion=0.3.0-dev', '-PverifyKuiklyCompose',
+                 '-PverifyFullscreenControls', '-PverifyPageChannels=true', 'assembleDebug',
+                 'verifyNoCmpUi', 'verifyExactComponentVersion'):
+    assert argument in source_consumer
+assert '-PremoteOnly' not in source_consumer
+assert release['env']['KUIKLY_COMPOSE_FLAGS'] == '-PverifyKuiklyCompose'
+assert release['env']['FULLSCREEN_CONTROLS_FLAGS'] == '-PverifyFullscreenControls'
+assert release['env']['NATIVE_VERSION'] == '0.2.0-rc.18'
 for job in ('release-android', 'release-native'):
     consumers = [item['run'] for item in release['jobs'][job]['steps']
                  if '-p verification-consumer' in item.get('run', '')]
     assert consumers and all('-PremoteOnly' in command for command in consumers)
-    assert any('-PverifyNavigation=' in command and rc18 in command for command in consumers)
-    assert any('-PverifyPageChannels=' in command and rc18 in command for command in consumers)
-for name in ('Build exact remote Git Pod and pinned Renderer', 'Verify remote Pod checkout receipt'):
-    item = next(item for item in release['jobs']['release-native']['steps'] if item.get('name') == name)
-    assert rc18 in item['if'] and '0.2.0-rc.17' in item['if']
+    assert all('-PverifyCmp' not in command and '-PverifyNavigation' not in command for command in consumers)
+    assert all('-PverifyPageChannels=true' in command for command in consumers)
 kuikly_link = step(release, 'release-native', 'Link new Kuikly fullscreen APIs with the real Renderer')
 assert '$FULLSCREEN_CONTROLS_FLAGS' in kuikly_link and '$KUIKLY_COMPOSE_FLAGS' in kuikly_link
 assert '-PsimRenderFrameworkDir=$RUNNER_TEMP/webview-release-render/Products' in kuikly_link
@@ -48,7 +50,7 @@ with TemporaryDirectory() as directory:
     environment = dict(os.environ, GITHUB_EVENT_NAME='workflow_dispatch',
                        GITHUB_SHA='a' * 40, GITHUB_SERVER_URL='https://github.com',
                        GITHUB_REPOSITORY='gycrosskit/compose-webview', GITHUB_RUN_ID='123',
-                       RUNNER_TEMP=str(root), VERSION='0.2.0-rc.17')
+                       RUNNER_TEMP=str(root), VERSION='0.3.0-dev', NATIVE_VERSION='0.2.0-rc.18')
 
     def run(script, expected=True, **values):
         result = subprocess.run(['bash', '-euo', 'pipefail', '-c', script], cwd=root,
@@ -74,15 +76,15 @@ sys.exit(subprocess.run(sys.argv[sys.argv.index('--') + 1:]).returncode)
 set -euo pipefail
 test "${PACKAGE_FIXTURE_FAIL:-0}" = 0
 test "$1" = --init-script
-mkdir -p build/maven/com/github/gycrosskit/compose-webview/compose-webview/0.2.0-rc.17
-printf '%s' '{"component":{"version":"0.2.0-rc.17"}}' > build/maven/com/github/gycrosskit/compose-webview/compose-webview/0.2.0-rc.17/compose-webview-0.2.0-rc.17.module
+mkdir -p build/maven/com/github/gycrosskit/compose-webview/webview-core/0.3.0-dev
+printf '%s' '{"component":{"version":"0.3.0-dev"}}' > build/maven/com/github/gycrosskit/compose-webview/webview-core/0.3.0-dev/webview-core-0.3.0-dev.module
 printf 'fixture archive bytes' > build/compose-webview-maven.tar.gz
 ''')
     package = step(source, 'native', 'Package checked Maven archive')
     run(package)
     receipt_path = root / 'build/maven-provenance.json'
     receipt = json.loads(receipt_path.read_text())
-    assert receipt['version'] == '0.2.0-rc.17'
+    assert receipt['version'] == '0.3.0-dev'
     assert receipt['source_sha'] == 'a' * 40
     assert receipt['run_url'] == 'https://github.com/gycrosskit/compose-webview/actions/runs/123'
     assert receipt['archive_sha256'] == hashlib.sha256((root / 'build/compose-webview-maven.tar.gz').read_bytes()).hexdigest()
@@ -96,7 +98,7 @@ printf 'fixture archive bytes' > build/compose-webview-maven.tar.gz
     git.write_text('''#!/usr/bin/env bash
 set -euo pipefail
 case "$1" in
-  ls-remote) printf "%s\\trefs/tags/%s\\n" "$MOCK_TAG_COMMIT" "$VERSION" ;;
+  ls-remote) printf "%s\\trefs/tags/%s\\n" "$MOCK_TAG_COMMIT" "$NATIVE_VERSION" ;;
   clone) target="${!#}"; mkdir -p "$target/ios"; cp -R "$MOCK_REFERENCE_SOURCE" "$target/ios/Sources" ;;
   -C) printf '%s\\n' "$MOCK_REFERENCE_HEAD" ;;
   *) exit 1 ;;
@@ -113,13 +115,13 @@ esac
     installed = pod_dir / 'Pods/GYWebView/ios/Sources'
     pod = step(release, 'release-native', 'Verify remote Pod checkout receipt')
     for tag, head, version, source_change, expected in [
-        ('0.2.0-rc.17', 'a' * 40, '0.2.0-rc.17', None, True),
-        ('0.2.0-rc.16', 'a' * 40, '0.2.0-rc.17', None, False),
-        ('0.2.0-rc.17', 'b' * 40, '0.2.0-rc.17', None, False),
-        ('0.2.0-rc.17', 'a' * 40, '0.2.0-rc.16', None, False),
-        ('0.2.0-rc.17', 'a' * 40, '0.2.0-rc.17', 'changed', False),
-        ('0.2.0-rc.17', 'a' * 40, '0.2.0-rc.17', 'missing', False),
-        ('0.2.0-rc.17', 'a' * 40, '0.2.0-rc.17', 'extra', False),
+        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.18', None, True),
+        ('0.2.0-rc.16', 'a' * 40, '0.2.0-rc.18', None, False),
+        ('0.2.0-rc.18', 'b' * 40, '0.2.0-rc.18', None, False),
+        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.16', None, False),
+        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.18', 'changed', False),
+        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.18', 'missing', False),
+        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.18', 'extra', False),
     ]:
         shutil.rmtree(root / 'webview-release-source', ignore_errors=True)
         shutil.rmtree(installed, ignore_errors=True)
@@ -145,7 +147,8 @@ CHECKOUT OPTIONS:
         if expected:
             receipt = json.loads(pod_receipt.read_text())
             assert receipt['resolved_tag_sha'] == 'a' * 40
-            assert receipt['lock_tag'] == '0.2.0-rc.17'
+            assert receipt['lock_tag'] == '0.2.0-rc.18'
+            assert receipt['version'] == environment['NATIVE_VERSION'] != environment['VERSION']
             assert receipt['native_source_sha256'] == {
                 path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in reference.iterdir()
             }

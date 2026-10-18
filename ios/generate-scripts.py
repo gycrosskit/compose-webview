@@ -6,7 +6,7 @@ import re
 import sys
 
 root = Path(__file__).resolve().parents[1]
-ios = root / 'src/iosMain/kotlin/io/github/gycrosskit/composewebview/IosWebViewScripts.kt'
+ios = root / 'webview-core/src/iosMain/kotlin/io/github/gycrosskit/composewebview/IosWebViewScripts.kt'
 common = root / 'webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewEarlyScripts.kt'
 page_messages = root / 'webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPageMessages.kt'
 constants = {

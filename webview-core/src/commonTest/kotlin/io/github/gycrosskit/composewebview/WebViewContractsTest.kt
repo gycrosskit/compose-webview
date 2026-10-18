@@ -9,6 +9,35 @@ import kotlin.test.assertTrue
 
 class WebViewContractsTest {
     @Test
+    fun `keeps real document title`() {
+        assertEquals(
+            "健康资讯",
+            usableWebTitle(
+                title = " 健康资讯 ",
+                pageUrl = "https://example.test/news/detail?id=1",
+            ),
+        )
+    }
+
+    @Test
+    fun `rejects url host and path placeholder titles`() {
+        val pageUrl = "https://example.test/pages/Checkin"
+
+        assertNull(usableWebTitle(pageUrl, pageUrl))
+        assertNull(usableWebTitle("example.test", pageUrl))
+        assertNull(usableWebTitle("Checkin", pageUrl))
+    }
+
+    @Test
+    fun `malformed page url does not discard valid title`() {
+        assertEquals(
+            "用户协议",
+            usableWebTitle("用户协议", "not a valid url"),
+        )
+    }
+
+
+    @Test
     fun bridgeMessagesRequireHandlerAndSeparatorOnBothPlatforms() {
         assertEquals(
             WebViewBridgeMessage("videoEnded", "{\"code\":0}"),

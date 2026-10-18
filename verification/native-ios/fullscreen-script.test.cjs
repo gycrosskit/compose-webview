@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const source = fs.readFileSync(path.resolve(__dirname, '../../src/iosMain/kotlin/io/github/gycrosskit/composewebview/IosWebViewScripts.kt'), 'utf8');
+const source = fs.readFileSync(path.resolve(__dirname, '../../webview-core/src/iosMain/kotlin/io/github/gycrosskit/composewebview/IosWebViewScripts.kt'), 'utf8');
 const script = source.match(/IOS_EXIT_FULLSCREEN_SCRIPT = """([\s\S]*?)"""/)[1];
 const run = new (Object.getPrototypeOf(async function(){}).constructor)('document', 'window', script);
 class Target extends EventTarget {

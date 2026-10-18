@@ -100,6 +100,7 @@ jobs:
           python3 verification/publication/test_metadata.py
           python3 ios/generate-scripts.py --check
           node verification/video-scripts.test.cjs
+          node verification/native-ios/fullscreen-script.test.cjs
           TYPESCRIPT_PATH="$RUNNER_TEMP/contract-tools/node_modules/typescript" WEBVIEW_WINDOW_POLICY_SOURCE="$RUNNER_TEMP/window-policy.ets" node ohos/tests/contract.test.cjs
       - name: Explain lightweight completion
         if: ${{ !(needs.changes.outputs.source == 'true') }}
@@ -146,9 +147,13 @@ jobs:
         if: needs.changes.outputs.source == 'true'
         with:
           node-version: '22'
-      - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/android.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" testDebugUnitTest :webview-core:testDebugUnitTest :webview-kuikly:testDebugUnitTest compileReleaseKotlinAndroid :webview-kuikly:compileReleaseKotlinAndroid --no-daemon --max-workers=1 --stacktrace --info
+      - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/android.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" :webview-core:testDebugUnitTest :webview-kuikly:testDebugUnitTest :webview-core:compileReleaseKotlinAndroid :webview-kuikly:compileReleaseKotlinAndroid --no-daemon --max-workers=1 --stacktrace --info
         timeout-minutes: 35
         if: needs.changes.outputs.source == 'true'
+      - name: Verify current source Kuikly consumer (not remote artifacts)
+        if: needs.changes.outputs.source == 'true'
+        timeout-minutes: 25
+        run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/source-consumer.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer -PverifyLocalSource -PwebViewVersion=0.3.0-dev -PverifyKuiklyCompose -PverifyFullscreenControls -PverifyPageChannels=true assembleDebug verifyNoCmpUi verifyExactComponentVersion --no-daemon --max-workers=1 --stacktrace --info
       - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/android.log -- bash verification/android-callbacks/verify.sh
         timeout-minutes: 10
         if: needs.changes.outputs.source == 'true'
@@ -210,7 +215,7 @@ jobs:
         run: |
           ios_test_target=iosSimulatorArm64Test
           if [[ "$(uname -m)" != arm64 ]]; then ios_test_target=iosX64Test; fi
-          python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/native.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" "$ios_test_target" :webview-core:"$ios_test_target" compileKotlinIosArm64 compileKotlinIosX64 :webview-kuikly:compileKotlinIosArm64 :webview-kuikly:compileKotlinIosSimulatorArm64 :webview-kuikly:compileKotlinIosX64 :webview-core:compileKotlinOhosArm64 :webview-kuikly:compileKotlinOhosArm64 --no-daemon --max-workers=1 --stacktrace --info
+          python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/native.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" :webview-core:"$ios_test_target" :webview-core:compileKotlinIosArm64 :webview-core:compileKotlinIosX64 :webview-kuikly:compileKotlinIosArm64 :webview-kuikly:compileKotlinIosSimulatorArm64 :webview-kuikly:compileKotlinIosX64 :webview-core:compileKotlinOhosArm64 :webview-kuikly:compileKotlinOhosArm64 --no-daemon --max-workers=1 --stacktrace --info
           python3 -c 'import pathlib, sys, xml.etree.ElementTree as ET; files=pathlib.Path(".").glob("**/build/test-results/"+sys.argv[1]+"/*.xml"); cases=[case for path in files for case in ET.parse(path).iter("testcase")]; assert any(case.find("skipped") is None for case in cases), "No executed iOS test cases"' "$ios_test_target"
       - name: Verify real iOS wire in Debug and Release
         timeout-minutes: 30
@@ -232,7 +237,7 @@ jobs:
           python3 - <<'PYTHON'
           import hashlib, json, os
           from pathlib import Path
-          module = next(Path('build/maven/com/github/gycrosskit/compose-webview/compose-webview').glob('*/*.module'))
+          module = next(Path('build/maven/com/github/gycrosskit/compose-webview/webview-core').glob('*/*.module'))
           archive = Path('build/compose-webview-maven.tar.gz')
           receipt = {
               'version': json.loads(module.read_text())['component']['version'],

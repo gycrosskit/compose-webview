@@ -1,9 +1,7 @@
 [versions]
 agp = "8.10.1"
 kotlin = "2.2.21-1.0.0"
-composeMultiplatform = "1.10.3"
 ktor = "3.3.3-1.1.0-04"
-lifecycle = "2.10.0"
 activity = "1.13.0"
 webkit = "1.16.0"
 junit = "4.13.2"
@@ -16,11 +14,7 @@ kuikly-compose = { module = "com.tencent.kuikly-open:compose", version.ref = "ku
 kuikly-core = { module = "com.tencent.kuikly-open:core", version.ref = "kuikly" }
 kuikly-render-android = { module = "com.tencent.kuikly-open:core-render-android", version.ref = "kuikly" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
-cmp-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
-cmp-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
-cmp-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
 ktor-http = { module = "io.ktor:ktor-http", version.ref = "ktor" }
-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 activity = { module = "androidx.activity:activity", version.ref = "activity" }
 androidx-webkit = { module = "androidx.webkit:webkit", version.ref = "webkit" }
 junit = { module = "junit:junit", version.ref = "junit" }
@@ -29,4 +23,3 @@ junit = { module = "junit:junit", version.ref = "junit" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
