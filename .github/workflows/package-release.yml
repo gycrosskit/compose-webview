@@ -2,7 +2,7 @@ name: Package release candidate
 'on':
   push:
     branches: ['codex/kuikly-rc-*']
-    paths: ['.github/workflows/package-release.yml', 'scripts/package-maven.sh', 'scripts/archive-prebuilt.sh', 'build.gradle.kts', 'gradle.properties']
+    paths: ['scripts/package-maven.sh', 'scripts/archive-prebuilt.sh', 'build.gradle.kts', 'gradle.properties', 'ohos-probe/build.gradle.kts']
   workflow_dispatch:
 permissions:
   contents: read
@@ -48,8 +48,7 @@ jobs:
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
-            ~/.konan/kotlin-native-prebuilt-*
-            ~/.konan/dependencies
+            ~/.konan
             !~/.konan/dependencies/cache
             !~/.konan/**/*.part
             !~/.konan/**/*.tmp
