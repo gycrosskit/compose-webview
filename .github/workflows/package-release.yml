@@ -55,7 +55,7 @@ jobs:
             !~/.konan/**/*.lock
           key: ${{ steps.native-key.outputs.key }}
       - name: Build and verify exact Maven archive
-        run: python3 .ci-shared/templates/ci-run.py --log ci-diagnostics/package.log -- bash scripts/package-maven.sh
+        run: python3 .ci-shared/templates/ci-run.py --log ci-diagnostics/package.log -- bash scripts/package-maven.sh --init-script "$PWD/scripts/ci-repositories.gradle"
       - name: Freeze archive receipt
         env:
           ARCHIVE: build/compose-webview-maven.tar.gz
