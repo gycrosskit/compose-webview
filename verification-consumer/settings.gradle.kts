@@ -40,7 +40,6 @@ rootProject.name = "webview-artifact-consumer"
 if (providers.gradleProperty("verifyLocalSource").isPresent) {
     includeBuild("..") {
         dependencySubstitution {
-            substitute(module("com.github.gycrosskit.compose-webview:compose-webview")).using(project(":"))
             substitute(module("com.github.gycrosskit.compose-webview:webview-core")).using(project(":webview-core"))
             substitute(module("com.github.gycrosskit.compose-webview:webview-kuikly")).using(project(":webview-kuikly"))
         }

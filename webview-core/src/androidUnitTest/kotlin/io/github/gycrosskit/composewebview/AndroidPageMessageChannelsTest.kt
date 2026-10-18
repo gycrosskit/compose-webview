@@ -105,66 +105,22 @@ class AndroidPageMessageChannelsTest {
         assertEquals("fresh inline", (events.single() as WebViewEvent.PageMessage).data)
     }
 
-    @Test fun `CMP reload synchronously revokes before pending instance replacement`() {
-        val owner = WebView(RuntimeEnvironment.getApplication())
-        owner.loadUrl("https://page.test/initial")
-        val state = AppWebViewState()
-        state.attach(owner)
-        val events = mutableListOf<WebViewEvent>()
-        state.pageMessageChannels = AndroidPageMessageChannels(owner, { request }, { state.isAttached(owner) }, events::add)
-        val pending = PageChannelProvider.listeners.getValue(owner).getValue("PageReady")
-        val proxy = PageChannelReply()
-        pending.onPostMessage(owner, WebMessageCompat("ready"), Uri.parse("https://page.test"), true, proxy)
-        val replyId = (events.single() as WebViewEvent.PageMessage).replyId
-        state.reload()
-        assertEquals(1, state.instanceKey)
-        assertSame(owner, state.webView)
-        assertFalse(state.replyPageMessage(replyId, "late"))
-        pending.onPostMessage(owner, WebMessageCompat("late"), Uri.parse("https://page.test"), true, proxy)
-        assertEquals(1, events.size)
-    }
-
-    @Test fun `CMP forward synchronously revokes the old document before navigating`() {
-        var forwards = 0
-        val owner = object : WebView(RuntimeEnvironment.getApplication()) {
-            override fun canGoForward() = true
-            override fun goForward() { forwards++ }
-        }
-        owner.loadUrl("https://page.test/initial")
-        val state = AppWebViewState()
-        state.attach(owner)
-        val events = mutableListOf<WebViewEvent>()
-        state.pageMessageChannels = AndroidPageMessageChannels(owner, { request }, { state.isAttached(owner) }, events::add)
-        val listener = PageChannelProvider.listeners.getValue(owner).getValue("PageReady")
-        val proxy = PageChannelReply()
-        listener.onPostMessage(owner, WebMessageCompat("ready"), Uri.parse("https://page.test"), true, proxy)
-        val reply = (events.single() as WebViewEvent.PageMessage).replyId
-        assertTrue(state.goForward())
-        assertEquals(1, forwards)
-        assertFalse(state.replyPageMessage(reply, "late"))
-        listener.onPostMessage(owner, WebMessageCompat("late old document"), Uri.parse("https://page.test"), true, proxy)
-        assertEquals(1, events.size)
-    }
-
     @Test fun `cancel clears pending replies and bounded queue cannot silently switch documents`() {
         val owner = WebView(RuntimeEnvironment.getApplication())
         owner.loadUrl("https://page.test/initial")
-        val state = AppWebViewState()
-        state.attach(owner)
         val events = mutableListOf<WebViewEvent.PageMessage>()
-        val session = AndroidPageMessageChannels(owner, { request }, { state.isAttached(owner) }) {
+        val session = AndroidPageMessageChannels(owner, { request }, { true }) {
             if (it is WebViewEvent.PageMessage) events += it
         }
-        state.pageMessageChannels = session
         val pending = PageChannelProvider.listeners.getValue(owner).getValue("PageReady")
         val proxy = PageChannelReply()
         repeat(129) { pending.onPostMessage(owner, WebMessageCompat("message $it"), Uri.parse("https://page.test"), true, proxy) }
         assertEquals(128, events.size)
-        assertTrue(state.replyPageMessage(events.first().replyId, "reply"))
+        assertTrue(session.reply(events.first().replyId, "reply"))
         pending.onPostMessage(owner, WebMessageCompat("after consume"), Uri.parse("https://page.test"), true, proxy)
         assertEquals(129, events.size)
-        state.stopLoading()
-        assertFalse(state.replyPageMessage(events.last().replyId, "cancelled"))
+        session.revoke()
+        assertFalse(session.reply(events.last().replyId, "cancelled"))
         pending.onPostMessage(owner, WebMessageCompat("after cancel"), Uri.parse("https://page.test"), true, proxy)
         assertEquals(129, events.size)
 

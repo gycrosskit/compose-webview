@@ -1,39 +1,23 @@
 # GY CrossKit WebView
 
-本版：CMP Android 为原生 WebView 设置 `MATCH_PARENT`，避免旧 Chromium 在 `WRAP_CONTENT` 下把 CSS viewport 高度归零；iOS CMP/Kuikly 的新建 WKWebView 按 Debug 构建自动配置检查能力。这些修改自 rc.17 提供，详见[布局合同](docs/功能与平台差异.md#android-viewport-布局)和[远程调试合同](docs/功能与平台差异.md#webview-远程调试)。
+当前源码候选为 Maven `0.3.0-dev`，尚未发布。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；本候选删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
 
-本版新增（2026-10-10，发布状态以 Release 收据为准）：H5 全屏视频控制从宿主迁入 `webview-core` / `webview-kuikly`，共享媒体脚本、镜像解析和时间格式。Android 通过现有 `fullscreenControlsFactory` 显式创建 `AndroidDefaultWebFullscreenControls`；未提供 factory 的旧行为保持不变。Kuikly 网页层级可挂载 `FullscreenPlayerOverlay`，文案由 `WebFullscreenLabels` 注入。iOS 系统播放器与 OHOS 原生层级的覆盖/触控需要设备验证，详见[全屏合同](docs/功能与平台差异.md#h5-全屏视频控制)。rc.18 Maven 包含这些新 API，旧 rc.17 保持不变。
+`webview-kuikly` 保留 raw `GYWebView` 和 `io.github.gycrosskit.composewebview.kuikly.AppWebView` KuiklyCompose 入口，传递 KuiklyCompose / Compose runtime。宿主继续统一 Kuikly、compiler 与 Renderer 版本；`verifyNoCmpUi` 允许这套 runtime 并拒绝第二套 AndroidX/JetBrains CMP UI/foundation/material。
 
-> 本版坐标：Maven / Git Pod `0.2.0-rc.18`；OHOS HAR 沿用 `0.2.0-rc.14`，system-actions-native 沿用 `0.2.0-rc.4`。公开状态以[对应 Release](https://github.com/gycrosskit/compose-webview/releases/tag/0.2.0-rc.18)及其 `release-verification.json`、CI 收据为准，安装示例不代表已通过发布门禁。见[rc.18 发布验收与边界](docs/0.2.0-rc.18发布验收.md)；源码、冻结归档、公开消费与宿主/设备验收分别核对。
+iOS Objective-C 与 OHOS ArkWeb 行为保持不变。Git Pod 继续使用 `0.2.0-rc.18`，HAR 沿用 `0.2.0-rc.14`，system-actions-native 沿用 `0.2.0-rc.4`；Maven 候选版本不能代替 Pod/HAR 版本。旧版本及 CMP 验收保留在 [rc.18 发布记录](docs/0.2.0-rc.18发布验收.md)、[历史源码审查](docs/完整源码审查.md) 和旧 tag 中，不代表本候选通过验证。
 
-2026-10-08 功能索引：core提供请求/安全/导航，根模块提供CMP Android/iOS，webview-kuikly提供raw与KuiklyCompose Android/iOS/OHOS；任意同步导航决策、iOS禁图/文件选择和OHOSCookie等仍有明确差异。 详见[功能与平台差异](docs/功能与平台差异.md)，含固定基线、五入口矩阵、真实回归与未验收范围。本版组合：Maven/Git Pod 0.2.0-rc.18；OHOS HAR 0.2.0-rc.14，配套system-actions-native 0.2.0-rc.4。各渠道消费与设备验收分别核对。
+底层使用 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb。请求、安全、导航、脚本与事件由 core 共享，账号、鉴权、品牌 URL、页面状态与业务路由由宿主提供。H5 视频控制保留 core 媒体脚本/镜像、Android 原生控件与 KuiklyCompose overlay；不改系统播放器层级限制。
 
-历史核对（2026-10-08）：当轮重跑生产模型Compose接线与OHOS合同；真实WK/手势/consumer复用前轮，原生节点替身不是Renderer验收。 逐项时点与边界见[验证范围](docs/功能与平台差异.md#sdk系统与真实验证范围)。
-
-Maven `0.2.0-rc.14`新增 `io.github.gycrosskit.composewebview.kuikly.AppWebView` Composable，此入口从该版本提供；已发布 CMP 同名入口位于 `io.github.gycrosskit.composewebview`，raw `GYWebView` 保留兼容。`webview-kuikly` 现在传递依赖 KuiklyCompose / Compose runtime，宿主统一 Kuikly 与 compiler 版本；没有引入第二套 JetBrains CMP UI。独立消费可用 `-PverifyKuiklyCompose -PverifyLocalSource` 验证本地源码；远程验收使用 `-PremoteOnly -PwebViewVersion=0.2.0-rc.18`。新的 `verifyNoCmpUi` 门禁允许 KuiklyCompose/runtime 并拒绝第二套 CMP UI；开启 API probe 时另确认 KuiklyCompose 确实存在，历史远程基线 raw API 仍可验证。
-
-封装 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb，提供网页加载、导航、脚本、JSBridge 和生命周期管理。Compose Multiplatform（CMP）与 Kuikly 共享请求和事件契约；账号、鉴权、业务路由与页面 UI 由应用提供。
-
-本版 Maven / Kuikly iOS Git Pod 为 **0.2.0-rc.18**：默认关闭的 `pageMessageChannels` 提供初始完整 HTTP(S) 主页面的具名早期双向 string 通道。Android/iOS 每次声明加载与显式 reload 重建物理 owner；隐藏、停止、后续主文档导航和释放同步撤销。OHOS HAR **0.2.0-rc.14** 的 v2 实现通过 document-start 引导初始主文档 capability；隐藏、停止和导航后须显式 reload 新建 owner，不由 show 恢复。默认空配置保留既有行为；配套 system-actions-native **0.2.0-rc.4** 与 Render **2.28.0**。详见[早期通道候选验收](docs/早期页面通道候选验收.md)。
-
-历史 Maven / Git Pod **rc.12** 不包含早期具名通道（与 OHOS HAR rc.12 的独立版本号区分）。其 CMP 前进历史、返回/退出全屏回执、共享异步退出脚本与旧 owner/取消修复在 rc.13 中保留；历史源码验证见 [rc.12 候选验收](docs/0.2.0-rc.12候选验收.md)。
-
-iOS 常规网页最低仍为 15.0；受控文件上传通过公开 `WKUIDelegate.runOpenPanelWithParameters`，要求 iOS18.4+。15～18.3 开启 `fileChooserEnabled` 会明确拒绝并发送 `FILE_CHOOSER` Unsupported；关闭能力时的 DOM 兼容拦截无法保证默认 WebKit 上传被原生隔离。需要这种隔离的页面应使用 18.4+。本版在仅接受 MP4 时通过 AVAssetExportSession 转换系统 MOV；输入与最终文件分别校验 50 MiB 上限，转码临时文件不承诺流过程磁盘上限。见[完整源码审查与平台边界](docs/完整源码审查.md)。
-
-历史 rc.8 / rc.6 / rc.5 的修复与渠道证据见 [rc.8 远程发布验收](docs/0.2.0-rc.8远程发布验收.md)和 [rc.6 / rc.5 远程闭合验收](docs/远程闭合验收.md)；其中版本、OHPM 状态与消费结果均为当时记录，当前组合以本文 rc.17 / HAR rc.14 及对应验收为准。
+iOS 常规网页最低 15.0；受控文件选择要求 iOS18.4+，旧系统开启时明确 Unsupported，关闭时的 DOM 拦截不保证旧 WebKit 原生文件隔离。MP4-only 上传保留 MOV 转换及输入/输出各 50 MiB 限制，转码过程磁盘不承诺硬上限。完整合同见 [功能与平台差异](docs/功能与平台差异.md)。
 
 ## 架构与调用流程
 
-先看 UI 入口，再看原生接线：CMP 和 Kuikly 共用 `webview-core` 的请求与事件，但各自创建、管理原生 View。业务 URL、账号、导航处理和页面状态由宿主提供。
+先看 UI 入口，再看原生接线：Kuikly raw 与 KuiklyCompose 共用 `webview-core` 的请求与事件，由各平台 native 接线管理原生 View。业务 URL、账号、导航处理和页面状态由宿主提供。
 
 ```mermaid
 flowchart TB
-    Host["宿主页面：URL、账号、业务事件"] --> CMP["CMP：AppWebView / AppWebViewState"]
-    Host --> Kuikly["Kuikly：GYWebView"]
-    CMP --> Core["webview-core：请求、导航、安全、事件契约"]
+    Host["宿主页面：URL、账号、业务事件"] --> Kuikly["Kuikly raw / KuiklyCompose"]
     Kuikly --> Core
-    CMP --> Android["Android WebView"]
-    CMP --> IOS["iOS WKWebView"]
     Kuikly --> Android
     Kuikly --> IOS
     Kuikly --> OHOS["HarmonyOS ArkWeb / HAR"]
@@ -42,7 +26,7 @@ flowchart TB
     OHOS --> Window["system-actions：共用窗口策略 owner"]
 ```
 
-CMP 原生实现随 KMP 产物提供；Kuikly 还需注册同名原生 View，iOS 配 Pod，HarmonyOS 配 HAR。两种 UI 入口的原生安装方式不能互相替代。
+KMP 产物提供 core 与 Kuikly API；宿主仍需注册同名原生 View，iOS 配 Pod，HarmonyOS 配 HAR。
 
 下面以 Kuikly Android 为例：导航规则预先下发，在原生同步判断；事件返回宿主用于观察。Bridge、文件与媒体请求另行校验可信来源，导航规则不等于高权限授权。
 
@@ -94,10 +78,6 @@ classDiagram
         +goBack(callback)
         +evaluateJavascript(script, callback)
     }
-    class WebViewCallbacks {
-        +onNavigationRequest
-        +onEvent
-    }
     class WebViewEvent {
         <<interface>>
     }
@@ -105,10 +85,9 @@ classDiagram
     WebViewRequest --> WebViewNavigationPolicy : navigationPolicy
     GYWebView ..> WebViewRequest : 属性输入
     GYWebView ..> WebViewEvent : 事件输出
-    WebViewCallbacks ..> WebViewEvent : CMP 事件回调
 ```
 
-源码入口：[请求与安全](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt)、[导航规则](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt)、[CMP 入口与状态](src/commonMain/kotlin/io/github/gycrosskit/composewebview/ComposeWebView.kt)、[Kuikly 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt)、[Android 原生接线](webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt)。`AppWebViewState` 属于当前组合位置，不能放进 ViewModel 或跨页面复用；Kuikly 命令通过异步回调返回。
+源码入口：[请求与安全](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt)、[导航规则](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt)、[KuiklyCompose 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/AppWebView.kt)、[raw 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt)、[Android native](webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt)。controller 属于当前节点，命令异步返回。
 
 具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，本版使用 rc.17 / HAR rc.14：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
 
@@ -116,11 +95,11 @@ classDiagram
 
 | 平台 | 入口 | 最低要求 |
 | --- | --- | --- |
-| Android | CMP `compose-webview`；Kuikly `webview-kuikly` | API 24；Kuikly 原生能力使用 ComponentActivity |
-| iOS | CMP KLIB；Kuikly KLIB + `GYWebView` Pod | iOS 15；原生文件选择要求 iOS 18.4+ |
+| Android | `webview-kuikly` | API 24；Kuikly 原生能力使用 ComponentActivity |
+| iOS | Kuikly KLIB + `GYWebView` Pod | iOS 15；原生文件选择要求 iOS 18.4+ |
 | HarmonyOS | `webview-kuikly` KLIB + `@gycrosskit/webview` HAR | HarmonyOS 6.0.2 / API 22；Kuikly render 2.28.0 |
 
-UI 无关契约位于 `webview-core`，由 UI 模块传递依赖。已验证工具链：Kotlin `2.2.21-1.0.0`、CMP `1.10.3`、Kuikly core `2.28.0-2.0.21-ohos`；OHOS 插件及传递依赖仓库见 [接入指南](docs/接入指南.md#ohos-工具链仓库)。
+UI 无关契约位于 `webview-core`，由 UI 模块传递依赖。已验证工具链：Kotlin `2.2.21-1.0.0`、Kuikly core `2.28.0-2.0.21-ohos`；OHOS 插件及传递依赖仓库见 [接入指南](docs/接入指南.md#ohos-工具链仓库)。
 
 ## 安装
 
@@ -141,16 +120,14 @@ dependencyResolutionManagement {
 }
 ```
 
-以下为本版 Maven/Git Pod 0.2.0-rc.18 安装方式，包含新增KuiklyCompose AppWebView；OHOS HAR单独使用0.2.0-rc.14。在 KMP 的 `commonMain.dependencies` 按 UI 引擎选择：
+以下 Maven `0.3.0-dev` 是未发布候选坐标，发布前仅用于本地候选验证。Git Pod/HAR 继续各自固定版本。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
-// CMP Android/iOS
-implementation("com.github.gycrosskit.compose-webview:compose-webview:0.2.0-rc.18")
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.2.0-rc.18")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.3.0-dev")
 ```
 
-iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖，也不适用于 CMP 入口：
+iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖：
 
 ```ruby
 pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => '0.2.0-rc.18'
@@ -163,17 +140,18 @@ HarmonyOS HAR rc.14的Registry可安装性单独核验；下载[保存在 rc.16 
 
 ## 快速使用
 
-以下是已发布 CMP `io.github.gycrosskit.composewebview.AppWebView` 示例；KuiklyCompose同名函数自0.2.0-rc.14提供，使用不同package，见[入口与差异](docs/功能与平台差异.md)。CMP 页面可直接加载 URL：
+以下为保留的 KuiklyCompose 入口；宿主使用 Kuikly Modifier 提供有界尺寸：
 
 ```kotlin
 import androidx.compose.runtime.Composable
-import io.github.gycrosskit.composewebview.AppWebView
+import com.tencent.kuikly.compose.ui.Modifier
+import io.github.gycrosskit.composewebview.kuikly.AppWebView
 import io.github.gycrosskit.composewebview.WebViewContent
 import io.github.gycrosskit.composewebview.WebViewRequest
 
 @Composable
-fun ExamplePage() {
-    AppWebView(request = WebViewRequest(WebViewContent.Url("https://example.com/")))
+fun ExamplePage(modifier: Modifier) {
+    AppWebView(request = WebViewRequest(WebViewContent.Url("https://example.com/")), modifier = modifier)
 }
 ```
 
@@ -184,12 +162,12 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 - JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTPS 来源；TLS 错误拒绝加载。
 - 导航拦截由预先下发的 `navigationPolicy` 同步判断，事件用于报告结果；`allowedOrigins` 精确匹配 scheme、host 和有效端口。
 - rc.11 增加 `allowedUrls`，按完整 URL 字符串同步限制主文档，与 scheme、来源和拒绝规则同时生效；空集合不增加限制，不归一化默认端口、路径、查询或 fragment，也不限制 iframe/子资源。
-- Android CMP/Kuikly 在 HTTP(S) 主文档非 GET 请求发送前补查导航策略。配置 `allowedUrls`、`allowedOrigins`、`blockedRules` 或限制 HTTP(S) scheme 时，即使首地址允许也保守拒绝，并在 UI 线程报告 `Navigation(blocked=true)`；默认策略 POST、iframe/XHR 不受此额外限制。原因是 [Android WebViewClient](https://developer.android.com/reference/android/webkit/WebViewClient) 不为 POST 调用 `shouldOverrideUrlLoading`，且 `shouldInterceptRequest` 仅检查 redirect 的首地址，无法保证 307/308 保留 POST 后仍符合白名单。
+- Android Kuikly 在 HTTP(S) 主文档非 GET 请求发送前补查导航策略。配置 `allowedUrls`、`allowedOrigins`、`blockedRules` 或限制 HTTP(S) scheme 时，即使首地址允许也保守拒绝，并在 UI 线程报告 `Navigation(blocked=true)`；默认策略 POST、iframe/XHR 不受此额外限制。原因是 [Android WebViewClient](https://developer.android.com/reference/android/webkit/WebViewClient) 不为 POST 调用 `shouldOverrideUrlLoading`，且 `shouldInterceptRequest` 仅检查 redirect 的首地址，无法保证 307/308 保留 POST 后仍符合白名单。
 - Android 临时弹窗仅解析 GET 目标并沿用当前窗口；非 GET 主文档始终拒绝并通知，不先联网，也不把 POST 改为 GET 重放。
 - iOS 18.4 以下不能开启受控原生文件选择，返回 `CapabilityUnsupported(FILE_CHOOSER)`；旧系统的 DOM 拦截不能保证原生文件隔离。iOS18.4+ 与 HarmonyOS H5 `capture` 复用系统拍摄能力，核验权限、来源、文档代次、MIME 和大小；取消/失败不回传文件，成功临时文件在文档撤销时清理。
 - 导航、隐藏、请求切换和销毁撤销旧消息端口、系统请求与迟到回调。隐藏不取消当前文档初始化：脚本仍受 JavaScript 开关与可信主文档门禁，显示不会重跑副作用脚本或重载页面。应用负责业务脚本输入编码和页面生命周期。
 
-明确开启 `pageBridgeEnabled` 的初始 HTTP(S) 页面可执行同源业务脚本，沿用手动 `evaluateJavascript` 的低权限边界；`onlyForTrustedMainFrame` 保持开启。HTTP 不能进入高权限 HTTPS 白名单，也不因此获得文件或媒体权限。仅允许一个旧页面时同时设置 `allowedUrls = setOf(pageUrl)`。CMP/Kuikly 原生背景默认透明，页面自己的 CSS 背景由 H5 控制。
+明确开启 `pageBridgeEnabled` 的初始 HTTP(S) 页面可执行同源业务脚本，沿用手动 `evaluateJavascript` 的低权限边界；`onlyForTrustedMainFrame` 保持开启。HTTP 不能进入高权限 HTTPS 白名单，也不因此获得文件或媒体权限。仅允许一个旧页面时同时设置 `allowedUrls = setOf(pageUrl)`。Kuikly 原生背景默认透明，页面自己的 CSS 背景由 H5 控制。
 
 Android 旧内核不支持 document-start 时仍会晚注入；需要先于 H5 启动的协议必须由宿主校验 READY/版本并在错误或超时时失败关闭。Android Bridge 的文档 nonce 在提交后安装，单次早期 READY 可由页面专属 facade 暂存，宿主收到 `FirstContentVisible` 后用已有脚本命令冲刷。协议映射、输入 JSON 编码和业务状态留在宿主，不新增业务原生通道。
 
@@ -240,7 +218,7 @@ await OhosWebViewDataCleaner.clearWebsiteData();
 
 GitHub-hosted runner 的实际结果以 Actions 为准；没有 DevEco/ohpm runner，因此 HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收仍按既有验证文档执行，不能由这些 job 的成功代算。
 
-远程 Android 消费分别以 Kuikly-only 和 CMP-only 配置编译，并检查两者运行时依赖隔离。原生 Kuikly iOS 消费编译 API，并用固定 Render Framework 链接 Simulator Framework；rc.17 的 Git Pod 另安装精确标签，核对 lock 的 git/tag/version、标签提交及生产源文件集合和字节摘要。CMP-only iOS Simulator 消费单独链接 Framework。这些 Framework 构建不代表 UIKit App 或真机运行。
+远程 Android 消费开启 KuiklyCompose、全屏和页面通道 API probe，检查精确 core/Kuikly 版本与无第二套 CMP UI。iOS/OHOS 编译与真实 Renderer 链接分别验证；未变的 Git Pod 单独安装 `0.2.0-rc.18`，核对 lock、标签提交与源码摘要。Framework 构建不代表 UIKit App 或设备运行。旧版本重验检出其旧 tag，当前 consumer 不保留 CMP API。
 
 阶段、缓存、有限网络重试、失败记录与证据边界见[共用 CI 规则](https://github.com/gycrosskit/.github/blob/main/docs/持续集成门禁.md)；本库实际平台命令以 workflow 为准。源码通过、远程消费、HAR/ohpm 与设备验收分别记录。
 
@@ -248,18 +226,18 @@ GitHub-hosted runner 的实际结果以 Actions 为准；没有 DevEco/ohpm runn
 
 OHOS Node 契约使用 manifest 声明的 System Actions `0.2.0-rc.4` Release HAR：下载并核对冻结 SHA-256 后读取真实 WindowPolicy 源文件，避免依赖本机已安装的 `oh_modules`。这只证明源码契约，不等于 HAR 构建或 OHPM Registry 安装。
 
-### CMP 与 Kuikly 的网页命令
+### 网页命令
 
-两种入口均支持返回、前进、停止、重载和退出全屏。CMP `snapshot.canGoBack/canGoForward` 可驱动历史按钮；`state.goForward()` 无历史时返回 false。返回优先退出全屏再走历史，`state.goBack { consumed -> }` 与 `state.exitFullscreen { consumed -> }` 交付最终消费结果。iOS 需要异步验证 DOM/视频全屏退出；兼容的 `state.goBack(): Boolean` 在全屏时只表示请求受理，需要最终结果时使用回调重载。文档/owner结束时已受理命令以 false 取消一次，迟到原生回执忽略，不会回退新实例的历史。OHOS UI 由 Kuikly/Kuikly Compose 承载，未提供独立 JetBrains CMP OHOS 运行时。
+Kuikly raw/controller 支持返回、前进、停止、重载和退出全屏。`goBack` 优先退出全屏再走历史，异步回调交付最终消费结果。文档/owner 结束时待处理 back/exitFullscreen 以 false 取消一次，迟到回执不能操作新实例。iOS DOM/视频退出保留有界异步验证，OHOS 保留原生确认门禁。
 
 ## 0.2.0-rc.14 平台修复与入口
 
 OHOS 允许的 popup 经现有导航、来源与 owner 门禁复用当前页面；自动脚本 popup 另受 `javaScriptCanOpenWindowsAutomatically` 控制。文字使用 ArkWeb `textZoomRatio` 跟随系统字体并按上下限 clamp；深色模式跟随系统，`algorithmicDarkeningAllowed` 控制强制暗化。订阅失败保留基本页面加载。
 
-iOS 两入口在 `supportZoom=false` 时通过单源 document-start 脚本设置 author viewport `user-scalable=no`，保留原页面其他参数，并关闭 `ignoresViewportScaleLimits`。系统可访问性强制缩放仍优先，不能将该展示设置用作安全边界；实际手势约束需设备验收。`NEVER_ALLOW` 在 HTTPS 顶文档加载前安装 Content Rule List 阻止 HTTP 子资源，保留 HTTP 顶文档；规则与 `blockedResourceRules` 合并，编译失败拒绝加载。`COMPATIBILITY` 使用同一保守策略，无法复制 Android 内核启发式；`ALWAYS_ALLOW` 仅取消组件额外拦截，仍受 WebKit 与 ATS 自身限制。
+iOS 原生入口在 `supportZoom=false` 时通过单源 document-start 脚本设置 author viewport `user-scalable=no`，保留原页面其他参数，并关闭 `ignoresViewportScaleLimits`。系统可访问性强制缩放仍优先，不能将该展示设置用作安全边界；实际手势约束需设备验收。`NEVER_ALLOW` 在 HTTPS 顶文档加载前安装 Content Rule List 阻止 HTTP 子资源，保留 HTTP 顶文档；规则与 `blockedResourceRules` 合并，编译失败拒绝加载。`COMPATIBILITY` 使用同一保守策略，无法复制 Android 内核启发式；`ALWAYS_ALLOW` 仅取消组件额外拦截，仍受 WebKit 与 ATS 自身限制。
 
 iOS 没有与 Android 完全等价的公开 DOM Storage 禁用、平台缩放按钮、宽视口/overview、系统 textZoom 和算法暗化开关；这些设置不通过 CSS 冒充原生等价。平台支持边界以 `WebViewSettings` 注释和[源码审查](docs/完整源码审查.md)为准。
 
 iOS `blockNetworkImage` 通过原生 Content Rule List 阻止 HTTP(S) 图片，保留 data/本地图片；规则与混合内容及显式资源过滤合并。`loadsImagesAutomatically=false` 在 iOS 仍无保真等价：真实 WK 测试中全 URL image 规则仍放行 data 图片，已撤销该不完整实现。
 
-本版 HTML 合同：两套 iOS 入口按声明 MIME 与已知 charset 无损编码后 loadData；未知/无法表示编码明确 LOAD_EXCEPTION。historyUrl 仅 null 或与 baseUrl 相等可兑现，其他值明确失败，不使用 JS 改写地址模拟。Android/OHOS 非UTF8行为仍需各内核验收。
+本版 HTML 合同：iOS 原生入口按声明 MIME 与已知 charset 无损编码后 loadData；未知/无法表示编码明确 LOAD_EXCEPTION。historyUrl 仅 null 或与 baseUrl 相等可兑现，其他值明确失败，不使用 JS 改写地址模拟。Android/OHOS 非UTF8行为仍需各内核验收。
