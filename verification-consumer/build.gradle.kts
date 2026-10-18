@@ -4,7 +4,7 @@ plugins {
     id("com.android.application") version "8.10.1"
 }
 
-val componentVersion = providers.gradleProperty("webViewVersion").orElse("0.3.0-dev").get()
+val componentVersion = providers.gradleProperty("webViewVersion").orElse("0.3.0-rc.1").get()
 val renderFrameworkDir = providers.gradleProperty("renderFrameworkDir").orNull
 val simRenderFrameworkDir = providers.gradleProperty("simRenderFrameworkDir").orNull
 val verifyPageChannels = providers.gradleProperty("verifyPageChannels").orElse("false").get().toBoolean()

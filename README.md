@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-当前源码候选为 Maven `0.3.0-dev`，尚未发布。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；本候选删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
+当前源码候选为 Maven `0.3.0-rc.1`，尚未发布。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；本候选删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
 
 `webview-kuikly` 保留 raw `GYWebView` 和 `io.github.gycrosskit.composewebview.kuikly.AppWebView` KuiklyCompose 入口，传递 KuiklyCompose / Compose runtime。宿主继续统一 Kuikly、compiler 与 Renderer 版本；`verifyNoCmpUi` 允许这套 runtime 并拒绝第二套 AndroidX/JetBrains CMP UI/foundation/material。
 
@@ -9,6 +9,8 @@ iOS Objective-C 与 OHOS ArkWeb 行为保持不变。Git Pod 继续使用 `0.2.0
 底层使用 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb。请求、安全、导航、脚本与事件由 core 共享，账号、鉴权、品牌 URL、页面状态与业务路由由宿主提供。H5 视频控制保留 core 媒体脚本/镜像、Android 原生控件与 KuiklyCompose overlay；不改系统播放器层级限制。
 
 iOS 常规网页最低 15.0；受控文件选择要求 iOS18.4+，旧系统开启时明确 Unsupported，关闭时的 DOM 拦截不保证旧 WebKit 原生文件隔离。MP4-only 上传保留 MOV 转换及输入/输出各 50 MiB 限制，转码过程磁盘不承诺硬上限。完整合同见 [功能与平台差异](docs/功能与平台差异.md)。
+
+迁移与本轮渠道组合见 [RC 迁移说明](docs/RC迁移说明.md)。
 
 ## 架构与调用流程
 
@@ -120,11 +122,11 @@ dependencyResolutionManagement {
 }
 ```
 
-以下 Maven `0.3.0-dev` 是未发布候选坐标，发布前仅用于本地候选验证。Git Pod/HAR 继续各自固定版本。在 KMP 的 `commonMain.dependencies` 接入：
+以下 Maven `0.3.0-rc.1` 是未发布 RC 坐标，待远程构建、不可变 RC Release 与精确公开消费完成。Git Pod/HAR 继续各自固定版本。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.3.0-dev")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:0.3.0-rc.1")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖：

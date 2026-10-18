@@ -26,7 +26,7 @@ def step(data, job, name):
 source = workflow('regression.yml')
 release = workflow('release-validation.yml')
 source_consumer = step(source, 'android', 'Verify current source Kuikly consumer (not remote artifacts)')
-for argument in ('-PverifyLocalSource', '-PwebViewVersion=0.3.0-dev', '-PverifyKuiklyCompose',
+for argument in ('-PverifyLocalSource', '-PwebViewVersion=0.3.0-rc.1', '-PverifyKuiklyCompose',
                  '-PverifyFullscreenControls', '-PverifyPageChannels=true', 'assembleDebug',
                  'verifyNoCmpUi', 'verifyExactComponentVersion'):
     assert argument in source_consumer
@@ -50,7 +50,7 @@ with TemporaryDirectory() as directory:
     environment = dict(os.environ, GITHUB_EVENT_NAME='workflow_dispatch',
                        GITHUB_SHA='a' * 40, GITHUB_SERVER_URL='https://github.com',
                        GITHUB_REPOSITORY='gycrosskit/compose-webview', GITHUB_RUN_ID='123',
-                       RUNNER_TEMP=str(root), VERSION='0.3.0-dev', NATIVE_VERSION='0.2.0-rc.18')
+                       RUNNER_TEMP=str(root), VERSION='0.3.0-rc.1', NATIVE_VERSION='0.2.0-rc.18')
 
     def run(script, expected=True, **values):
         result = subprocess.run(['bash', '-euo', 'pipefail', '-c', script], cwd=root,
@@ -76,15 +76,15 @@ sys.exit(subprocess.run(sys.argv[sys.argv.index('--') + 1:]).returncode)
 set -euo pipefail
 test "${PACKAGE_FIXTURE_FAIL:-0}" = 0
 test "$1" = --init-script
-mkdir -p build/maven/com/github/gycrosskit/compose-webview/webview-core/0.3.0-dev
-printf '%s' '{"component":{"version":"0.3.0-dev"}}' > build/maven/com/github/gycrosskit/compose-webview/webview-core/0.3.0-dev/webview-core-0.3.0-dev.module
+mkdir -p build/maven/com/github/gycrosskit/compose-webview/webview-core/0.3.0-rc.1
+printf '%s' '{"component":{"version":"0.3.0-rc.1"}}' > build/maven/com/github/gycrosskit/compose-webview/webview-core/0.3.0-rc.1/webview-core-0.3.0-rc.1.module
 printf 'fixture archive bytes' > build/compose-webview-maven.tar.gz
 ''')
     package = step(source, 'native', 'Package checked Maven archive')
     run(package)
     receipt_path = root / 'build/maven-provenance.json'
     receipt = json.loads(receipt_path.read_text())
-    assert receipt['version'] == '0.3.0-dev'
+    assert receipt['version'] == '0.3.0-rc.1'
     assert receipt['source_sha'] == 'a' * 40
     assert receipt['run_url'] == 'https://github.com/gycrosskit/compose-webview/actions/runs/123'
     assert receipt['archive_sha256'] == hashlib.sha256((root / 'build/compose-webview-maven.tar.gz').read_bytes()).hexdigest()
