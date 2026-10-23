@@ -46,6 +46,22 @@ getCustomRenderViewCreatorRegisterMap(): Map<string, KRRenderViewExportCreator> 
 
 宿主声明 `ohos.permission.INTERNET`。开启 `mediaCaptureEnabled` 时，宿主另外声明 `ohos.permission.CAMERA` / `ohos.permission.MICROPHONE` 及用途；HAR 不替应用写权限说明、账号、支付或业务 Bridge。
 
+## 全屏窗口归属
+
+本地未发布候选新增可覆写的 `GYWebView.windowPolicyController(): WindowPolicyController`，默认返回 `WindowPolicyController.shared`，原有单窗口行为保持不变。多 UIAbility 宿主为每个 Ability 复用一个 controller，并让该 Ability 的 WebView、直播和其他窗口策略使用同一实例；不同 Ability 分开持有，不在每次调用或每个 View 中创建 controller。
+
+```ts
+import { GYWebView } from '@gycrosskit/webview';
+import { WindowPolicyController } from '@gycrosskit/system-actions-native';
+
+const audienceWindowPolicy = new WindowPolicyController();
+class AudienceWebView extends GYWebView {
+  windowPolicyController(): WindowPolicyController { return audienceWindowPolicy; }
+}
+```
+
+hook 仅选择现有 lease 的 owner，不改变 `fullscreenPolicy()`、原生退出确认或窗口恢复规则。同 controller 仍替换旧全屏 owner，不同 controller 不互相替换；宿主负责把 controller 与实际 Ability/Window 对齐。本轮轻量回归使用真实 WindowPolicy 实现和系统 Window 替身，尚非 HAR 编译或设备验收。
+
 ## 共享 Web 数据清理
 
 清理器独立于 Kuikly View / Module，现有宿主原生 Module 可直接复用。调用前由宿主保证 UI 线程与 Web 组件已加载；影响应用共享资源缓存以及默认非隐私 Cookie / WebStorage，不按 View 或域名隔离。
