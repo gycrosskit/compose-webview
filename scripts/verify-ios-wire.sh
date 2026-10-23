@@ -14,11 +14,19 @@ cleanup_wire_check() {
     fi
     if [[ "$wire_exit" != 0 ]]; then
         mkdir -p ci-diagnostics
+        if [[ -f "${SIMCTL_CHILD_WEBVIEW_WIRE_RESULT_PATH:-}" ]]; then
+            cp "$SIMCTL_CHILD_WEBVIEW_WIRE_RESULT_PATH" "ci-diagnostics/wire-app-debug-$debug_build.txt"
+        fi
         shopt -s nullglob
         for report in "$HOME"/Library/Logs/DiagnosticReports/WireCheck-*.ips "$HOME"/Library/Logs/DiagnosticReports/WireCheck-*.crash; do
             cp "$report" "ci-diagnostics/$(basename "$report").txt"
         done
-        xcrun simctl spawn "${WEBVIEW_SIMULATOR:-booted}" log show --last 5m --style compact --predicate 'process == "WireCheck"' > "ci-diagnostics/wire-simulator-debug-$debug_build.txt" 2>&1
+        for report in "$HOME"/Library/Logs/DiagnosticReports/com.apple.WebKit.WebContent-*.ips "$HOME"/Library/Logs/DiagnosticReports/WebKit.WebContent-*.ips; do
+            if [[ -n "${WEBVIEW_SIMULATOR:-}" && "$WEBVIEW_SIMULATOR" != booted ]] && grep -Fq "$WEBVIEW_SIMULATOR" "$report"; then
+                cp "$report" "ci-diagnostics/$(basename "$report").txt"
+            fi
+        done
+        xcrun simctl spawn "${WEBVIEW_SIMULATOR:-booted}" log show --last 2m --style compact --predicate 'process == "WireCheck" OR process CONTAINS "WebKit" OR process == "runningboardd" OR subsystem BEGINSWITH "com.apple.extensionkit"' > "ci-diagnostics/wire-simulator-debug-$debug_build.txt" 2>&1
     fi
     return "$wire_exit"
 }
@@ -55,17 +63,25 @@ cat > "$app/Info.plist" <<'PLIST'
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundleShortVersionString</key><string>1.0</string>
 <key>LSRequiresIPhoneOS</key><true/>
+<key>UIApplicationSceneManifest</key><dict>
+<key>UISceneConfigurations</key><dict><key>UIWindowSceneSessionRoleApplication</key><array><dict>
+<key>UISceneConfigurationName</key><string>WireCheck</string>
+<key>UISceneDelegateClassName</key><string>WireCheckScene</string>
+</dict></array></dict></dict>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoadsInWebContent</key><true/></dict>
 </dict></plist>
 PLIST
 codesign --force --sign - "$app/Frameworks/OpenKuiklyIOSRender.framework" >/dev/null
 codesign --force --sign - "$app" >/dev/null
 xcrun simctl install "${WEBVIEW_SIMULATOR:-booted}" "$app"
+wire_data="$(xcrun simctl get_app_container "${WEBVIEW_SIMULATOR:-booted}" io.github.gycrosskit.webview.wire-check data)"
+export SIMCTL_CHILD_WEBVIEW_WIRE_RESULT_PATH="$wire_data/tmp/wire-$(uuidgen).log"
 xcrun simctl launch --console --terminate-running-process "${WEBVIEW_SIMULATOR:-booted}" io.github.gycrosskit.webview.wire-check 2>&1 | tee "$output/result.log" || {
     wire_failure=("$?" "${PIPESTATUS[@]}")
     printf 'FAIL: WireCheck launch=%s tee=%s\n' "${wire_failure[1]}" "${wire_failure[2]}" >&2
     exit "${wire_failure[0]}"
 }
+cat "$SIMCTL_CHILD_WEBVIEW_WIRE_RESULT_PATH" | tee -a "$output/result.log"
 grep -q '^PASS: Native Boolean wire' "$output/result.log" || {
     wire_exit=$?
     printf 'FAIL: WireCheck Boolean PASS marker missing\n' >&2

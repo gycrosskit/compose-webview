@@ -31,6 +31,8 @@ export async function clearWebData(websiteData: boolean): Promise<void> {
 }
 
 export class HostPolicyWebView extends GYWebView {
+  private readonly policy: WindowPolicyController = new WindowPolicyController();
+  windowPolicyController(): WindowPolicyController { return this.policy; }
   fullscreenPolicy(width: number, height: number): FullscreenWindowPolicy {
     return { enterLayoutFullscreen: true };
   }

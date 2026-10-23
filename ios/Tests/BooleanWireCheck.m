@@ -1,5 +1,6 @@
 #import "../Sources/GYWebView.m"
 #import <objc/runtime.h>
+#import <unistd.h>
 
 static void Require(BOOL condition, NSString *message) {
     if (!condition) { fprintf(stderr, "FAIL: %s\n", message.UTF8String); exit(1); }
@@ -184,6 +185,7 @@ static void CheckNavigationOwnerReplacement(NSDictionary *request) {
 }
 
 static void CheckHtmlContent(void) {
+    NSUInteger fixtureIndex = 0;
     for (NSDictionary *fixture in @[@{@"encoding": @"UTF-8", @"html": @"中文 <script>window.mimeExecuted=true</script>"},
             @{@"encoding": @"UTF-8", @"mime": @"text/html", @"html": @"中文 <script>window.mimeExecuted=true</script>"},
             @{@"encoding": @"ISO-8859-1", @"html": @"Café <b>literal</b>"},
@@ -193,16 +195,23 @@ static void CheckHtmlContent(void) {
             @{@"encoding": @"UTF-8", @"html": @"same history", @"base": @"https://safe.example/page", @"history": @"https://safe.example/page"},
             @{@"encoding": @"UTF-8", @"html": @"different history", @"base": @"https://safe.example/page", @"history": @"https://safe.example/other", @"error": @YES},
             @{@"encoding": @"UTF-8", @"html": @"foreign history", @"base": @"https://safe.example/page", @"history": @"https://foreign.example/", @"error": @YES}]) {
+        printf("PHASE: HTML fixture %lu MIME=%s encoding=%s\n", (unsigned long)++fixtureIndex,
+            [fixture[@"mime"] ?: @"text/plain" UTF8String], [fixture[@"encoding"] UTF8String]);
         GYWebView *view = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
         [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:view];
         __block BOOL finished = NO, failed = NO;
+        __block NSString *failureKind;
         [view hrv_setPropWithKey:@"onEvent" propValue:^(id event) {
             if ([event[@"type"] isEqual:@"pageFinished"]) finished = YES;
-            if ([event[@"type"] isEqual:@"loadFailed"] && [event[@"kind"] isEqual:fixture[@"errorKind"] ?: @"LOAD_EXCEPTION"]) failed = YES;
+            if ([event[@"type"] isEqual:@"loadFailed"]) {
+                fprintf(stderr, "EVENT: HTML fixture %lu %s\n", (unsigned long)fixtureIndex, [event description].UTF8String);
+                failureKind = event[@"kind"]; failed = YES;
+            }
         }];
         [view hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"html", @"html": fixture[@"html"], @"baseUrl": fixture[@"base"] ?: NSNull.null, @"historyUrl": fixture[@"history"] ?: NSNull.null, @"mimeType": fixture[@"mime"] ?: @"text/plain", @"encoding": fixture[@"encoding"]}, @"settings": @{@"javaScriptEnabled": @YES}})];
         WaitUntil(^BOOL { return finished || failed; }, @"HTML MIME fixture never finished");
         Require(failed == [fixture[@"error"] boolValue], @"Invalid or lossy charset was falsely accepted");
+        if (failed) Require([failureKind isEqual:fixture[@"errorKind"] ?: @"LOAD_EXCEPTION"], @"Unexpected HTML failure kind");
         if (!failed) {
             BOOL html = [fixture[@"mime"] isEqual:@"text/html"];
             Require([Evaluate(view.webView, @"document.contentType") isEqual:html ? @"text/html" : @"text/plain"], @"Declared HTML MIME was ignored");
@@ -264,6 +273,21 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
 }
 
 static void Check(void) {
+    puts("PHASE: System WebKit readiness");
+    NSString *startupURL = [NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"] stringByReplacingOccurrencesOfString:@"/page" withString:@"/other"];
+    Require(startupURL.length, @"Missing WebKit readiness fixture");
+    WKWebView *startup = [[WKWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+    [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:startup];
+    [startup loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:startupURL]]];
+    // iOS 18 冷启动的系统 AppSSO 配置曾阻塞 27 秒；先确认环境就绪，行为断言仍限 20 秒。
+    NSDate *startupDeadline = [NSDate dateWithTimeIntervalSinceNow:60];
+    while ((startup.loading || ![startup.URL.absoluteString isEqual:startupURL]) && startupDeadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(!startup.loading && [startup.URL.absoluteString isEqual:startupURL], @"System WebKit readiness failed");
+    Require([Evaluate(startup, @"document.body.innerText") containsString:@"page message history fixture"], @"System WebKit readiness did not load fixture");
+    printf("PASS: System WebKit readiness %.3fs\n", 60 - startupDeadline.timeIntervalSinceNow);
+    [startup removeFromSuperview];
+    startup = nil;
     puts("PHASE: Stop-loading cancellation");
     CheckStopLoadingCancellation();
     if (getenv("WEBVIEW_STOP_ONLY")) {
@@ -696,20 +720,32 @@ static void Check(void) {
 }
 
 @interface WireCheckApp : UIResponder <UIApplicationDelegate>
-@property(nonatomic, strong) UIWindow *window;
 @end
 @implementation WireCheckApp
+@end
+
+@interface WireCheckScene : UIResponder <UIWindowSceneDelegate>
+@property(nonatomic, strong) UIWindow *window;
+@property(nonatomic) BOOL checksStarted;
+@end
+@implementation WireCheckScene
 - (void)runChecks { Check(); }
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.rootViewController = [UIViewController new];
     [self.window makeKeyAndVisible];
+}
+- (void)sceneDidBecomeActive:(UIScene *)scene {
+    if (self.checksStarted) return;
+    self.checksStarted = YES;
     [self performSelector:@selector(runChecks) withObject:nil afterDelay:0];
-    return YES;
 }
 @end
 
 int main(int argc, char *argv[]) {
+    // simctl 的 console 连接可能先于进程末尾输出关闭，保留同一次运行的完整断言结果。
+    const char *resultPath = getenv("WEBVIEW_WIRE_RESULT_PATH");
+    if (resultPath && (!freopen(resultPath, "w", stdout) || dup2(fileno(stdout), STDERR_FILENO) < 0)) return 2;
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
     printf("START: Native Boolean wire DEBUG=%d\n", DEBUG);

@@ -4,7 +4,7 @@
 
 `webview-kuikly` 保留 raw `GYWebView` 和 `io.github.gycrosskit.composewebview.kuikly.AppWebView` KuiklyCompose 入口，传递 KuiklyCompose / Compose runtime。宿主继续统一 Kuikly、compiler 与 Renderer 版本；`verifyNoCmpUi` 允许这套 runtime 并拒绝第二套 AndroidX/JetBrains CMP UI/foundation/material。
 
-iOS Objective-C 与 OHOS ArkWeb 行为保持不变。Git Pod 继续使用 `0.2.0-rc.18`，HAR 沿用 `0.2.0-rc.14`，system-actions-native 沿用 `0.2.0-rc.4`；Maven 候选版本不能代替 Pod/HAR 版本。旧版本及 CMP 验收保留在 [rc.18 发布记录](docs/0.2.0-rc.18发布验收.md)、[历史源码审查](docs/完整源码审查.md) 和旧 tag 中，不代表本候选通过验证。
+iOS Objective-C 保持不变。Git Pod 继续使用 `0.2.0-rc.18`；OHOS HAR 候选 `0.2.0-rc.15` 增加按 WindowStage 注入窗口策略，发布/Registry 消费以独立 `ohos-*` Release 收据为准，system-actions-native 沿用 `0.2.0-rc.4`；Maven 候选版本不能代替 Pod/HAR 版本。旧版本及 CMP 验收保留在 [rc.18 发布记录](docs/0.2.0-rc.18发布验收.md)、[历史源码审查](docs/完整源码审查.md) 和旧 tag 中，不代表本候选通过验证。
 
 底层使用 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb。请求、安全、导航、脚本与事件由 core 共享，账号、鉴权、品牌 URL、页面状态与业务路由由宿主提供。H5 视频控制保留 core 媒体脚本/镜像、Android 原生控件与 KuiklyCompose overlay；不改系统播放器层级限制。
 
