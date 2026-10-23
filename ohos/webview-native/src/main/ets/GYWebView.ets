@@ -653,12 +653,15 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     };
   }
 
-  /** 申请共享 Window owner，width/height 单位像素；冲突或失活立即退出原生 handler。 */
+  /** 同一 Ability 的组件共用 controller；多 Ability 宿主可覆写以隔离窗口 owner。 */
+  windowPolicyController(): WindowPolicyController { return WindowPolicyController.shared; }
+
+  /** 申请所属 Window owner，width/height 单位像素；冲突或失活立即退出原生 handler。 */
   enterFullscreen(handler: FullScreenExitHandler, width: number, height: number): void {
     if (!this.visible || this.lifetime.disposed || this.fullscreenHandler || this.nativeExitPending) { handler.exitFullScreen(); return; }
     this.fullscreenHandler = handler;
     const revision = ++this.fullscreenRevision;
-    const lease = WindowPolicyController.shared.createFullscreenLease(async () => {
+    const lease = this.windowPolicyController().createFullscreenLease(async () => {
       const context = (this.getUIContext() as UIContext).getHostContext();
       if (!context) throw new Error('Window unavailable');
       return await window.getLastWindow(context);

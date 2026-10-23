@@ -880,6 +880,42 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(orientations.at(-1), 2, 'host UNSPECIFIED fallback is explicit policy');
   secondFull.onDestroy();
 
+  // 覆写只选择真实 controller；全屏替换、恢复仍执行生产 WindowPolicy lease。
+  const mainPolicy = new policyExports.WindowPolicyController();
+  const audiencePolicy = new policyExports.WindowPolicyController();
+  function scopedWindow() {
+    const state = { orientation: 0, layout: false };
+    return { state, getPreferredOrientation: () => state.orientation,
+      getWindowProperties: () => ({ isLayoutFullScreen: state.layout, isFullScreen: false }),
+      setPreferredOrientation: async value => { state.orientation = value; },
+      setWindowLayoutFullScreen: async value => { state.layout = value; } };
+  }
+  class ScopedPolicyView extends GYWebView {
+    windowPolicyController() { return this.selectedPolicy; }
+    getUIContext() { return { getHostContext: () => this.windowContext }; }
+  }
+  const mainWindow = scopedWindow(); const audienceWindow = scopedWindow();
+  windowObject.getLastWindow = async context => context.window;
+  const mainFull = new ScopedPolicyView(); mainFull.selectedPolicy = mainPolicy; mainFull.windowContext = { window: mainWindow };
+  const audienceFull = new ScopedPolicyView(); audienceFull.selectedPolicy = audiencePolicy; audienceFull.windowContext = { window: audienceWindow };
+  let mainExit = 0; let audienceExit = 0; let replacementExit = 0;
+  mainFull.enterFullscreen({ exitFullScreen: () => mainExit++ }, 1600, 900); await mainFull.windowTask;
+  audienceFull.enterFullscreen({ exitFullScreen: () => audienceExit++ }, 1600, 900); await audienceFull.windowTask;
+  assert.equal(mainExit, 0, 'different controllers never replace another Ability full screen');
+  assert.equal(audienceExit, 0); assert.equal(mainWindow.state.layout, true); assert.equal(audienceWindow.state.layout, true);
+  const mainReplacement = new ScopedPolicyView(); mainReplacement.selectedPolicy = mainPolicy; mainReplacement.windowContext = mainFull.windowContext;
+  mainReplacement.enterFullscreen({ exitFullScreen: () => replacementExit++ }, 1600, 900); await mainReplacement.windowTask;
+  assert.equal(mainExit, 1, 'the selected same controller retains the existing replacement rule');
+  assert.equal(audienceExit, 0); assert.equal(mainWindow.state.layout, true); assert.equal(audienceWindow.state.layout, true);
+  mainFull.onDestroy(); await mainFull.windowTask;
+  assert.equal(mainWindow.state.layout, true, 'old owner destruction cannot restore its replacement');
+  audienceFull.exitFullscreen(); await audienceFull.windowTask;
+  assert.equal(audienceExit, 1); assert.equal(audienceWindow.state.layout, false);
+  assert.equal(mainWindow.state.layout, true, 'restoring another Ability cannot alter the active window');
+  mainReplacement.exitFullscreen(); await mainReplacement.windowTask;
+  assert.equal(replacementExit, 1); assert.equal(mainWindow.state.layout, false); assert.equal(mainWindow.state.orientation, 0);
+  audienceFull.onDestroy(); mainReplacement.onDestroy();
+
   const lateWindow = deferred(); let lateWindowCalls = 0;
   windowObject.getLastWindow = () => lateWindow.promise;
   const destroyedFull = new GYWebView();
@@ -916,5 +952,5 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     assert.equal(delivered.length, 0, 'no pre-hide or hidden message is flushed after show');
     assert.equal(visibilityTop.GYWebViewBridge.postMessage('visible-new', '{}'), true); assert.equal(delivered.length, 1);
   }
-  console.log(`PASS (${harArgument >= 0 ? 'actual HAR' : 'source'}): early page capability/roundtrip/iframe/parent/nonce/64KiB/128/once/native-accepted/revocation/late-owner/reentry,  shared Web data cleanup/order/failures, first-load retry URL/HTML, synchronous origin policy, controlled capture, once-only results, hidden initialization, Bridge and lifecycle`);
+  console.log(`PASS (${harArgument >= 0 ? 'actual HAR' : 'source'}): early page capability/roundtrip/iframe/parent/nonce/64KiB/128/once/native-accepted/revocation/late-owner/reentry,  shared Web data cleanup/order/failures, first-load retry URL/HTML, synchronous origin policy, controlled capture, once-only results, hidden initialization, Bridge and lifecycle, scoped fullscreen controllers`);
 })().catch(error => { console.error(error); process.exitCode = 1; });
