@@ -21,7 +21,12 @@ cleanup_wire_check() {
         for report in "$HOME"/Library/Logs/DiagnosticReports/WireCheck-*.ips "$HOME"/Library/Logs/DiagnosticReports/WireCheck-*.crash; do
             cp "$report" "ci-diagnostics/$(basename "$report").txt"
         done
-        xcrun simctl spawn "${WEBVIEW_SIMULATOR:-booted}" log show --last 5m --style compact --predicate 'process == "WireCheck"' > "ci-diagnostics/wire-simulator-debug-$debug_build.txt" 2>&1
+        for report in "$HOME"/Library/Logs/DiagnosticReports/com.apple.WebKit.WebContent-*.ips "$HOME"/Library/Logs/DiagnosticReports/WebKit.WebContent-*.ips; do
+            if [[ -n "${WEBVIEW_SIMULATOR:-}" && "$WEBVIEW_SIMULATOR" != booted ]] && grep -Fq "$WEBVIEW_SIMULATOR" "$report"; then
+                cp "$report" "ci-diagnostics/$(basename "$report").txt"
+            fi
+        done
+        xcrun simctl spawn "${WEBVIEW_SIMULATOR:-booted}" log show --last 2m --style compact --predicate 'process == "WireCheck" OR process CONTAINS "WebKit" OR process == "runningboardd" OR subsystem BEGINSWITH "com.apple.extensionkit"' > "ci-diagnostics/wire-simulator-debug-$debug_build.txt" 2>&1
     fi
     return "$wire_exit"
 }

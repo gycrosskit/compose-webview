@@ -185,6 +185,7 @@ static void CheckNavigationOwnerReplacement(NSDictionary *request) {
 }
 
 static void CheckHtmlContent(void) {
+    NSUInteger fixtureIndex = 0;
     for (NSDictionary *fixture in @[@{@"encoding": @"UTF-8", @"html": @"中文 <script>window.mimeExecuted=true</script>"},
             @{@"encoding": @"UTF-8", @"mime": @"text/html", @"html": @"中文 <script>window.mimeExecuted=true</script>"},
             @{@"encoding": @"ISO-8859-1", @"html": @"Café <b>literal</b>"},
@@ -194,16 +195,23 @@ static void CheckHtmlContent(void) {
             @{@"encoding": @"UTF-8", @"html": @"same history", @"base": @"https://safe.example/page", @"history": @"https://safe.example/page"},
             @{@"encoding": @"UTF-8", @"html": @"different history", @"base": @"https://safe.example/page", @"history": @"https://safe.example/other", @"error": @YES},
             @{@"encoding": @"UTF-8", @"html": @"foreign history", @"base": @"https://safe.example/page", @"history": @"https://foreign.example/", @"error": @YES}]) {
+        printf("PHASE: HTML fixture %lu MIME=%s encoding=%s\n", (unsigned long)++fixtureIndex,
+            [fixture[@"mime"] ?: @"text/plain" UTF8String], [fixture[@"encoding"] UTF8String]);
         GYWebView *view = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
         [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:view];
         __block BOOL finished = NO, failed = NO;
+        __block NSString *failureKind;
         [view hrv_setPropWithKey:@"onEvent" propValue:^(id event) {
             if ([event[@"type"] isEqual:@"pageFinished"]) finished = YES;
-            if ([event[@"type"] isEqual:@"loadFailed"] && [event[@"kind"] isEqual:fixture[@"errorKind"] ?: @"LOAD_EXCEPTION"]) failed = YES;
+            if ([event[@"type"] isEqual:@"loadFailed"]) {
+                fprintf(stderr, "EVENT: HTML fixture %lu %s\n", (unsigned long)fixtureIndex, [event description].UTF8String);
+                failureKind = event[@"kind"]; failed = YES;
+            }
         }];
         [view hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"html", @"html": fixture[@"html"], @"baseUrl": fixture[@"base"] ?: NSNull.null, @"historyUrl": fixture[@"history"] ?: NSNull.null, @"mimeType": fixture[@"mime"] ?: @"text/plain", @"encoding": fixture[@"encoding"]}, @"settings": @{@"javaScriptEnabled": @YES}})];
         WaitUntil(^BOOL { return finished || failed; }, @"HTML MIME fixture never finished");
         Require(failed == [fixture[@"error"] boolValue], @"Invalid or lossy charset was falsely accepted");
+        if (failed) Require([failureKind isEqual:fixture[@"errorKind"] ?: @"LOAD_EXCEPTION"], @"Unexpected HTML failure kind");
         if (!failed) {
             BOOL html = [fixture[@"mime"] isEqual:@"text/html"];
             Require([Evaluate(view.webView, @"document.contentType") isEqual:html ? @"text/html" : @"text/plain"], @"Declared HTML MIME was ignored");
