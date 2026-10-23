@@ -1,5 +1,6 @@
 #import "../Sources/GYWebView.m"
 #import <objc/runtime.h>
+#import <unistd.h>
 
 static void Require(BOOL condition, NSString *message) {
     if (!condition) { fprintf(stderr, "FAIL: %s\n", message.UTF8String); exit(1); }
@@ -696,20 +697,27 @@ static void Check(void) {
 }
 
 @interface WireCheckApp : UIResponder <UIApplicationDelegate>
-@property(nonatomic, strong) UIWindow *window;
 @end
 @implementation WireCheckApp
+@end
+
+@interface WireCheckScene : UIResponder <UIWindowSceneDelegate>
+@property(nonatomic, strong) UIWindow *window;
+@end
+@implementation WireCheckScene
 - (void)runChecks { Check(); }
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.rootViewController = [UIViewController new];
     [self.window makeKeyAndVisible];
     [self performSelector:@selector(runChecks) withObject:nil afterDelay:0];
-    return YES;
 }
 @end
 
 int main(int argc, char *argv[]) {
+    // simctl 的 console 连接可能先于进程末尾输出关闭，保留同一次运行的完整断言结果。
+    const char *resultPath = getenv("WEBVIEW_WIRE_RESULT_PATH");
+    if (resultPath && (!freopen(resultPath, "w", stdout) || dup2(fileno(stdout), STDERR_FILENO) < 0)) return 2;
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
     printf("START: Native Boolean wire DEBUG=%d\n", DEBUG);

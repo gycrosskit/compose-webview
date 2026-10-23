@@ -25,9 +25,16 @@ exec /bin/sleep 60
 set -euo pipefail
 printf '%s\n' "$*" >> "$MOCK_CALLS"
 if [[ "$1" == simctl && "$2" == launch ]]; then
-  printf '%s\n' "$MOCK_WIRE_RESULT"
+  mkdir -p "$(dirname "$SIMCTL_CHILD_WEBVIEW_WIRE_RESULT_PATH")"
+  printf '%s\n' "$MOCK_WIRE_RESULT" > "$(dirname "$SIMCTL_CHILD_WEBVIEW_WIRE_RESULT_PATH")/wire-old.log"
+  if [[ "$MOCK_RESULT_FILE" == current ]]; then
+    printf '%s\n' "$MOCK_WIRE_RESULT" > "$SIMCTL_CHILD_WEBVIEW_WIRE_RESULT_PATH"
+  fi
+  echo launcher-console-only
   echo wire-stderr >&2
   exit "$MOCK_LAUNCH_EXIT"
+elif [[ "$1" == simctl && "$2" == get_app_container ]]; then
+  printf '%s\n' "$MOCK_APP_DATA"
 elif [[ "$1" == simctl && "$2" == spawn ]]; then
   echo wire-simulator-log
   exit 99
@@ -49,6 +56,7 @@ fi
                        HOME=str(root / 'home'),
                        WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR=str(root / 'Products'),
                        MOCK_CALLS=str(root / 'calls'))
+    environment.update(MOCK_APP_DATA=str(root / 'app-data'), MOCK_RESULT_FILE='current')
     environment.pop('WEBVIEW_DEBUG_BUILD', None)
     for mode, marker, launch_exit, boolean_pass, expected in [
         (None, '0', 0, True, 0), ('0', '0', 0, True, 0), ('1', '1', 0, True, 0),
@@ -82,4 +90,11 @@ fi
             assert not list(diagnostics.glob('WireCheckOther*'))
         else:
             assert not diagnostics.exists(), 'Successful or rejected-before-launch runs must not collect logs'
+        if mode != '2' and expected:
+            assert (diagnostics / f'wire-app-debug-{mode or "0"}.txt').read_text().strip() == case['MOCK_WIRE_RESULT']
+    case = dict(environment, MOCK_LAUNCH_EXIT='0', MOCK_RESULT_FILE='old-only',
+                MOCK_WIRE_RESULT='PASS: Native Boolean wire fixture\nPASS: Native inspectable policy DEBUG=0')
+    result = subprocess.run(['bash', str(root / 'scripts/verify-ios-wire.sh')],
+                            env=case, capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0, 'Missing current result must not reuse a previous UUID result'
 print('PASS: Debug/Release policy gates, launch exit 7, missing PASS, stderr capture and WireCheck-only diagnostics preserve original exits even when log collection fails; SDK calls are fixtures.')
