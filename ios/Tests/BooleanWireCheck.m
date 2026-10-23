@@ -265,6 +265,21 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
 }
 
 static void Check(void) {
+    puts("PHASE: System WebKit readiness");
+    NSString *startupURL = [NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"] stringByReplacingOccurrencesOfString:@"/page" withString:@"/other"];
+    Require(startupURL.length, @"Missing WebKit readiness fixture");
+    WKWebView *startup = [[WKWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+    [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:startup];
+    [startup loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:startupURL]]];
+    // iOS 18 冷启动的系统 AppSSO 配置曾阻塞 27 秒；先确认环境就绪，行为断言仍限 20 秒。
+    NSDate *startupDeadline = [NSDate dateWithTimeIntervalSinceNow:60];
+    while ((startup.loading || ![startup.URL.absoluteString isEqual:startupURL]) && startupDeadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    Require(!startup.loading && [startup.URL.absoluteString isEqual:startupURL], @"System WebKit readiness failed");
+    Require([Evaluate(startup, @"document.body.innerText") containsString:@"page message history fixture"], @"System WebKit readiness did not load fixture");
+    printf("PASS: System WebKit readiness %.3fs\n", 60 - startupDeadline.timeIntervalSinceNow);
+    [startup removeFromSuperview];
+    startup = nil;
     puts("PHASE: Stop-loading cancellation");
     CheckStopLoadingCancellation();
     if (getenv("WEBVIEW_STOP_ONLY")) {
@@ -703,6 +718,7 @@ static void Check(void) {
 
 @interface WireCheckScene : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
+@property(nonatomic) BOOL checksStarted;
 @end
 @implementation WireCheckScene
 - (void)runChecks { Check(); }
@@ -710,6 +726,10 @@ static void Check(void) {
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.rootViewController = [UIViewController new];
     [self.window makeKeyAndVisible];
+}
+- (void)sceneDidBecomeActive:(UIScene *)scene {
+    if (self.checksStarted) return;
+    self.checksStarted = YES;
     [self performSelector:@selector(runChecks) withObject:nil afterDelay:0];
 }
 @end
