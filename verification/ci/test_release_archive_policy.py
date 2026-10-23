@@ -34,6 +34,10 @@ assert '-PremoteOnly' not in source_consumer
 assert release['env']['KUIKLY_COMPOSE_FLAGS'] == '-PverifyKuiklyCompose'
 assert release['env']['FULLSCREEN_CONTROLS_FLAGS'] == '-PverifyFullscreenControls'
 assert release['env']['NATIVE_VERSION'] == '0.2.0-rc.18'
+# HAR-only 标签不声明 Maven/Pod 消费通过，Registry 结果由独立消费收据记录。
+for job in ('verify-public', 'release-android', 'release-native'):
+    condition = release['jobs'][job]['if']
+    assert "!startsWith(github.event.release.tag_name || inputs.version, 'ohos-')" in condition
 for job in ('release-android', 'release-native'):
     consumers = [item['run'] for item in release['jobs'][job]['steps']
                  if '-p verification-consumer' in item.get('run', '')]

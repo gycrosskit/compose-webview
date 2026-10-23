@@ -24,6 +24,7 @@ env:
 # Maven 与未变的原生 Pod 分别验证精确版本；旧版本重验使用其旧 tag 中的 workflow。
 jobs:
   verify-public:
+    if: ${{ !startsWith(github.event.release.tag_name || inputs.version, 'ohos-') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -48,7 +49,7 @@ jobs:
         with:
           status: ${{ job.status }}
   release-android:
-    if: always()
+    if: ${{ always() && !startsWith(github.event.release.tag_name || inputs.version, 'ohos-') }}
     needs: verify-public
     runs-on: ubuntu-24.04
     env:
@@ -85,7 +86,7 @@ jobs:
         with:
           status: ${{ job.status }}
   release-native:
-    if: always()
+    if: ${{ always() && !startsWith(github.event.release.tag_name || inputs.version, 'ohos-') }}
     needs: verify-public
     runs-on: ${{ (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.version != '')) && 'macos-15' || 'ubuntu-24.04' }}
     timeout-minutes: 60
