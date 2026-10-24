@@ -26,14 +26,14 @@ def step(data, job, name):
 source = workflow('regression.yml')
 release = workflow('release-validation.yml')
 source_consumer = step(source, 'android', 'Verify current source Kuikly consumer (not remote artifacts)')
-for argument in ('-PverifyLocalSource', '-PwebViewVersion=0.3.0-rc.1', '-PverifyKuiklyCompose',
+for argument in ('-PverifyLocalSource', '-PwebViewVersion=1.0.0', '-PverifyKuiklyCompose',
                  '-PverifyFullscreenControls', '-PverifyPageChannels=true', 'assembleDebug',
                  'verifyNoCmpUi', 'verifyExactComponentVersion'):
     assert argument in source_consumer
 assert '-PremoteOnly' not in source_consumer
 assert release['env']['KUIKLY_COMPOSE_FLAGS'] == '-PverifyKuiklyCompose'
 assert release['env']['FULLSCREEN_CONTROLS_FLAGS'] == '-PverifyFullscreenControls'
-assert release['env']['NATIVE_VERSION'] == '0.2.0-rc.18'
+assert release['env']['NATIVE_VERSION'] == '1.0.0'
 # HAR-only 标签不声明 Maven/Pod 消费通过，Registry 结果由独立消费收据记录。
 for job in ('verify-public', 'release-android', 'release-native'):
     condition = release['jobs'][job]['if']
@@ -54,7 +54,7 @@ with TemporaryDirectory() as directory:
     environment = dict(os.environ, GITHUB_EVENT_NAME='workflow_dispatch',
                        GITHUB_SHA='a' * 40, GITHUB_SERVER_URL='https://github.com',
                        GITHUB_REPOSITORY='gycrosskit/compose-webview', GITHUB_RUN_ID='123',
-                       RUNNER_TEMP=str(root), VERSION='0.3.0-rc.1', NATIVE_VERSION='0.2.0-rc.18')
+                       RUNNER_TEMP=str(root), VERSION='1.0.0', NATIVE_VERSION='1.0.0')
 
     def run(script, expected=True, **values):
         result = subprocess.run(['bash', '-euo', 'pipefail', '-c', script], cwd=root,
@@ -80,15 +80,15 @@ sys.exit(subprocess.run(sys.argv[sys.argv.index('--') + 1:]).returncode)
 set -euo pipefail
 test "${PACKAGE_FIXTURE_FAIL:-0}" = 0
 test "$1" = --init-script
-mkdir -p build/maven/com/github/gycrosskit/compose-webview/webview-core/0.3.0-rc.1
-printf '%s' '{"component":{"version":"0.3.0-rc.1"}}' > build/maven/com/github/gycrosskit/compose-webview/webview-core/0.3.0-rc.1/webview-core-0.3.0-rc.1.module
+mkdir -p build/maven/com/github/gycrosskit/compose-webview/webview-core/1.0.0
+printf '%s' '{"component":{"version":"1.0.0"}}' > build/maven/com/github/gycrosskit/compose-webview/webview-core/1.0.0/webview-core-1.0.0.module
 printf 'fixture archive bytes' > build/compose-webview-maven.tar.gz
 ''')
     package = step(source, 'native', 'Package checked Maven archive')
     run(package)
     receipt_path = root / 'build/maven-provenance.json'
     receipt = json.loads(receipt_path.read_text())
-    assert receipt['version'] == '0.3.0-rc.1'
+    assert receipt['version'] == '1.0.0'
     assert receipt['source_sha'] == 'a' * 40
     assert receipt['run_url'] == 'https://github.com/gycrosskit/compose-webview/actions/runs/123'
     assert receipt['archive_sha256'] == hashlib.sha256((root / 'build/compose-webview-maven.tar.gz').read_bytes()).hexdigest()
@@ -113,19 +113,19 @@ esac
     reference.mkdir()
     for name in ('GYWebView.h', 'GYWebView.m', 'GYWebViewScripts.inc'):
         (reference / name).write_text('native fixture ' + name)
-    environment.update(PATH=str(tools) + os.pathsep + environment['PATH'], MOCK_TAG_COMMIT='a' * 40,
+    environment.update(PATH=str(tools) + os.pathsep + environment['PATH'], MOCK_TAG_COMMIT='a' * 40, VERSION='1.0.0-rc.1',
                        MOCK_REFERENCE_SOURCE=str(reference), MOCK_REFERENCE_HEAD='a' * 40)
     pod_dir = root / 'webview-release-render'
     installed = pod_dir / 'Pods/GYWebView/ios/Sources'
     pod = step(release, 'release-native', 'Verify remote Pod checkout receipt')
     for tag, head, version, source_change, expected in [
-        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.18', None, True),
-        ('0.2.0-rc.16', 'a' * 40, '0.2.0-rc.18', None, False),
-        ('0.2.0-rc.18', 'b' * 40, '0.2.0-rc.18', None, False),
-        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.16', None, False),
-        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.18', 'changed', False),
-        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.18', 'missing', False),
-        ('0.2.0-rc.18', 'a' * 40, '0.2.0-rc.18', 'extra', False),
+        ('1.0.0', 'a' * 40, '1.0.0', None, True),
+        ('0.2.0-rc.16', 'a' * 40, '1.0.0', None, False),
+        ('1.0.0', 'b' * 40, '1.0.0', None, False),
+        ('1.0.0', 'a' * 40, '0.2.0-rc.16', None, False),
+        ('1.0.0', 'a' * 40, '1.0.0', 'changed', False),
+        ('1.0.0', 'a' * 40, '1.0.0', 'missing', False),
+        ('1.0.0', 'a' * 40, '1.0.0', 'extra', False),
     ]:
         shutil.rmtree(root / 'webview-release-source', ignore_errors=True)
         shutil.rmtree(installed, ignore_errors=True)
@@ -152,7 +152,7 @@ CHECKOUT OPTIONS:
         if expected:
             receipt = json.loads(pod_receipt.read_text())
             assert receipt['resolved_tag_sha'] == 'a' * 40
-            assert receipt['lock_tag'] == '0.2.0-rc.18'
+            assert receipt['lock_tag'] == '1.0.0'
             assert receipt['version'] == environment['NATIVE_VERSION'] != environment['VERSION']
             assert receipt['renderer_version'] == '2.29.1'
             assert receipt['native_source_sha256'] == {

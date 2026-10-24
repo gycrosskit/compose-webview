@@ -18,10 +18,10 @@ env:
   CI_FORK_HOST_FALLBACK_IP: ${{ vars.CI_FORK_HOST_FALLBACK_IP }}
   JAVA_TOOL_OPTIONS: -Djava.security.properties=${{ github.workspace }}/scripts/ci-java.security -Dsun.net.client.defaultConnectTimeout=30000 -Dsun.net.client.defaultReadTimeout=60000
   VERSION: ${{ github.event.release.tag_name || inputs.version }}
-  NATIVE_VERSION: '0.2.0-rc.18'
+  NATIVE_VERSION: '1.0.0'
   KUIKLY_COMPOSE_FLAGS: '-PverifyKuiklyCompose'
   FULLSCREEN_CONTROLS_FLAGS: '-PverifyFullscreenControls'
-# Maven 与未变的原生 Pod 分别验证精确版本；旧版本重验使用其旧 tag 中的 workflow。
+# Maven 与原生 Pod 分别验证精确版本；旧版本重验使用其旧 tag 中的 workflow。
 jobs:
   verify-public:
     if: ${{ !startsWith(github.event.release.tag_name || inputs.version, 'ohos-') }}
