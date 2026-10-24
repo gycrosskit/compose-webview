@@ -1,3 +1,7 @@
+# 1.0.0（正式版准备，尚未发布）
+
+- HAR 版本同步为 `1.0.0`，Renderer 保持 `2.29.1`；真实打包、Release 消费与 Registry 安装待本轮收据。
+
 # 0.2.0-rc.15
 
 - 新增可覆写的 `GYWebView.windowPolicyController()`，同一 WindowStage 的网页、Live 与系统动作可共用所属窗口实例，多窗口分别隔离。默认仍返回 shared，兼容旧单 Ability 宿主。
