@@ -6,7 +6,7 @@ activity = "1.13.0"
 webkit = "1.16.0"
 junit = "4.13.2"
 
-kuikly = "2.28.0-2.0.21-ohos"
+kuikly = "2.29.1-2.0.21-ohos"
 serialization = "1.9.1-1.0.0"
 
 [libraries]

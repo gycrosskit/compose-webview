@@ -151,7 +151,9 @@ jobs:
             Dir.chdir(directory) { Dir.glob('**/*.{h,m,inc}').sort.to_h { |path| [path, Digest::SHA256.file(path).hexdigest] } }
           end
           abort 'Installed Git Pod native source differs from the resolved tag' if manifests.first.empty? || manifests.first != manifests.last
-          receipt = { version: ENV.fetch('NATIVE_VERSION'), resolved_tag_sha: expected, lock_tag: checkout.fetch(:tag), native_source_sha256: manifests.first, configuration: 'Debug', renderer_version: '2.28.0', evidence: 'CocoaPods tag/version, native source bytes and Simulator framework build' }
+          renderer = lock.fetch('PODS').map { |pod| /\AOpenKuiklyIOSRender \(([^)]+)\)\z/.match(pod)&.captures&.first if pod.is_a?(String) }.compact
+          abort 'Renderer version missing or ambiguous in Pod lock' unless renderer.size == 1
+          receipt = { version: ENV.fetch('NATIVE_VERSION'), resolved_tag_sha: expected, lock_tag: checkout.fetch(:tag), native_source_sha256: manifests.first, configuration: 'Debug', renderer_version: renderer.first, evidence: 'CocoaPods tag/version, native source bytes and Simulator framework build' }
           File.write('ci-diagnostics/release-pod.json', JSON.pretty_generate(receipt) + "\n")
           RUBY
       - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/release-native.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer "-PwebViewVersion=$VERSION" -PremoteOnly $KUIKLY_COMPOSE_FLAGS $FULLSCREEN_CONTROLS_FLAGS -PverifyPageChannels=true compileKotlinIosArm64 compileKotlinIosSimulatorArm64 compileKotlinIosX64 compileKotlinOhosArm64 --refresh-dependencies --daemon --max-workers=1 --stacktrace --info

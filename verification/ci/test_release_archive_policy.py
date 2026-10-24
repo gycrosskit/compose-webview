@@ -138,7 +138,8 @@ esac
             (installed / 'unexpected.h').touch()
         (pod_dir / 'Podfile.lock').write_text(f'''PODS:
   - GYWebView ({version}):
-    - OpenKuiklyIOSRender (= 2.28.0)
+    - OpenKuiklyIOSRender (= 2.29.1)
+  - OpenKuiklyIOSRender (2.29.1)
 CHECKOUT OPTIONS:
   GYWebView:
     :tag: {tag}
@@ -153,8 +154,20 @@ CHECKOUT OPTIONS:
             assert receipt['resolved_tag_sha'] == 'a' * 40
             assert receipt['lock_tag'] == '0.2.0-rc.18'
             assert receipt['version'] == environment['NATIVE_VERSION'] != environment['VERSION']
+            assert receipt['renderer_version'] == '2.29.1'
             assert receipt['native_source_sha256'] == {
                 path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in reference.iterdir()
             }
+
+    shutil.rmtree(installed)
+    shutil.copytree(reference, installed)
+    lock_path = pod_dir / 'Podfile.lock'
+    valid_lock = lock_path.read_text()
+    renderer = '  - OpenKuiklyIOSRender (2.29.1)\n'
+    for invalid_lock in (valid_lock.replace(renderer, ''), valid_lock.replace(renderer, renderer * 2)):
+        lock_path.write_text(invalid_lock)
+        pod_receipt.unlink(missing_ok=True)
+        run(pod, False, MOCK_REFERENCE_HEAD='a' * 40)
+        assert not pod_receipt.exists(), 'Missing or ambiguous Renderer must not emit a receipt'
 
 print('PASS: packaging requires source checks, rejects warmup/failure, hashes actual fixture bytes; Git/tag-only Pod lock passes; wrong tag, reference HEAD, version, native bytes or file set fail. SDK/network calls were not executed.')
