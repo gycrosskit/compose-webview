@@ -5,7 +5,7 @@ python3 verification/android-callbacks/create-fixture.py
 python3 - <<'PY'
 from pathlib import Path
 import os, subprocess
-cache=Path.home()/'.gradle/caches/modules-2/files-2.1'
+cache=Path(os.environ.get('GRADLE_USER_HOME',str(Path.home()/'.gradle')))/'caches/modules-2/files-2.1'
 def jar(group,name,version):
     matches=list((cache/group/name/version).rglob(name+'-'+version+'.jar'))
     assert len(matches)==1,(group,name,version,matches)
