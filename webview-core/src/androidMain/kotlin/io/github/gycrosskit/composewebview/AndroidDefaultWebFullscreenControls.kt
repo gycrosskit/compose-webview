@@ -66,7 +66,7 @@ class AndroidDefaultWebFullscreenControls(
         setOnClickListener { actions.togglePlayback() }
     }
 
-    // 正式 CMP 的进度条只展示镜像，不提供拖动快进。
+    // 进度条只展示播放进度，不提供拖动快进。
     private val timeline = object : View(context) {
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
