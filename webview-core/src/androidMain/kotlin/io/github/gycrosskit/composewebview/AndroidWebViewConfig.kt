@@ -8,7 +8,7 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 
 /**
- * 在 UI 线程应用声明式配置；CMP 与 Kuikly 都从实例初始 User-Agent 追加后缀，不触发页面加载。
+ * 在 UI 线程应用声明式配置；从实例初始 User-Agent 追加后缀，不触发页面加载。
  * @param defaultUserAgent 实例创建时的 User-Agent；不得使用已经追加后缀的值。
  * @param fontScale 系统字体倍率，1.0 表示标准；最终缩放按 config 的百分比边界限制。
  * @param darkTheme 当前系统深色主题，旧内核可能不支持算法暗化。
