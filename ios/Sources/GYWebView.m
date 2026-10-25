@@ -108,6 +108,9 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 @property(nonatomic, copy) NSDictionary *request;
 @property(nonatomic, copy) KuiklyRenderCallback onEvent;
 @property(nonatomic, assign) BOOL pageVisible;
+@property(nonatomic, assign) BOOL pictureInPicturePageActive;
+@property(nonatomic, copy) NSString *pictureInPictureDocumentToken;
+@property(nonatomic, copy) NSString *pictureInPictureFrameId;
 @property(nonatomic, assign) BOOL released;
 @property(nonatomic, assign) NSUInteger callbackGeneration;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, id> *fullscreenCancellations;
@@ -160,7 +163,9 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
             if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
             [owner evaluateJavaScript:[self transportScript] completionHandler:nil];
         } else self.pageVisible = visible;
-        self.hidden = !self.pageVisible;
+        [self updateMediaVisibility];
+    } else if ([key isEqual:@"pictureInPicturePageActive"]) {
+        self.pictureInPicturePageActive = [value boolValue];
         [self updateMediaVisibility];
     } else if ([key isEqual:@"request"]) {
         NSDictionary *request = GYObject(value);
@@ -367,6 +372,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = GYBool(settings, @"javaScriptCanOpenWindowsAutomatically", NO);
     configuration.ignoresViewportScaleLimits = NO;
     configuration.allowsInlineMediaPlayback = YES;
+    configuration.allowsPictureInPictureMediaPlayback = YES;
     configuration.mediaTypesRequiringUserActionForPlayback = GYBool(settings, @"mediaPlaybackRequiresUserGesture", YES) ? WKAudiovisualMediaTypeAll : WKAudiovisualMediaTypeNone;
     self.webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
     if (@available(iOS 16.4, *)) {
@@ -386,6 +392,8 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     [configuration.userContentController addScriptMessageHandler:handler name:@"JSAndroidBridge"];
     [configuration.userContentController addScriptMessageHandler:handler name:@"ComposeWebViewEvent"];
     if ([self.request[@"pageMessageChannels"] count]) [configuration.userContentController addScriptMessageHandler:handler name:@"ComposeWebViewPageMessage"];
+    [configuration.userContentController addScriptMessageHandler:handler contentWorld:WKContentWorld.defaultClientWorld name:@"ComposeWebViewMedia"];
+    self.pictureInPictureDocumentToken = NSUUID.UUID.UUIDString;
     self.pageMessageInitialNavigation = YES;
     self.pageMessageRevoked = !self.pageVisible;
     WKWebView *owner = self.webView;
@@ -408,6 +416,8 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     for (void (^cancel)(void) in cancellations) cancel();
     if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
     [configuration.userContentController removeAllUserScripts];
+    NSString *mediaScript = [IOS_PICTURE_IN_PICTURE_SCRIPT stringByReplacingOccurrencesOfString:@"__GY_MEDIA_DOCUMENT_TOKEN__" withString:GYQuote(self.pictureInPictureDocumentToken)];
+    [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:mediaScript injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO inContentWorld:WKContentWorld.defaultClientWorld]];
     [self addScript:[self transportScript] start:YES];
     // allowsContentJavaScript 只禁用网页脚本；原生视频仍需组件脚本监测和退出全屏。
     [self addScript:[IOS_WEB_EVENT_SCRIPT stringByReplacingOccurrencesOfString:@"window.webkit.messageHandlers.ComposeWebViewEvent" withString:@"window.__GY_WEBVIEW_EVENT_TRANSPORT__"] start:YES];
@@ -509,6 +519,9 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (internalHtmlLoad && allow) [self emit:@{@"type": @"navigation", @"url": url, @"isMainFrame": @YES, @"hasUserGesture": @NO, @"target": @"CURRENT_WINDOW", @"blocked": @NO}];
     allow = allow && view == self.webView && !self.released && self.callbackGeneration == generation;
     if (allow && !popup && mainFrame) {
+        if (self.pictureInPictureFrameId) [view closeAllMediaPresentationsWithCompletionHandler:nil];
+        self.pictureInPictureFrameId = nil;
+        self.pictureInPictureDocumentToken = NSUUID.UUID.UUIDString;
         if (!self.pageMessageInitialNavigation) self.pageMessageRevoked = YES;
         self.pageMessageInitialNavigation = NO;
         [self prepareDocumentScripts];
@@ -554,8 +567,23 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     decision(allow ? WKPermissionDecisionPrompt : WKPermissionDecisionDeny);
 }
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
-    if (message.webView != self.webView || !message.frameInfo.isMainFrame || controller != self.webView.configuration.userContentController || self.released) return;
+    if (message.webView != self.webView || controller != self.webView.configuration.userContentController || self.released) return;
     NSDictionary *envelope = [message.body isKindOfClass:NSDictionary.class] ? message.body : nil;
+    if ([message.name isEqual:@"ComposeWebViewMedia"]) {
+        if (![envelope[@"token"] isEqual:self.pictureInPictureDocumentToken]) return;
+        NSString *frameId = GYString(envelope[@"frameId"]);
+        if (!frameId.length || frameId.length > 128 || ![envelope[@"active"] isKindOfClass:NSNumber.class]) return;
+        if ([envelope[@"active"] boolValue]) {
+            if (!self.pictureInPicturePageActive) return;
+            self.pictureInPictureFrameId = frameId;
+        } else if ([frameId isEqual:self.pictureInPictureFrameId]) {
+            self.pictureInPictureFrameId = nil;
+            if (!self.pageVisible) [self.webView pauseAllMediaPlaybackWithCompletionHandler:nil];
+        }
+        [self updateMediaVisibility];
+        return;
+    }
+    if (!message.frameInfo.isMainFrame) return;
     if (![envelope[@"token"] isEqual:self.documentToken]) return;
     if ([message.name isEqual:@"ComposeWebViewPageMessage"]) {
         NSString *channel = GYString(envelope[@"channel"]), *data = GYString(envelope[@"data"]), *source = message.frameInfo.request.URL.absoluteString;
@@ -818,10 +846,15 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     }];
 }
 - (void)updateMediaVisibility {
+    // 当前视频页退后台由 WebKit 接续自动 PiP；提前隐藏或停媒会取消尚未完成的全屏转场。
+    BOOL suspended = !self.pageVisible && !self.pictureInPicturePageActive;
+    self.hidden = suspended;
     if (!self.webView) return;
-    if (!self.pageVisible) [self exitFullscreen:nil fallbackToHistory:NO];
-    if (@available(iOS 15.0, *)) [self.webView setAllMediaPlaybackSuspended:!self.pageVisible completionHandler:nil];
-    else if (!self.pageVisible) [self.webView evaluateJavaScript:@"document.querySelectorAll('video,audio').forEach(function(v){v.pause();});" completionHandler:nil];
+    if (suspended) {
+        if (self.pictureInPictureFrameId) [self.webView closeAllMediaPresentationsWithCompletionHandler:nil];
+        [self exitFullscreen:nil fallbackToHistory:NO];
+    }
+    [self.webView setAllMediaPlaybackSuspended:suspended completionHandler:nil];
 }
 - (void)releaseWebView {
     self.initialHtmlNavigation = NO;
@@ -831,13 +864,16 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     self.pageMessageRevoked = YES;
     self.pageMessageInitialNavigation = NO;
     WKWebView *owner = self.webView; self.webView = nil; self.documentToken = nil; self.fullscreen = NO;
+    self.pictureInPictureFrameId = nil; self.pictureInPictureDocumentToken = nil;
     if (owner) {
+    [owner closeAllMediaPresentationsWithCompletionHandler:nil];
     for (NSString *key in @[@"estimatedProgress", @"title", @"canGoBack", @"canGoForward"]) [owner removeObserver:self forKeyPath:key];
     [owner stopLoading]; owner.navigationDelegate = nil; owner.UIDelegate = nil;
     [owner.configuration.userContentController removeAllUserScripts];
     [owner.configuration.userContentController removeScriptMessageHandlerForName:@"JSAndroidBridge"];
     [owner.configuration.userContentController removeScriptMessageHandlerForName:@"ComposeWebViewEvent"];
     [owner.configuration.userContentController removeScriptMessageHandlerForName:@"ComposeWebViewPageMessage"];
+    [owner.configuration.userContentController removeScriptMessageHandlerForName:@"ComposeWebViewMedia" contentWorld:WKContentWorld.defaultClientWorld];
     [owner removeFromSuperview];
     }
     [self revokeFilePicker];
