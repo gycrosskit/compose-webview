@@ -154,7 +154,7 @@ jobs:
       - name: Verify current source Kuikly consumer (not remote artifacts)
         if: needs.changes.outputs.source == 'true'
         timeout-minutes: 25
-        run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/source-consumer.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer -PverifyLocalSource -PwebViewVersion=0.3.0-rc.1 -PverifyKuiklyCompose -PverifyFullscreenControls -PverifyPageChannels=true assembleDebug verifyNoCmpUi verifyExactComponentVersion --no-daemon --max-workers=1 --stacktrace --info
+        run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/source-consumer.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification-consumer -PverifyLocalSource -PwebViewVersion=1.0.0 -PverifyKuiklyCompose -PverifyFullscreenControls -PverifyPageChannels=true assembleDebug verifyNoCmpUi verifyExactComponentVersion --no-daemon --max-workers=1 --stacktrace --info
       - run: python3 scripts/ci-run.py --no-progress-seconds 300 --log ci-diagnostics/android.log -- bash verification/android-callbacks/verify.sh
         timeout-minutes: 10
         if: needs.changes.outputs.source == 'true'

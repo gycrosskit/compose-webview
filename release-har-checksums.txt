@@ -1,0 +1,3 @@
+# immutable-HAR-version sha256-of-WebViewNative.har
+0.2.0-rc.15 8ed2221280834cb6de8a25adecce812e2e9be83b4767fca61682531fd21c1d9b
+1.0.0 a5790fcfe81d812a64a350db3a7945ebcdc0f0ec1fdd18c7f67b482bf731cf13

@@ -1,3 +1,13 @@
+# 1.0.0（正式版准备，尚未发布）
+
+- HAR 版本同步为 `1.0.0`，Renderer 保持 `2.29.1`；真实打包、Release 消费与 Registry 安装待本轮收据。
+
+# 0.2.0-rc.15
+
+- 新增可覆写的 `GYWebView.windowPolicyController()`，同一 WindowStage 的网页、Live 与系统动作可共用所属窗口实例，多窗口分别隔离。默认仍返回 shared，兼容旧单 Ability 宿主。
+- 仅发布 OHPM HAR；Maven `0.3.0-rc.1`、iOS Git Pod `0.3.0-rc.1` / podspec `0.2.0-rc.18` 保持不变。
+- Registry 下载、精确安装、公开 API 编译与宿主设备回归分别留证，不把本地 HAR 消费写成远程消费。
+
 # 0.2.0-rc.14
 
 - 配套 Maven/Git Pod 0.2.0-rc.16，包含 #37 初始页面 URL 规范化修复：scheme/host 大小写、默认端口与空路径采用同一文档身份；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。

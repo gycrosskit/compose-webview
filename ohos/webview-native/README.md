@@ -1,21 +1,21 @@
-> 当前HAR版本为 `0.2.0-rc.14`，配套 system-actions-native `0.2.0-rc.4`。v2 实现 pageMessageChannels 初始主文档 capability 与单次回复；私有安全随机 owner key 和 document nonce 不进入事件、日志或返回值。默认空配置保留既有行为。本地 HAR 检查、远程发布与设备验收分别记录。
+> 当前 HAR 为 `1.0.0` 未发布候选，配套 system-actions-native `0.2.0-rc.4`。v2 实现 pageMessageChannels 初始主文档 capability 与单次回复；私有安全随机 owner key 和 document nonce 不进入事件、日志或返回值。默认空配置保留既有行为。本地 HAR 检查、远程发布与设备验收分别记录。
 
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **0.2.0-rc.14 预发布版**。本组件自己封装系统 ArkWeb，供 Kuikly 2.28.0 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.28.0` 与 `@gycrosskit/system-actions-native:0.2.0-rc.4`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **1.0.0 未发布候选**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.29.1` 与 `@gycrosskit/system-actions-native:0.2.0-rc.4`，后者提供共用窗口执行 owner。
 
 rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和空路径按同一文档身份匹配；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。主帧 capability、nonce、owner 与单次回复门禁保持有效。
 
 ## 安装与注册
 
-HAR 0.2.0-rc.14 配套 system-actions 0.2.0-rc.4。宿主直接使用系统组件时也选择 rc.4；共用窗口 owner 来自该包的 `WindowPolicyController.shared`，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+HAR 1.0.0 候选配套 system-actions 0.2.0-rc.4。宿主直接使用系统组件时也选择 rc.4；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 
 以下为本版本精确 Registry 坐标；审核通过并实际可查询、安装后使用。
 
 ```bash
-ohpm install @gycrosskit/webview@0.2.0-rc.14
+ohpm install @gycrosskit/webview@1.0.0
 ```
 
 本地工作树可从assembleHar输出验证；正式版本可从同版本 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry rc.4。本地干净消费者核对只有一份窗口 owner。完全离线时下载同版本 Web 和 system-actions rc.4 的固定 Release HAR、校验各自 SHA，并用 root override 保证同一系统包。文件下载消费与 Registry 安装分开验收。
@@ -45,6 +45,22 @@ getCustomRenderViewCreatorRegisterMap(): Map<string, KRRenderViewExportCreator> 
 ```
 
 宿主声明 `ohos.permission.INTERNET`。开启 `mediaCaptureEnabled` 时，宿主另外声明 `ohos.permission.CAMERA` / `ohos.permission.MICROPHONE` 及用途；HAR 不替应用写权限说明、账号、支付或业务 Bridge。
+
+## 全屏窗口归属
+
+本地未发布候选新增可覆写的 `GYWebView.windowPolicyController(): WindowPolicyController`，默认返回 `WindowPolicyController.shared`，原有单窗口行为保持不变。多 UIAbility 宿主为每个 Ability 复用一个 controller，并让该 Ability 的 WebView、直播和其他窗口策略使用同一实例；不同 Ability 分开持有，不在每次调用或每个 View 中创建 controller。
+
+```ts
+import { GYWebView } from '@gycrosskit/webview';
+import { WindowPolicyController } from '@gycrosskit/system-actions-native';
+
+const audienceWindowPolicy = new WindowPolicyController();
+class AudienceWebView extends GYWebView {
+  windowPolicyController(): WindowPolicyController { return audienceWindowPolicy; }
+}
+```
+
+hook 仅选择现有 lease 的 owner，不改变 `fullscreenPolicy()`、原生退出确认或窗口恢复规则。同 controller 仍替换旧全屏 owner，不同 controller 不互相替换；宿主负责把 controller 与实际 Ability/Window 对齐。本轮轻量回归使用真实 WindowPolicy 实现和系统 Window 替身，尚非 HAR 编译或设备验收。
 
 ## 共享 Web 数据清理
 
