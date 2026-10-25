@@ -101,6 +101,7 @@ jobs:
           python3 ios/generate-scripts.py --check
           node verification/video-scripts.test.cjs
           node verification/native-ios/fullscreen-script.test.cjs
+          node verification/native-ios/picture-in-picture-script.test.cjs
           TYPESCRIPT_PATH="$RUNNER_TEMP/contract-tools/node_modules/typescript" WEBVIEW_WINDOW_POLICY_SOURCE="$RUNNER_TEMP/window-policy.ets" node ohos/tests/contract.test.cjs
       - name: Explain lightweight completion
         if: ${{ !(needs.changes.outputs.source == 'true') }}

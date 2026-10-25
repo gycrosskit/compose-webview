@@ -66,6 +66,34 @@ internal const val IOS_BRIDGE_SCRIPT = """
 internal const val IOS_HAS_RECENT_USER_GESTURE_SCRIPT =
     "Boolean(window.__COMPOSE_WEBVIEW_LAST_USER_GESTURE__ && Date.now() - window.__COMPOSE_WEBVIEW_LAST_USER_GESTURE__ < 1500)"
 
+/** 隔离世界逐 frame 观察 WebKit 的真实呈现状态，网页不能伪造后台播放豁免。 */
+internal const val IOS_PICTURE_IN_PICTURE_SCRIPT = """
+(function() {
+  const frameId = Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-');
+  let currentVideo = null;
+  function publish(active) {
+    window.webkit.messageHandlers.ComposeWebViewMedia.postMessage({
+      token: __GY_MEDIA_DOCUMENT_TOKEN__, frameId: frameId, active: active
+    });
+  }
+  function changed(event) {
+    const video = event.target;
+    if (!(video instanceof HTMLVideoElement)) return;
+    const active = video.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === video;
+    if (active) currentVideo = video;
+    else if (currentVideo !== video) return;
+    else currentVideo = null;
+    publish(active);
+  }
+  ['webkitpresentationmodechanged', 'enterpictureinpicture', 'leavepictureinpicture'].forEach(function(name) {
+    document.addEventListener(name, changed, true);
+  });
+  window.addEventListener('pagehide', function() {
+    if (currentVideo) { currentVideo = null; publish(false); }
+  });
+})();
+"""
+
 /** 统一采集用户手势与 H5 自定义全屏事件，不携带页面正文或业务数据。 */
 internal val IOS_WEB_EVENT_SCRIPT = """
     (function() {

@@ -18,6 +18,91 @@ static NSDictionary *JSONRoundTrip(NSDictionary *value) {
     return [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 }
 
+@interface MediaVisibilityProbe : WKWebView
+@property(nonatomic) BOOL suspended;
+@property(nonatomic) NSUInteger closedPresentations;
+@property(nonatomic) NSUInteger pauses;
+@end
+@implementation MediaVisibilityProbe
+- (void)setAllMediaPlaybackSuspended:(BOOL)suspended completionHandler:(void (^)(void))completion {
+    self.suspended = suspended;
+    if (completion) completion();
+}
+- (void)closeAllMediaPresentationsWithCompletionHandler:(void (^)(void))completion {
+    self.closedPresentations++;
+    if (completion) completion();
+}
+- (void)pauseAllMediaPlaybackWithCompletionHandler:(void (^)(void))completion {
+    self.pauses++;
+    if (completion) completion();
+}
+@end
+
+@interface MediaMessage : WKScriptMessage
+@property(nonatomic, strong) WKWebView *webView;
+@property(nonatomic, copy) NSString *name;
+@property(nonatomic, strong) id body;
+@end
+@implementation MediaMessage
+@synthesize webView = _probeWebView, name = _probeName, body = _probeBody;
+- (WKFrameInfo *)frameInfo { return nil; }
+@end
+
+static void SendPictureInPicture(GYWebView *page, NSString *frame, BOOL active, NSString *token) {
+    MediaMessage *message = [MediaMessage new];
+    message.webView = page.webView;
+    message.name = @"ComposeWebViewMedia";
+    NSString *currentToken = [page respondsToSelector:NSSelectorFromString(@"pictureInPictureDocumentToken")] ? [page valueForKey:@"pictureInPictureDocumentToken"] : @"baseline";
+    message.body = @{@"token": token ?: currentToken ?: @"", @"frameId": frame, @"active": @(active)};
+    [page userContentController:page.webView.configuration.userContentController didReceiveScriptMessage:message];
+}
+static void CheckPictureInPictureMediaVisibility(void) {
+    GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+    MediaVisibilityProbe *media = [[MediaVisibilityProbe alloc] initWithFrame:page.bounds configuration:[WKWebViewConfiguration new]];
+    page.webView = media;
+    if ([page respondsToSelector:NSSelectorFromString(@"setPictureInPictureDocumentToken:")])
+        [page setValue:@"test-document" forKey:@"pictureInPictureDocumentToken"];
+    [page hrv_setPropWithKey:@"pictureInPicturePageActive" propValue:@YES];
+    page.fullscreen = YES;
+    [page hrv_setPropWithKey:@"visible" propValue:@NO];
+    Require(!media.suspended, @"Automatic fullscreen-to-PiP handoff must not suspend before the PiP event arrives");
+    Require(!page.hidden && !page.pageVisible, @"Automatic PiP keeps its source view while revoking foreground capabilities");
+    Require(media.closedPresentations == 0, @"Backgrounding must not close the system fullscreen presentation");
+    page.fullscreen = NO;
+    SendPictureInPicture(page, @"main-video", YES, nil);
+    [page hrv_setPropWithKey:@"visible" propValue:@NO];
+    Require(!media.suspended, @"An existing system PiP must keep playing when its active page backgrounds");
+    Require(!page.pageVisible, @"PiP must not retain foreground Bridge/permission visibility");
+    SendPictureInPicture(page, @"other-frame", NO, nil);
+    Require(!media.suspended, @"Another frame cannot revoke the current PiP owner");
+    [page hrv_setPropWithKey:@"pictureInPicturePageActive" propValue:@NO];
+    Require(media.suspended && media.closedPresentations > 0, @"Leaving the page while backgrounded must pause and close PiP");
+    SendPictureInPicture(page, @"late-frame", YES, nil);
+    Require(media.suspended, @"A late PiP entry cannot resume an inactive page");
+    SendPictureInPicture(page, @"main-video", NO, nil);
+    [page hrv_setPropWithKey:@"pictureInPicturePageActive" propValue:@YES];
+    Require(!media.suspended, @"WebKit owns background playback and automatic PiP for the current video page");
+    NSUInteger pauses = media.pauses;
+    SendPictureInPicture(page, @"old-document", YES, @"stale-token");
+    Require([page valueForKey:@"pictureInPictureFrameId"] == nil, @"An old document cannot become the PiP owner");
+    SendPictureInPicture(page, @"child-video", YES, nil);
+    Require(!media.suspended, @"A valid child-frame PiP can keep playing");
+    SendPictureInPicture(page, @"child-video", NO, nil);
+    Require(media.pauses == pauses + 1, @"Closing PiP in the background must pause playback");
+    SendPictureInPicture(page, @"child-video", NO, nil);
+    Require(media.pauses == pauses + 1, @"A repeated PiP exit cannot pause a later playback twice");
+    SendPictureInPicture(page, @"main-video", YES, nil);
+    [page hrv_setPropWithKey:@"pictureInPicturePageActive" propValue:@NO];
+    [page hrv_setPropWithKey:@"visible" propValue:@NO];
+    Require(media.suspended && page.hidden, @"Leaving a foreground page must still hide and pause even with PiP");
+    [page hrv_setPropWithKey:@"visible" propValue:@YES];
+    Require(!media.suspended, @"Returning to the visible page removes the suspension without reloading");
+    // Probe 未注册 createWebView 的 KVO；清空后再执行生产释放入口。
+    page.webView = nil;
+    [page hrv_removeFromSuperview];
+    puts("PASS: Native PiP media policy: background, ordinary leave, hidden Bridge, child frames, late/stale messages, PiP exit and foreground restore (WebKit probes)");
+}
+
 @interface GYWebView (WireCheck)
 - (BOOL)allows:(NSString *)url mainFrame:(BOOL)mainFrame newWindow:(BOOL)newWindow gesture:(BOOL)gesture;
 - (void)installResourceRulesAndLoad;
@@ -118,6 +203,31 @@ static id Evaluate(WKWebView *owner, NSString *source) {
 }
 static NSString *RequestJSON(NSDictionary *request) {
     return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:request options:0 error:nil] encoding:NSUTF8StringEncoding];
+}
+static void CheckPictureInPictureScriptWire(void) {
+    GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
+    [page hrv_setPropWithKey:@"pictureInPicturePageActive" propValue:@YES];
+    [page hrv_setPropWithKey:@"request" propValue:RequestJSON(@{
+        @"content": @{@"type": @"html", @"html": @"<html><body><video id='video'></video></body></html>", @"baseUrl": @"https://safe.example/video"},
+        @"settings": @{@"javaScriptEnabled": @YES}})];
+    WKWebView *owner = page.webView;
+    WaitUntil(^BOOL { return !owner.loading && [Evaluate(owner, @"Boolean(document.getElementById('video'))") boolValue]; }, @"PiP script fixture failed to load");
+    Require([Evaluate(owner, @"typeof window.webkit.messageHandlers.ComposeWebViewMedia === 'undefined'") boolValue], @"The webpage must not access the isolated media handler");
+    __block BOOL entered = NO; __block NSError *failure;
+    [owner evaluateJavaScript:@"const v=document.getElementById('video');Object.defineProperty(v,'webkitPresentationMode',{value:'picture-in-picture',configurable:true});v.dispatchEvent(new Event('webkitpresentationmodechanged'));true"
+        inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id value, NSError *error) { entered = YES; failure = error; }];
+    WaitUntil(^BOOL { return entered; }, @"Isolated PiP event fixture timed out");
+    Require(!failure, @"Isolated PiP event fixture failed");
+    WaitUntil(^BOOL { return [[page valueForKey:@"pictureInPictureFrameId"] length] > 0; }, @"Production isolated script did not deliver PiP state");
+    NSString *oldToken = [page valueForKey:@"pictureInPictureDocumentToken"];
+    [page hrv_setPropWithKey:@"visible" propValue:@NO];
+    Require([[page valueForKey:@"pictureInPictureDocumentToken"] isEqual:oldToken], @"Background Bridge revocation must retain the media document identity");
+    [page hrv_setPropWithKey:@"request" propValue:RequestJSON(@{
+        @"content": @{@"type": @"html", @"html": @"<html><body>next</body></html>", @"baseUrl": @"https://safe.example/next"}})];
+    SendPictureInPicture(page, @"old-document", YES, oldToken);
+    Require([page valueForKey:@"pictureInPictureFrameId"] == nil, @"Replaced documents must reject late media messages");
+    [page hrv_removeFromSuperview];
+    puts("PASS: Real WKWebView isolated media handler, production event delivery, hidden document identity and replacement revocation (synthetic PiP DOM state, no system PiP UI)");
 }
 static void CheckNativeCommandCancellation(NSDictionary *request, NSString *otherURL) {
     NSArray *modes = getenv("WEBVIEW_STOP_ONLY") ? @[@"stopLoading", @"reentrantStop"] : @[@"hide", @"request", @"release", @"reload", @"stopLoading", @"reentrantHide", @"reentrantStop"];
@@ -264,6 +374,9 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
 }
 
 static void Check(void) {
+    CheckPictureInPictureMediaVisibility();
+    CheckPictureInPictureScriptWire();
+    if (getenv("WEBVIEW_PIP_ONLY")) { fflush(stdout); exit(0); }
     puts("PHASE: Stop-loading cancellation");
     CheckStopLoadingCancellation();
     if (getenv("WEBVIEW_STOP_ONLY")) {
@@ -695,17 +808,29 @@ static void Check(void) {
     exit(0);
 }
 
-@interface WireCheckApp : UIResponder <UIApplicationDelegate>
+@interface WireCheckScene : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
-@implementation WireCheckApp
+@implementation WireCheckScene
 - (void)runChecks { Check(); }
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.rootViewController = [UIViewController new];
     [self.window makeKeyAndVisible];
     [self performSelector:@selector(runChecks) withObject:nil afterDelay:0];
+}
+@end
+
+@interface WireCheckApp : UIResponder <UIApplicationDelegate>
+@end
+@implementation WireCheckApp
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
     return YES;
+}
+- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    UISceneConfiguration *configuration = [[UISceneConfiguration alloc] initWithName:@"WireCheck" sessionRole:session.role];
+    configuration.delegateClass = WireCheckScene.class;
+    return configuration;
 }
 @end
 

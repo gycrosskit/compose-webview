@@ -55,6 +55,7 @@ cat > "$app/Info.plist" <<'PLIST'
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundleShortVersionString</key><string>1.0</string>
 <key>LSRequiresIPhoneOS</key><true/>
+<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/><key>UISceneConfigurations</key><dict/></dict>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoadsInWebContent</key><true/></dict>
 </dict></plist>
 PLIST
@@ -66,6 +67,11 @@ xcrun simctl launch --console --terminate-running-process "${WEBVIEW_SIMULATOR:-
     printf 'FAIL: WireCheck launch=%s tee=%s\n' "${wire_failure[1]}" "${wire_failure[2]}" >&2
     exit "${wire_failure[0]}"
 }
+if [[ "${SIMCTL_CHILD_WEBVIEW_PIP_ONLY:-0}" == 1 ]]; then
+    grep -q '^PASS: Native PiP media policy' "$output/result.log"
+    grep -q '^PASS: Real WKWebView isolated media handler' "$output/result.log"
+    exit 0
+fi
 grep -q '^PASS: Native Boolean wire' "$output/result.log" || {
     wire_exit=$?
     printf 'FAIL: WireCheck Boolean PASS marker missing\n' >&2
