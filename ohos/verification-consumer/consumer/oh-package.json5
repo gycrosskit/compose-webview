@@ -4,6 +4,6 @@
   "main": "Index.ets",
   "dependencies": {
     "@gycrosskit/webview": "file:../../webview-native/build/default/outputs/default/WebViewNative.har",
-    "@gycrosskit/system-actions-native": "0.2.0-rc.4"
+    "@gycrosskit/system-actions-native": "1.0.1"
   }
 }

@@ -2,11 +2,11 @@
 
 当前开发分支的 Kuikly 与宿主统一：KMP 使用 `2.29.1-2.0.21-ohos`，iOS/OHOS Renderer 使用 `2.29.1`。以后随宿主同步升级；本次调整尚未发布，旧版本的接入与验收记录以对应 tag 为准。
 
-当前源码准备正式 `1.0.1` 候选（Maven / Git Pod / HAR 同版），尚未发布；须通过本版本 Jenkins 构建与精确产物消费后再发布。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；本候选删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
+当前 Maven / iOS Git Pod 保留 `1.0.1`；OHOS HAR / OHPM 准备独立的 `1.0.2` 未发布候选，须通过新源码 Jenkins 验证、重新打包与精确产物消费后再发布。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；本候选删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
 
 `webview-kuikly` 保留 raw `GYWebView` 和 `io.github.gycrosskit.composewebview.kuikly.AppWebView` KuiklyCompose 入口，传递 KuiklyCompose / Compose runtime。宿主继续统一 Kuikly、compiler 与 Renderer 版本；`verifyNoCmpUi` 允许这套 runtime 并拒绝第二套 AndroidX/JetBrains CMP UI/foundation/material。
 
-iOS Objective-C、Maven 与 OHOS HAR 的本轮候选均为 `1.0.1`；HAR 包含按 WindowStage 注入窗口策略，system-actions-native 仍精确使用已冻结的 `0.2.0-rc.4`。Pod、HAR、Registry 与 Maven 消费分别以本轮真实收据确认。旧版本及 CMP 验收保留在 [rc.18 发布记录](docs/0.2.0-rc.18发布验收.md)、[历史源码审查](docs/完整源码审查.md) 和旧 tag 中，不代表本候选通过验证。
+HAR `1.0.2` 候选包含按 WindowStage 注入窗口策略，system-actions-native 精确依赖 `1.0.1`，依赖升级后须重新编译和冻结；Kotlin API 与 iOS 原生实现不改。新 HAR 使用独立标签 `har-1.0.2`，保留既有 `1.0.1`、`har-1.0.1` 标签及制品摘要。Pod、HAR、Registry 与 Maven 消费分别以本轮真实收据确认。旧版本及 CMP 验收保留在 [rc.18 发布记录](docs/0.2.0-rc.18发布验收.md)、[历史源码审查](docs/完整源码审查.md) 和旧 tag 中，不代表本候选通过验证。
 
 底层使用 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb。请求、安全、导航、脚本与事件由 core 共享，账号、鉴权、品牌 URL、页面状态与业务路由由宿主提供。H5 视频控制保留 core 媒体脚本/镜像、Android 原生控件与 KuiklyCompose overlay；不改系统播放器层级限制。
 
@@ -93,7 +93,7 @@ classDiagram
 
 源码入口：[请求与安全](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt)、[导航规则](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt)、[KuiklyCompose 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/AppWebView.kt)、[raw 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt)、[Android native](webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt)。controller 属于当前节点，命令异步返回。
 
-具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，本轮候选使用 `1.0.1`：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
+具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，当前 Maven / Git Pod 使用 `1.0.1`，HAR 候选使用 `1.0.2`：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
 
 ## 平台与模块
 
@@ -124,7 +124,7 @@ dependencyResolutionManagement {
 }
 ```
 
-以下 Maven / Git Pod / HAR `1.0.1` 是未发布候选坐标，待 Jenkins 构建、不可变 Release 与各渠道精确公开消费完成。在 KMP 的 `commonMain.dependencies` 接入：
+以下 Maven / Git Pod 沿用 `1.0.1`，OHOS HAR 准备 `1.0.2`；各渠道分别按真实构建、不可变 Release 与精确公开消费收据确认。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
@@ -140,7 +140,7 @@ pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :t
 当前源码另含 iOS Renderer 2.29 兼容候选；发布 Tag 与候选提交的消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS `1.0.1` 候选安装见[HAR 接入指南](ohos/webview-native/README.md)，Registry 可安装性须单独核验。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
+HarmonyOS HAR `1.0.2` 候选安装见[HAR 接入指南](ohos/webview-native/README.md)，Registry 可安装性须单独核验。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
 
 ## 快速使用
 
@@ -229,7 +229,7 @@ HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收
 
 公网核验同步组织 `templates/check-public-maven.py`：使用冻结归档给出的完整 publications 清单，核对 JitPack tag/commit、每个公开 POM/Module、全部声明变体字节大小和四类哈希、内部精确版本及 `available-at`；MD5/SHA-1 sidecar 必须匹配。SHA-256/SHA-512 sidecar 的 HTTP 404 单独输出为渠道缺失，不计为校验通过。
 
-OHOS Node 契约使用 manifest 声明的 System Actions `0.2.0-rc.4` Release HAR：下载并核对冻结 SHA-256 后读取真实 WindowPolicy 源文件，避免依赖本机已安装的 `oh_modules`。这只证明源码契约，不等于 HAR 构建或 OHPM Registry 安装。
+OHOS Node 契约要求发布 manifest 和独立 consumer 精确依赖 System Actions `1.0.1`，实际 HAR 检查也核对包内依赖。使用 `WEBVIEW_WINDOW_POLICY_SOURCE` 指向已核对冻结 SHA-256 的 System Actions 1.0.1 HAR 内真实 `WindowPolicy.ets`；未指定时读取安装依赖中的源码。候选尚未上架时，远程 HAR 验证可用 `WEBVIEW_SYSTEM_ACTIONS_HAR` 传入同版本冻结包，脚本临时设置 root override 并在退出时恢复，正式发布 manifest 始终保留精确 Registry 版本。这只证明相应用例的源码契约，HAR 构建和 Registry 安装另行验收。
 
 ### 网页命令
 

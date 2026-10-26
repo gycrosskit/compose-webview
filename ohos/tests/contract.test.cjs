@@ -8,12 +8,22 @@ const crypto = require('node:crypto');
 const devEco = process.env.WEBVIEW_DEVECO_HOME || '/Applications/DevEco-Studio.app/Contents';
 const ts = require(process.env.TYPESCRIPT_PATH || path.join(devEco, 'sdk/default/openharmony/ets/build-tools/ets-loader/node_modules/typescript'));
 const harArgument = process.argv.indexOf('--har');
+const systemActionsVersion = '1.0.1';
+for (const manifest of ['../webview-native/oh-package.json5', '../verification-consumer/consumer/oh-package.json5']) {
+  assert.equal(JSON.parse(fs.readFileSync(path.resolve(__dirname, manifest), 'utf8')).dependencies['@gycrosskit/system-actions-native'],
+    systemActionsVersion, `${manifest} must use the same exact WindowPolicy owner version`);
+}
 let root = path.resolve(__dirname, '../webview-native/src/main/ets');
 if (harArgument >= 0) {
   const extracted = fs.mkdtempSync(path.join(os.tmpdir(), 'gy-webview-har-'));
-  childProcess.execFileSync('tar', ['-xf', path.resolve(process.argv[harArgument + 1]), '-C', extracted]);
-  root = path.join(extracted, 'package/src/main/ets');
   process.on('exit', () => fs.rmSync(extracted, { recursive: true, force: true }));
+  childProcess.execFileSync('tar', ['-xf', path.resolve(process.argv[harArgument + 1]), '-C', extracted]);
+  const manifest = JSON.parse(fs.readFileSync(path.join(extracted, 'package/oh-package.json5'), 'utf8'));
+  assert.equal(manifest.dependencies['@gycrosskit/system-actions-native'],
+    systemActionsVersion, 'actual HAR must retain the exact Registry dependency');
+  assert.equal(manifest.version, '1.0.2', 'actual HAR must use the new immutable patch version');
+  assert.equal(manifest.overrides, undefined, 'actual HAR must not retain task overrides');
+  root = path.join(extracted, 'package/src/main/ets');
 }
 const deferred = () => { let resolve, reject; const promise = new Promise((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; };
 let nextJavascript = null;
