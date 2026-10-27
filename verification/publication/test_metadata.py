@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -34,6 +35,24 @@ class PublicationContracts(unittest.TestCase):
 
     def variants(self, path):
         return json.loads(path.read_text())["variants"]
+
+    def test_current_release_version_matches_maven_pod_har_and_consumers(self):
+        root = Path(__file__).resolve().parents[2]
+        def version(path, expression):
+            values = re.findall(expression, (root / path).read_text())
+            self.assertEqual(len(values), 1, path)
+            return values[0]
+        har = json.loads((root / 'ohos/webview-native/oh-package.json5').read_text())
+        versions = {
+            'maven': version('build.gradle.kts', r'environmentVariable\("VERSION"\)\.orElse\("([^"]+)"\)'),
+            'maven-package': version('scripts/package-maven.sh', r'\$\{VERSION:-([^}]+)\}'),
+            'pod': version('GYWebView.podspec', r"s\.version\s*=\s*'([^']+)'"),
+            'maven-consumer': version('verification-consumer/build.gradle.kts', r'gradleProperty\("webViewVersion"\)\.orElse\("([^"]+)"\)'),
+            'verify-consumer': version('scripts/verify.sh', r'-PwebViewVersion=([^\s]+)'),
+            'har': har['version'],
+        }
+        self.assertEqual(versions, {name: '1.0.2' for name in versions})
+        self.assertEqual(har['dependencies']['@gycrosskit/system-actions-native'], '1.0.1')
 
     def test_empty_resource_and_forwarding_removed_api_preserved(self):
         self.assertEqual(metadata.normalize([self.native, self.shared]), 2)

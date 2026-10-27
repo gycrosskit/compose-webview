@@ -1,3 +1,8 @@
+# 1.0.2（未发布候选）
+
+- SystemActions Native 精确依赖升级到 `1.0.1`，独立消费者使用相同版本，继续共用所属 WindowStage 的 `WindowPolicyController`。新 HAR 须重新编译、冻结及消费验证；不复用旧依赖候选或覆盖已有标签。
+- 仅 HAR / OHPM 使用 `1.0.2` 和新标签 `har-1.0.2`；Maven 与 iOS Git Pod 保留 `1.0.1`，Kotlin API 与原生实现不改。
+
 # 1.0.0（正式版准备，尚未发布）
 
 ## 1.0.1 - 2026-10-25
