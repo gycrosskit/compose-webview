@@ -1,6 +1,6 @@
 {
   "name": "@gycrosskit/webview",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Kuikly 系统 ArkWeb 组件与同步安全策略",
   "main": "Index.ets",
   "author": {
@@ -11,6 +11,6 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@kuikly-open/render": "2.29.1",
-    "@gycrosskit/system-actions-native": "0.2.0-rc.4"
+    "@gycrosskit/system-actions-native": "1.0.1"
   }
 }
