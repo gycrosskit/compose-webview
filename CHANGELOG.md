@@ -1,9 +1,9 @@
 # 更新记录
 
-## HAR 1.0.2（未发布候选）
+## 1.0.2（未发布候选）
 
-- 仅 OHOS HAR / OHPM 升级为 `1.0.2`，精确依赖 SystemActions Native `1.0.1`，使用新的 `har-1.0.2` 标签；Maven 与 iOS Git Pod 保留 `1.0.1`。
-- Kotlin API 与原生实现不改；新依赖 HAR 须重新远程编译、冻结与消费验证，不复用旧候选或覆盖旧标签/摘要。
+- Maven / iOS Git Pod / OHOS HAR / OHPM 统一准备 `1.0.2`，精确依赖 SystemActions Native `1.0.1`；Maven / Git Pod 使用新的 `1.0.2` 标签，HAR 使用新的 `har-1.0.2` 标签。
+- Kotlin API 与原生实现不改；各渠道须按新版本重新远程编译、冻结与消费验证，不复用旧候选或覆盖旧标签/摘要。
 
 ## 1.0.1 - 2026-10-25
 

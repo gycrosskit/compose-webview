@@ -8,7 +8,7 @@ rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和
 
 ## 安装与注册
 
-HAR 1.0.2 候选配套 system-actions 1.0.1；Maven 与 iOS Git Pod 保留 1.0.1，新 HAR 使用独立标签 `har-1.0.2`，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.1；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+Maven / iOS Git Pod / HAR / OHPM 统一准备 1.0.2 候选，配套 system-actions 1.0.1；Maven / Git Pod 使用新标签 `1.0.2`，HAR 使用独立标签 `har-1.0.2`，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.1；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 
