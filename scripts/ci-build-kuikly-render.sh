@@ -42,7 +42,7 @@ native_scheme=${native_scheme:-OpenKuiklyIOSRender}
 xcodebuild -project "$build_dir/Pods/Pods.xcodeproj" -scheme "$native_scheme" \
   -configuration Debug -sdk iphonesimulator \
   -derivedDataPath "$build_dir/DerivedData" -arch "$native_arch" \
-  ONLY_ACTIVE_ARCH=YES CONFIGURATION_BUILD_DIR="$framework_parent" CODE_SIGNING_ALLOWED=NO build >&2
+  ONLY_ACTIVE_ARCH=YES CONFIGURATION_BUILD_DIR="$framework_parent" CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=15.0 build >&2
 binary="$framework_parent/OpenKuiklyIOSRender.framework/OpenKuiklyIOSRender"
 test -f "$binary"
 lipo "$binary" -verify_arch "$native_arch"
