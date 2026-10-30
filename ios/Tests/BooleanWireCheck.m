@@ -382,7 +382,37 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
     puts("PASS: Native JS-disabled real video fullscreen events, exitFullscreen and goBack preserve history; page script blocked");
 }
 
+static void CheckNavigationErrors(void) {
+    GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectZero];
+    page.webView = [[WKWebView alloc] initWithFrame:CGRectZero];
+    NSMutableArray<NSDictionary *> *events = [NSMutableArray array];
+    page.onEvent = ^(id event) { [events addObject:event]; };
+    NSArray<NSNumber *> *codes = @[@(NSURLErrorTimedOut), @(NSURLErrorNotConnectedToInternet),
+        @(NSURLErrorAppTransportSecurityRequiresSecureConnection), @(NSURLErrorSecureConnectionFailed),
+        @(NSURLErrorServerCertificateHasBadDate), @(NSURLErrorServerCertificateUntrusted),
+        @(NSURLErrorServerCertificateHasUnknownRoot), @(NSURLErrorServerCertificateNotYetValid),
+        @(NSURLErrorClientCertificateRejected), @(NSURLErrorClientCertificateRequired)];
+    for (NSNumber *code in codes) {
+        NSError *error = [NSError errorWithDomain:NSURLErrorDomain code:code.integerValue userInfo:nil];
+        [page webView:page.webView didFailProvisionalNavigation:nil withError:error];
+        NSDictionary *event = events.lastObject;
+        NSString *kind = code.integerValue == NSURLErrorTimedOut ? @"TIMEOUT" :
+            (code.integerValue == NSURLErrorNotConnectedToInternet ? @"NETWORK" : @"SSL");
+        Require([event[@"kind"] isEqual:kind] && [event[@"errorCode"] isEqual:code], @"Native navigation errors retain normalized kind and original code");
+        RequireBoolean(event[@"isMainFrame"], YES, @"navigation failure belongs to the main document");
+    }
+    NSUInteger count = events.count;
+    [page webView:page.webView didFailNavigation:nil withError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]];
+    Require(events.count == count, @"Cancelled navigation is not a load failure");
+    [page webView:[WKWebView new] didFailNavigation:nil withError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:nil]];
+    Require(events.count == count, @"Old WebView cannot report a failure");
+    [page webView:page.webView didFailNavigation:nil withError:[NSError errorWithDomain:@"OtherDomain" code:NSURLErrorTimedOut userInfo:nil]];
+    Require([events.lastObject[@"kind"] isEqual:@"UNKNOWN"], @"Native error codes are scoped to their domain");
+    [page hrv_removeFromSuperview];
+}
+
 static void Check(void) {
+    CheckNavigationErrors();
     puts("PHASE: System WebKit readiness");
     NSString *startupURL = [NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"] stringByReplacingOccurrencesOfString:@"/page" withString:@"/other"];
     Require(startupURL.length, @"Missing WebKit readiness fixture");

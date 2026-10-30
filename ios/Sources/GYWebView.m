@@ -11,6 +11,22 @@ static NSDictionary *GYObject(NSString *value) {
     return [json isKindOfClass:NSDictionary.class] ? json : nil;
 }
 static NSString *GYString(id value) { return [value isKindOfClass:NSString.class] ? value : nil; }
+static NSString *GYNavigationErrorKind(NSError *error) {
+    if (![error.domain isEqual:NSURLErrorDomain]) return @"UNKNOWN";
+    switch (error.code) {
+        case NSURLErrorTimedOut: return @"TIMEOUT";
+        case NSURLErrorAppTransportSecurityRequiresSecureConnection:
+        case NSURLErrorSecureConnectionFailed:
+        case NSURLErrorServerCertificateHasBadDate:
+        case NSURLErrorServerCertificateUntrusted:
+        case NSURLErrorServerCertificateHasUnknownRoot:
+        case NSURLErrorServerCertificateNotYetValid:
+        case NSURLErrorClientCertificateRejected:
+        case NSURLErrorClientCertificateRequired: return @"SSL";
+        default: return @"NETWORK";
+    }
+}
+
 static BOOL GYBool(NSDictionary *object, NSString *key, BOOL fallback) {
     id value = object[key];
     return [value isKindOfClass:NSNumber.class] ? [value boolValue] : fallback;
@@ -625,7 +641,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     [view evaluateJavaScript:[NSString stringWithFormat:@"window.__COMPOSE_WEBVIEW_FILE_CHOOSER_ALLOWED__=%@;", fileAllowed ? @"true" : @"false"] completionHandler:nil];
     if (GYBool(self.request[@"settings"], @"javaScriptEnabled", NO)) for (NSDictionary *script in self.request[@"scripts"]) if ([script[@"injectionTime"] isEqual:@"DOCUMENT_FINISHED"] && (!GYBool(script, @"onlyForTrustedMainFrame", YES) || [self trusted:view.URL.absoluteString] || (GYBool(self.request[@"security"], @"pageBridgeEnabled", NO) && [self bridgeAllowed:view.URL.absoluteString]))) [view evaluateJavaScript:script[@"source"] completionHandler:nil];
 }
-- (void)webView:(WKWebView *)view didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error { if (view == self.webView && error.code != NSURLErrorCancelled) [self fail:@"NETWORK" message:error.localizedDescription url:view.URL.absoluteString code:@(error.code)]; }
+- (void)webView:(WKWebView *)view didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error { if (view == self.webView && !([error.domain isEqual:NSURLErrorDomain] && error.code == NSURLErrorCancelled)) [self fail:GYNavigationErrorKind(error) message:error.localizedDescription url:view.URL.absoluteString code:@(error.code)]; }
 - (void)webView:(WKWebView *)view didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error { [self webView:view didFailProvisionalNavigation:navigation withError:error]; }
 - (void)webViewWebContentProcessDidTerminate:(WKWebView *)view { if (view == self.webView) [self fail:@"RENDER_PROCESS" message:@"WebKit process terminated" url:view.URL.absoluteString code:nil]; }
 - (void)webView:(WKWebView *)view decidePolicyForNavigationResponse:(WKNavigationResponse *)response decisionHandler:(void (^)(WKNavigationResponsePolicy))decision {

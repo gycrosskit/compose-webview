@@ -1,4 +1,41 @@
+import { WebNetErrorList } from '@kit.ArkWeb';
 import { url } from '@kit.ArkTS';
+
+/** 原生网络错误在组件边界分类，原始错误码仍随事件保留。 */
+export function networkErrorKind(code: number): string {
+  switch (code) {
+    case WebNetErrorList.ERR_TIMED_OUT:
+    case WebNetErrorList.ERR_CONNECTION_TIMED_OUT:
+    case WebNetErrorList.ERR_DNS_TIMED_OUT: return 'TIMEOUT';
+    case WebNetErrorList.ERR_SSL_PROTOCOL_ERROR:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_CERT_NEEDED:
+    case WebNetErrorList.ERR_NO_SSL_VERSIONS_ENABLED:
+    case WebNetErrorList.ERR_SSL_VERSION_OR_CIPHER_MISMATCH:
+    case WebNetErrorList.ERR_SSL_RENEGOTIATION_REQUESTED:
+    case WebNetErrorList.ERR_BAD_SSL_CLIENT_AUTH_CERT:
+    case WebNetErrorList.ERR_SSL_NO_RENEGOTIATION:
+    case WebNetErrorList.ERR_SSL_DECOMPRESSION_FAILURE_ALERT:
+    case WebNetErrorList.ERR_SSL_BAD_RECORD_MAC_ALERT:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_PRIVATE_KEY_ACCESS_DENIED:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_CERT_NO_PRIVATE_KEY:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED:
+    case WebNetErrorList.ERR_SSL_HANDSHAKE_NOT_COMPLETED:
+    case WebNetErrorList.ERR_SSL_BAD_PEER_PUBLIC_KEY:
+    case WebNetErrorList.ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN:
+    case WebNetErrorList.ERR_CLIENT_AUTH_CERT_TYPE_UNSUPPORTED:
+    case WebNetErrorList.ERR_SSL_DECRYPT_ERROR_ALERT:
+    case WebNetErrorList.ERR_SSL_SERVER_CERT_CHANGED:
+    case WebNetErrorList.ERR_SSL_UNRECOGNIZED_NAME_ALERT:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_CERT_BAD_FORMAT:
+    case WebNetErrorList.ERR_SSL_SERVER_CERT_BAD_FORMAT:
+    case WebNetErrorList.ERR_SSL_OBSOLETE_CIPHER:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_NO_COMMON_ALGORITHMS:
+    case WebNetErrorList.ERR_SSL_KEY_USAGE_INCOMPATIBLE:
+      return 'SSL';
+    default:
+      return code <= WebNetErrorList.ERR_CERT_COMMON_NAME_INVALID && code > WebNetErrorList.ERR_CERT_END ? 'SSL' : 'NETWORK';
+  }
+}
 
 /**
  * 中立内容 wire；由 decodeRequest 校验后使用，正文和 URL 可能包含敏感数据。

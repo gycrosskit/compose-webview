@@ -75,6 +75,7 @@ class BaseView {
   setProp() { return false; } onDestroy() {} call() {}
 }
 const windowObject = { Orientation: { UNSPECIFIED: 0, AUTO_ROTATION_LANDSCAPE: 1 }, getLastWindow: async () => ({}) };
+const nativeErrorCodes = Object.fromEntries([...fs.readFileSync(path.join(devEco, 'sdk/default/openharmony/ets/api/@ohos.web.netErrorList.d.ts'), 'utf8').matchAll(/\b(ERR_[A-Z_]+)\s*=\s*(-?\d+)/g)].map(([,name, code]) => [name, Number(code)]));
 const mocks = {
   '@kit.CryptoArchitectureKit': { cryptoFramework: { createRandom: () => ({ generateRandomSync: size => ({ data: crypto.randomBytes(size) }) }) } },
   '@kit.ArkData': { uniformTypeDescriptor: { getUniformDataTypeByFilenameExtension: value => value, getTypeDescriptor: value => ({ mimeTypes: value === '.pdf' ? ['application/pdf'] : value === '.jpg' ? ['image/jpeg'] : [] }) } },
@@ -82,7 +83,7 @@ const mocks = {
   '@kit.ArkTS': { url: { URL }, util: { generateRandomUUID: secure => secure ? crypto.randomUUID() : 'test-capture', TextEncoder: class { encodeInto(value) { return new TextEncoder().encode(value); } } } },
   '@kuikly-open/render': { KuiklyRenderBaseView: BaseView },
   '@ohos.arkui.node': { ComponentContent: class {} },
-  '@kit.ArkWeb': { webview: { WebviewController: Controller,
+  '@kit.ArkWeb': { WebNetErrorList: nativeErrorCodes, webview: { WebviewController: Controller,
     WebCookieManager: { clearAllCookies: () => { dataCleaningCalls.push(['cookies']); return cookieDeletion.promise; } },
     WebStorage: { deleteAllData: () => { dataCleaningCalls.push(['storage']); if (dataCleaningFailure === 'storage') throw new Error('storage failed'); } },
   } },
@@ -113,6 +114,25 @@ function load(file) {
   cache[file] = exports; return exports;
 }
 const wire = load('WebViewWire.ts');
+for (const code of [-7, -118, -803]) assert.equal(wire.networkErrorKind(code), 'TIMEOUT');
+for (const code of [-107, -113, -148, -200, -202, -218]) assert.equal(wire.networkErrorKind(code), 'SSL');
+for (const code of [-8, -100, -105, -106, -219, -1001, 12345]) assert.equal(wire.networkErrorKind(code), 'NETWORK');
+{
+  const source = fs.readFileSync(path.join(root, 'WebViewComponent.ets'), 'utf8');
+  const failures = [];
+  const view = { isRenderActive: token => token === 1, fail: (...args) => failures.push(args) };
+  const callback = vm.runInNewContext(source.match(/\.onErrorReceive\((.*)\)/)[1], {view, token: 1, networkErrorKind: wire.networkErrorKind});
+  for (const [code, kind] of [[-7, 'TIMEOUT'], [-118, 'TIMEOUT'], [-107, 'SSL'], [-8, 'NETWORK']]) {
+    const error = {getErrorCode: () => code, getErrorInfo: () => 'native detail'};
+    callback({request: {isMainFrame: () => false}, error});
+    const count = failures.length;
+    callback({request: {isMainFrame: () => true}, error});
+    assert.equal(failures.length, count + 1);
+    assert.deepEqual(Array.from(failures.at(-1)), [kind, 'native detail', code]);
+  }
+  assert.equal(failures.length, 4, 'subresource errors never fail the main document');
+}
+
   const httpTrust = { trustedOrigins: { urls: ['http://shop.test:8080'], trustedHostSuffixes: ['jd.com'] } };
   assert.equal(wire.trusted('http://shop.test:8080/page', httpTrust), true);
   assert.equal(wire.trusted('http://m.jd.com/', httpTrust), true);
