@@ -389,6 +389,16 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   }
   for (const value of ['https://shop.test', 'http://shop.test:8443', 'https://badshop.test:8443', 'https://shop.test.evil:8443', 'https://user@shop.test:8443'])
     assert.equal(wire.navigationAllowed(value, true, independent), false, value);
+  const anyPort = request({ content: { type: 'url', url: 'https://shop.test' }, navigationPolicy: { allowedSchemes: ['http', 'https'], blockedRules: [], navigationOrigins: {
+    exactOrigins: [], hostSuffixOrigins: [], hostSuffixAnyPortOrigins: ['http://shop.test', 'https://shop.test'] } } });
+  assert.ok(wire.decodeRequest(encoded(anyPort)));
+  for (const value of ['http://shop.test:8080/page', 'https://a.shop.test:9443']) assert.equal(wire.navigationAllowed(value, true, anyPort), true, value);
+  for (const value of ['http://shop.test.evil:8080', 'https://badshop.test:9443', 'http://user@shop.test:8080']) assert.equal(wire.navigationAllowed(value, true, anyPort), false, value);
+  const httpsOnly = { ...anyPort, navigationPolicy: { ...anyPort.navigationPolicy, navigationOrigins: {
+    ...anyPort.navigationPolicy.navigationOrigins, hostSuffixAnyPortOrigins: ['https://shop.test'] } } };
+  assert.equal(wire.navigationAllowed('http://shop.test:8080', true, httpsOnly), false, 'any-port suffix does not broaden scheme');
+  for (const value of [null, true, ['https://shop.test:8443'], ['https://[::1]']])
+    assert.throws(() => wire.decodeRequest(encoded({ ...anyPort, navigationPolicy: { ...anyPort.navigationPolicy, navigationOrigins: { ...anyPort.navigationPolicy.navigationOrigins, hostSuffixAnyPortOrigins: value } } })));
   for (const navigationOrigins of [null, {}, { exactOrigins: [], hostSuffixOrigins: ['https://[::1]'] }, { exactOrigins: [1], hostSuffixOrigins: [] }])
     assert.throws(() => wire.decodeRequest(encoded({ ...independent, navigationPolicy: { ...independent.navigationPolicy, navigationOrigins } })));
   for (const allowedOrigins of [null, 'https://trusted.test', ['javascript:evil'], ['https://user@trusted.test/'], ['https://trusted.test:0/'], ['https://trusted.test:65536/'], [5]]) {

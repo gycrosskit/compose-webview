@@ -539,13 +539,23 @@ static void Check(void) {
         @"security": @{@"appBridgeEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"], @"trustedHostSuffixes": @[]}},
         @"navigationPolicy": @{@"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": independent}};
     Require([view validRequest:view.request], @"Independent origins rejected");
+    NSDictionary *anyPort = @{ @"exactOrigins": @[], @"hostSuffixOrigins": @[], @"hostSuffixAnyPortOrigins": @[@"http://shop.example", @"https://shop.example"] };
+    view.request = @{ @"content": @{ @"type": @"url", @"url": @"https://safe.example" }, @"security": @{}, @"navigationPolicy": @{ @"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": anyPort } };
+    Require([view validRequest:view.request], @"Any-port origin rejected");
+    Require([view allows:@"http://a.shop.example:8080/path" mainFrame:YES newWindow:NO gesture:NO], @"HTTP non-default port blocked");
+    Require([view allows:@"https://shop.example:9443/path" mainFrame:YES newWindow:NO gesture:NO], @"HTTPS non-default port blocked");
+    Require(![view allows:@"https://shop.example.evil:9443/path" mainFrame:YES newWindow:NO gesture:NO], @"Any-port origin matched lookalike");
+    Require(![view allows:@"http://user@shop.example:8080/path" mainFrame:YES newWindow:NO gesture:NO], @"Any-port origin accepted credentials");
+    view.request = @{ @"content": @{ @"type": @"url", @"url": @"https://safe.example" }, @"security": @{}, @"navigationPolicy": @{ @"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": @{ @"exactOrigins": @[], @"hostSuffixOrigins": @[], @"hostSuffixAnyPortOrigins": @[@"https://shop.example"] } } };
+    Require(![view allows:@"http://shop.example:8080/path" mainFrame:YES newWindow:NO gesture:NO], @"Any-port origin broadened its scheme");
+    view.request = @{ @"content": @{ @"type": @"url", @"url": @"https://safe.example" }, @"security": @{ @"appBridgeEnabled": @YES, @"trustedOrigins": @{ @"urls": @[@"https://safe.example"], @"trustedHostSuffixes": @[] } }, @"navigationPolicy": @{ @"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": independent } };
     for (NSString *target in @[@"http://legacy.example:8080/a", @"https://shop.example:8443", @"https://a.shop.example:8443/a"]) {
         Require([view allows:target mainFrame:YES newWindow:NO gesture:NO], @"Independent navigation rejected");
         Require(![view bridgeAllowed:target], @"Navigation granted Bridge");
     }
     for (NSString *target in @[@"https://shop.example", @"http://shop.example:8443", @"https://badshop.example:8443", @"https://shop.example.evil:8443", @"https://user@shop.example:8443"])
         Require(![view allows:target mainFrame:YES newWindow:NO gesture:NO], @"Independent origin boundary bypassed");
-    for (id origins in @[NSNull.null, @{}, @{@"exactOrigins": @[], @"hostSuffixOrigins": @[@"https://[::1]"]}])
+    for (id origins in @[NSNull.null, @{}, @{@"exactOrigins": @[], @"hostSuffixOrigins": @[@"https://[::1]"]}, @{@"exactOrigins": @[], @"hostSuffixOrigins": @[], @"hostSuffixAnyPortOrigins": @[@"https://shop.example:8443"]}, @{@"exactOrigins": @[], @"hostSuffixOrigins": @[], @"hostSuffixAnyPortOrigins": @YES}])
         Require(![view validRequest:@{@"content": @{@"type": @"url", @"url": @"https://safe.example"}, @"navigationPolicy": @{@"navigationOrigins": origins}}], @"Malformed navigation origins accepted");
     view.request = @{@"navigationPolicy": @{@"allowedSchemes": @[@"https"]}, @"security": @{}};
     __block NSDictionary *event;

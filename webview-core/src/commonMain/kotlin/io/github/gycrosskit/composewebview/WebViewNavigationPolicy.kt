@@ -2,14 +2,18 @@ package io.github.gycrosskit.composewebview
 
 import io.ktor.http.Url
 
-/** 独立主文档来源；后缀项使用 HTTP(S) URL 表示 scheme、域后缀和有效端口。 */
+/** 独立主文档来源；不限端口项使用 HTTP(S) URL 的默认端口声明协议与域后缀。 */
 data class WebViewNavigationOrigins(
     val exactOrigins: Set<String> = emptySet(),
     val hostSuffixOrigins: Set<String> = emptySet(),
+    val hostSuffixAnyPortOrigins: Set<String> = emptySet(),
 ) {
     init {
-        require((exactOrigins + hostSuffixOrigins).all { it.toHttpOrigin() != null })
-        require(hostSuffixOrigins.all { value -> value.toHttpOrigin()?.host?.split('.')?.all {
+        require((exactOrigins + hostSuffixOrigins + hostSuffixAnyPortOrigins).all { it.toHttpOrigin() != null })
+        require(hostSuffixAnyPortOrigins.all { value -> value.toHttpOrigin()?.let {
+            it.port == if (it.scheme == "https") 443 else 80
+        } == true })
+        require((hostSuffixOrigins + hostSuffixAnyPortOrigins).all { value -> value.toHttpOrigin()?.host?.split('.')?.all {
             it.length <= 63 && it.matches(Regex("[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"))
         } == true })
     }
@@ -20,6 +24,9 @@ data class WebViewNavigationOrigins(
             val suffix = it.toHttpOrigin() ?: return@any false
             target.scheme == suffix.scheme && target.port == suffix.port &&
                 (target.host == suffix.host || target.host.endsWith(".${suffix.host}"))
+        } || hostSuffixAnyPortOrigins.any {
+            val suffix = it.toHttpOrigin() ?: return@any false
+            target.scheme == suffix.scheme && (target.host == suffix.host || target.host.endsWith(".${suffix.host}"))
         }
     }
 }

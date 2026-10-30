@@ -6,6 +6,23 @@ import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 
 class WebViewNavigationPolicyTest {
+    @Test fun explicitAnyPortSuffixRetainsSchemeHostAndBridgeBoundaries() {
+        val origins = WebViewNavigationOrigins(hostSuffixAnyPortOrigins = setOf("http://shop.example", "https://shop.example"))
+        val request = WebViewRequest(WebViewContent.Url("https://safe.example"), security = WebViewSecurity(
+            WebViewTrustPolicy(listOf("https://safe.example")), appBridgeEnabled = true),
+            navigationPolicy = WebViewNavigationPolicy(navigationOrigins = origins))
+        assertEquals(request, WebViewWire.decodeRequest(WebViewWire.encodeRequest(request)))
+        for (url in listOf("http://shop.example:8080/a", "https://child.shop.example:9443/a")) {
+            assertTrue(request.allowsNavigation(WebViewNavigationRequest(url, true, false)), url)
+            assertFalse(request.canReceiveAppBridgeMessage(url, true), url)
+        }
+        for (url in listOf("http://shop.example.evil:8080", "http://user@shop.example:8080", "https://evilshop.example:9443"))
+            assertFalse(request.allowsNavigation(WebViewNavigationRequest(url, true, false)), url)
+        assertFalse(request.copy(navigationPolicy = WebViewNavigationPolicy(allowedSchemes = setOf("https"), navigationOrigins = origins))
+            .allowsNavigation(WebViewNavigationRequest("http://shop.example:8080", true, false)))
+        kotlin.test.assertFails { WebViewNavigationOrigins(hostSuffixAnyPortOrigins = setOf("https://shop.example:8443")) }
+        kotlin.test.assertFails { WebViewNavigationOrigins(hostSuffixAnyPortOrigins = setOf("https://[::1]")) }
+    }
     @Test fun independentOriginsDoNotGrantBridgeAndRetainLegacyDefault() {
         val start = "https://safe.example/start"
         val legacy = WebViewRequest(WebViewContent.Url(start), security = WebViewSecurity(

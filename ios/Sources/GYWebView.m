@@ -84,6 +84,12 @@ static BOOL GYNavigationOriginsAllow(NSDictionary *origins, NSString *url) {
         if ([target[@"scheme"] isEqual:suffix[@"scheme"]] && [target[@"port"] isEqual:suffix[@"port"]] &&
             ([host isEqual:suffixHost] || [host hasSuffix:[@"." stringByAppendingString:suffixHost]])) return YES;
     }
+    for (NSString *value in origins[@"hostSuffixAnyPortOrigins"]) {
+        NSDictionary *suffix = GYOrigin(value);
+        NSString *host = target[@"host"], *suffixHost = suffix[@"host"];
+        if ([target[@"scheme"] isEqual:suffix[@"scheme"]] &&
+            ([host isEqual:suffixHost] || [host hasSuffix:[@"." stringByAppendingString:suffixHost]])) return YES;
+    }
     return NO;
 }
 static NSString *GYPageMessageDocumentURL(NSString *value) {
@@ -292,6 +298,13 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         }
         NSPredicate *validSuffix = [NSPredicate predicateWithFormat:@"SELF MATCHES %@", @"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*"];
         for (NSString *value in navigationOrigins[@"hostSuffixOrigins"]) if (![validSuffix evaluateWithObject:GYOrigin(value)[@"host"]]) return NO;
+        id anyPort = navigationOrigins[@"hostSuffixAnyPortOrigins"];
+        if (anyPort && ![anyPort isKindOfClass:NSArray.class]) return NO;
+        for (id value in anyPort) {
+            NSDictionary *origin = GYString(value) ? GYOrigin(value) : nil;
+            if (!origin || ![validSuffix evaluateWithObject:origin[@"host"]] ||
+                [origin[@"port"] integerValue] != ([origin[@"scheme"] isEqual:@"https"] ? 443 : 80)) return NO;
+        }
     }
     for (NSString *url in origins[@"urls"]) {
         NSString *scheme = GYOrigin(url)[@"scheme"];

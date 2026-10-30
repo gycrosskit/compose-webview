@@ -85,7 +85,7 @@ export interface WebViewScript { id: string; source: string; injectionTime: stri
  * @property allowNewWindows 默认 false；允许目标复用当前窗口导航。
  */
 export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; allowedUrls?: string[]; navigationOrigins?: NavigationOrigins; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; }
-export interface NavigationOrigins { exactOrigins: string[]; hostSuffixOrigins: string[]; }
+export interface NavigationOrigins { exactOrigins: string[]; hostSuffixOrigins: string[]; hostSuffixAnyPortOrigins?: string[]; }
 /**
  * 单个原生实例的完整 JSON 输入；变化重建 Controller 并撤销旧异步操作。
  * @property content 本次声明式内容。
@@ -173,6 +173,10 @@ export function navigationAllowed(value: string, mainFrame: boolean, request: We
         const suffixHost = suffix.hostname.toLowerCase().replace(/\.$/, '');
         return target.protocol === suffix.protocol && (target.port || (target.protocol === 'https:' ? '443' : '80')) ===
           (suffix.port || (suffix.protocol === 'https:' ? '443' : '80')) && (host === suffixHost || host.endsWith(`.${suffixHost}`));
+      }) || (independent.hostSuffixAnyPortOrigins || []).some(item => {
+        const suffix = new url.URL(item);
+        const suffixHost = suffix.hostname.toLowerCase().replace(/\.$/, '');
+        return target.protocol === suffix.protocol && (host === suffixHost || host.endsWith(`.${suffixHost}`));
       });
       if (!allowed) return false;
     }
@@ -223,6 +227,12 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
     navigationOrigins.exactOrigins.forEach(item => { if (typeof item !== 'string' || !origin(item)) throw new Error('Invalid navigation origin'); });
     navigationOrigins.hostSuffixOrigins.forEach(item => {
       if (typeof item !== 'string' || !origin(item) || !validHost(new url.URL(item).hostname)) throw new Error('Invalid navigation suffix');
+    });
+    if (navigationOrigins.hostSuffixAnyPortOrigins !== undefined && !Array.isArray(navigationOrigins.hostSuffixAnyPortOrigins)) throw new Error('Invalid navigation suffix');
+    navigationOrigins.hostSuffixAnyPortOrigins?.forEach(item => {
+      if (typeof item !== 'string' || !origin(item) || !validHost(new url.URL(item).hostname)) throw new Error('Invalid navigation suffix');
+      const suffix = new url.URL(item);
+      if (suffix.port && suffix.port !== (suffix.protocol === 'https:' ? '443' : '80')) throw new Error('Invalid navigation suffix port');
     });
   }
   if (request.navigationPolicy.allowedUrls !== undefined && !Array.isArray(request.navigationPolicy.allowedUrls)) throw new Error('Invalid allowed URLs');

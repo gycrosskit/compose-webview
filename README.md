@@ -176,7 +176,7 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 
 Android 旧内核不支持 document-start 时仍会晚注入；需要先于 H5 启动的协议必须由宿主校验 READY/版本并在错误或超时时失败关闭。Android Bridge 的文档 nonce 在提交后安装，单次早期 READY 可由页面专属 facade 暂存，宿主收到 `FirstContentVisible` 后用已有脚本命令冲刷。协议映射、输入 JSON 编码和业务状态留在宿主，不新增业务原生通道。
 
-`navigationPolicy.allowedOrigins` 与 JS/Bridge 权限独立；未发布的 `navigationOrigins` 可进一步独立声明主文档精确来源和限定 scheme、端口的域后缀，省略时保留历史 Bridge 导航限制。调用方传入的 `Set` 可变且 `data class.copy` 保留引用，因此每次解析，不缓存归一化结果。Android 文件选择与媒体权限回执交付前核对当前 owner、可见生命周期和主页面信任；已进入平台的 ActivityResult 保留 in-flight 标记至真实回执，避免新请求接到旧结果；媒体请求自身 origin 也须可信，允许多个可信 origin 的合法 iframe。iOS 隐藏撤销待交付媒体授权的 generation，重新显示不恢复旧授权。
+`navigationPolicy.allowedOrigins` 与 JS/Bridge 权限独立；未发布的 `navigationOrigins` 可进一步独立声明主文档精确来源、限定端口的域后缀和显式不限端口的协议及域后缀，省略时保留历史 Bridge 导航限制。调用方传入的 `Set` 可变且 `data class.copy` 保留引用，因此每次解析，不缓存归一化结果。Android 文件选择与媒体权限回执交付前核对当前 owner、可见生命周期和主页面信任；已进入平台的 ActivityResult 保留 in-flight 标记至真实回执，避免新请求接到旧结果；媒体请求自身 origin 也须可信，允许多个可信 origin 的合法 iframe。iOS 隐藏撤销待交付媒体授权的 generation，重新显示不恢复旧授权。
 
 ## 文档与反馈
 
