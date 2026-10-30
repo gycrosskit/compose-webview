@@ -385,6 +385,8 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
 static void CheckNavigationErrors(void) {
     GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectZero];
     page.webView = [[WKWebView alloc] initWithFrame:CGRectZero];
+    for (NSString *key in @[@"estimatedProgress", @"title", @"canGoBack", @"canGoForward"])
+        [page.webView addObserver:page forKeyPath:key options:0 context:nil];
     NSMutableArray<NSDictionary *> *events = [NSMutableArray array];
     page.onEvent = ^(id event) { [events addObject:event]; };
     NSArray<NSNumber *> *codes = @[@(NSURLErrorTimedOut), @(NSURLErrorNotConnectedToInternet),

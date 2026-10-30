@@ -1,7 +1,7 @@
 package io.github.gycrosskit.composewebview
 
 import android.net.Uri
-import android.webkit.WebResourceError
+import android.webkit.TestWebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
 import org.junit.Assert.assertEquals
@@ -32,10 +32,7 @@ class WebViewErrorHelperTest {
             WebViewClient.ERROR_IO to WebViewErrorKind.NETWORK,
             WebViewClient.ERROR_UNKNOWN to WebViewErrorKind.UNKNOWN,
         )) {
-            val error = object : WebResourceError() {
-                override fun getErrorCode() = code
-                override fun getDescription() = "native detail"
-            }
+            val error = TestWebResourceError(code, "native detail")
             assertEquals(WebViewLoadError(kind, "native detail", errorCode = code),
                 WebViewErrorHelper.fromResourceError(request(true), error))
             assertNull(WebViewErrorHelper.fromResourceError(request(false), error))
