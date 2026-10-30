@@ -45,7 +45,7 @@ class WebViewTrustPolicyTest {
     }
 
     @Test
-    fun requiresHttpsAndExactOrigin() {
+    fun requiresExactSchemeAndOrigin() {
         val policy = WebViewTrustPolicy(listOf("https://trusted.example/path"))
 
         assertTrue(policy.isTrusted("https://trusted.example/next"))

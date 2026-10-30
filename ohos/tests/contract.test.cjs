@@ -113,6 +113,11 @@ function load(file) {
   cache[file] = exports; return exports;
 }
 const wire = load('WebViewWire.ts');
+  const httpTrust = { trustedOrigins: { urls: ['http://shop.test:8080'], trustedHostSuffixes: ['jd.com'] } };
+  assert.equal(wire.trusted('http://shop.test:8080/page', httpTrust), true);
+  assert.equal(wire.trusted('http://m.jd.com/', httpTrust), true);
+  assert.equal(wire.trusted('http://jd.com.evil.test/', httpTrust), false);
+  assert.equal(wire.trusted('http://m.jd.com/', { trustedOrigins: { urls: [], trustedHostSuffixes: ['jd.com'] } }), true);
 function request(overrides = {}) {
   return { content: { type: 'url', url: 'https://trusted.test/page', additionalHeaders: {} },
     settings: { javaScriptEnabled: false }, security: { trustedOrigins: { urls: ['https://trusted.test'], trustedHostSuffixes: [] }, appBridgeEnabled: false, pageBridgeEnabled: false, fileChooserEnabled: false, mediaCaptureEnabled: false },
@@ -372,6 +377,20 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(wire.decodeRequest(encoded(readOnlyHttp)).content.url, 'http://trusted.test/protocol');
   assert.equal(wire.navigationAllowed('http://trusted.test/next', true, readOnlyHttp), true);
   assert.equal(wire.navigationAllowed('https://trusted.test/', true, readOnlyHttp), false);
+  const independent = request({ settings: { javaScriptEnabled: true },
+    security: { trustedOrigins: { urls: ['https://trusted.test'], trustedHostSuffixes: [] }, appBridgeEnabled: true },
+    navigationPolicy: { allowedSchemes: ['http', 'https'], blockedRules: [], navigationOrigins: {
+      exactOrigins: ['https://trusted.test', 'http://legacy.test:8080'], hostSuffixOrigins: ['https://shop.test:8443'] } } });
+  assert.ok(wire.decodeRequest(encoded(independent)));
+  for (const value of ['http://legacy.test:8080/page', 'https://shop.test:8443', 'https://a.shop.test:8443']) {
+    assert.equal(wire.navigationAllowed(value, true, independent), true, value);
+    assert.equal(wire.trusted(value, independent.security), false, value);
+    assert.equal(wire.navigationAllowed(value, true, { ...independent, navigationPolicy: { ...independent.navigationPolicy, navigationOrigins: undefined } }), false, value);
+  }
+  for (const value of ['https://shop.test', 'http://shop.test:8443', 'https://badshop.test:8443', 'https://shop.test.evil:8443', 'https://user@shop.test:8443'])
+    assert.equal(wire.navigationAllowed(value, true, independent), false, value);
+  for (const navigationOrigins of [null, {}, { exactOrigins: [], hostSuffixOrigins: ['https://[::1]'] }, { exactOrigins: [1], hostSuffixOrigins: [] }])
+    assert.throws(() => wire.decodeRequest(encoded({ ...independent, navigationPolicy: { ...independent.navigationPolicy, navigationOrigins } })));
   for (const allowedOrigins of [null, 'https://trusted.test', ['javascript:evil'], ['https://user@trusted.test/'], ['https://trusted.test:0/'], ['https://trusted.test:65536/'], [5]]) {
     assert.throws(() => wire.decodeRequest(encoded(request({ navigationPolicy: { allowedSchemes: ['https'], allowedOrigins, blockedRules: [] } }))));
   }
@@ -402,7 +421,13 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   for (const allowedUrls of [null, 'https://trusted.test/page', [1], ['javascript:evil'], ['http://user@legacy.test/captcha'], ['http://legacy.test:0/captcha'], [' https://trusted.test/page']]) {
     assert.throws(() => wire.decodeRequest(encoded(request({ navigationPolicy: { allowedSchemes: ['http', 'https'], allowedUrls, blockedRules: [] } }))));
   }
-  assert.throws(() => wire.decodeRequest(encoded(request({ security: { trustedOrigins: { urls: ['http://legacy.test'], trustedHostSuffixes: [] }, appBridgeEnabled: true } }))));
+  const httpBridge = request({ content: { type: 'url', url: 'http://legacy.test/page' }, settings: { javaScriptEnabled: true },
+    security: { trustedOrigins: { urls: ['http://legacy.test'], trustedHostSuffixes: [] }, appBridgeEnabled: true },
+    navigationPolicy: { allowedSchemes: ['http', 'https'], blockedRules: [] } });
+  assert.equal(wire.decodeRequest(encoded(httpBridge)).security.appBridgeEnabled, true);
+  const httpWindow = {}; httpWindow.top = httpWindow;
+  vm.runInNewContext(wire.guardedScript(guarded, httpBridge), { window: httpWindow, location: new URL('http://legacy.test/page') });
+  assert.equal(httpWindow.executions, 1);
   for (const [target, mainFrame, expected] of [
     ['https://trusted.test/page', true, 1], ['https://trusted.test:444/page', true, 0],
     ['https://trusted.test.evil/page', true, 0], ['http://trusted.test/page', true, 0],
@@ -656,6 +681,26 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(view.controller.deliveries.length, 2, 'visible resumes same-document handshake');
   oldPorts[0].message(encoded({ handlerName: 'still-stale', data: '{}' }));
   assert.equal(events.filter(event => event.type === 'bridgeMessage').length, beforeHide);
+  const independentView = new GYWebView(); const independentEvents = [];
+  independentView.setProp('onEvent', event => independentEvents.push(event));
+  independentView.setProp('visible', true); independentView.setProp('request', encoded(independent));
+  independentView.onControllerAttached(); independentView.onPageBegin('https://trusted.test/page'); independentView.onPageVisible('https://trusted.test/page');
+  await Promise.resolve(); await Promise.resolve();
+  const independentOld = independentView.controller.ports[0][0];
+  independentView.controller.url = 'https://shop.test:8443/item';
+  independentView.onPageBegin(independentView.controller.url); independentView.onPageVisible(independentView.controller.url);
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(independentOld.closed, true);
+  independentOld.message(encoded({ handlerName: 'stale', data: '{}' }));
+  assert.equal(independentView.controller.deliveries.length, 1, 'navigation-only origin cannot receive Bridge port');
+  assert.equal(independentEvents.filter(event => event.type === 'bridgeMessage').length, 0);
+  independentView.controller.url = 'https://trusted.test/next';
+  independentView.onPageBegin(independentView.controller.url); independentView.onPageVisible(independentView.controller.url);
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(independentView.controller.deliveries.length, 2, 'new trusted document receives a fresh port');
+  independentView.controller.ports[1][0].message(encoded({ handlerName: 'fresh', data: '{}' }));
+  assert.equal(independentEvents.filter(event => event.type === 'bridgeMessage').length, 1);
+  independentView.onDestroy();
   const visibilityRace = new GYWebView(); visibilityRace.setProp('visible', false);
   visibilityRace.setProp('request', encoded(bridgeRequest)); visibilityRace.onControllerAttached();
   visibilityRace.onPageEnd('https://trusted.test/page');
@@ -696,8 +741,69 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   lifetime.invalidate(); assert.equal(lifetime.current(generation), false); lifetime.dispose(); assert.equal(lifetime.current(lifetime.generation), false);
 
   const mediaView = new GYWebView();
-  const mediaPolicy = request({ settings: { javaScriptEnabled: true }, security: { ...standard.security, mediaCaptureEnabled: true, fileChooserEnabled: true } });
+  const mediaPolicy = request({ settings: { javaScriptEnabled: true }, security: { ...standard.security, mediaCaptureEnabled: true, fileChooserEnabled: true },
+    navigationPolicy: { ...standard.navigationPolicy, navigationOrigins: { exactOrigins: ['https://trusted.test', 'https://other.test'], hostSuffixOrigins: [] } } });
   mediaView.setProp('request', encoded(mediaPolicy)); mediaView.onControllerAttached(); mediaView.onPageVisible('https://trusted.test/page');
+  selectedFile = deferred(); const acceptedFiles = [];
+  mediaView.selectFile({ fileSelector: { isCapture: () => false, getAcceptType: () => [], getMode: () => 0 }, result: { handleFileList: files => acceptedFiles.push(Array.from(files)) } });
+  mediaView.setProp('visible', true);
+  assert.equal(acceptedFiles.length, 0, 'repeated visible state keeps pending file selection');
+  selectedFile.resolve(['file://picked/document.pdf']); await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(acceptedFiles, [['file://picked/document.pdf']], 'trusted document retains file selection with independent navigation');
+  for (const outcome of ['resume', 'leave', 'navigate', 'originChange', 'destroy']) {
+    const suspended = new GYWebView(); const replies = [];
+    suspended.setProp('pageOwnerActive', true);
+    suspended.setProp('request', encoded(mediaPolicy)); suspended.onControllerAttached(); suspended.onPageVisible('https://trusted.test/page');
+    selectedFile = deferred();
+    suspended.selectFile({ fileSelector: { isCapture: () => false, getAcceptType: () => [], getMode: () => 0 }, result: { handleFileList: files => replies.push(Array.from(files)) } });
+    suspended.setProp('visible', false);
+    assert.deepEqual(replies, [], `${outcome}: system picker hides but does not cancel`);
+    if (outcome === 'leave') suspended.setProp('pageOwnerActive', false);
+    if (outcome === 'navigate') suspended.onPageBegin('https://trusted.test/next');
+    if (outcome === 'originChange') suspended.controller.url = 'https://foreign.test/page';
+    if (outcome === 'destroy') suspended.onDestroy();
+    selectedFile.resolve(['file://picked/document.pdf']); await Promise.resolve(); await Promise.resolve();
+    if (outcome === 'resume') {
+      assert.deepEqual(replies, [], 'successful result waits until visible');
+      suspended.setProp('visible', true);
+      assert.deepEqual(replies, [['file://picked/document.pdf']], 'same page receives result after resume');
+    } else assert.deepEqual(replies, [[]], `${outcome}: stale result cancelled exactly once`);
+    suspended.onDestroy(); assert.equal(replies.length, 1);
+  }
+  for (const reason of ['leave', 'navigate', 'originChange']) {
+    const suspended = new GYWebView(); const replies = [];
+    suspended.setProp('pageOwnerActive', true); suspended.setProp('request', encoded(mediaPolicy));
+    suspended.onControllerAttached(); suspended.onPageVisible('https://trusted.test/page'); selectedFile = deferred();
+    suspended.selectFile({ fileSelector: { isCapture: () => false, getAcceptType: () => [], getMode: () => 0 }, result: { handleFileList: files => replies.push(Array.from(files)) } });
+    suspended.setProp('visible', false); selectedFile.resolve(['file://picked/document.pdf']); await Promise.resolve(); await Promise.resolve();
+    assert.deepEqual(replies, []);
+    if (reason === 'leave') suspended.setProp('pageOwnerActive', false);
+    if (reason === 'navigate') suspended.onPageBegin('https://trusted.test/next');
+    if (reason === 'originChange') suspended.controller.url = 'https://foreign.test/page';
+    suspended.setProp('visible', true);
+    assert.deepEqual(replies, [[]], `${reason} rejects result queued during background`);
+    suspended.onDestroy(); assert.equal(replies.length, 1);
+  }
+  {
+    const suspended = new GYWebView(); const replies = [];
+    suspended.setProp('pageOwnerActive', true); suspended.setProp('request', encoded(mediaPolicy));
+    suspended.onControllerAttached(); suspended.onPageVisible('https://trusted.test/page');
+    permission = deferred(); capture = deferred();
+    suspended.selectFile({ fileSelector: { isCapture: () => true, getAcceptType: () => ['image/jpeg'] }, result: { handleFileList: files => replies.push(Array.from(files)) } });
+    suspended.setProp('visible', false); permission.resolve({ authResults: [0] }); await Promise.resolve(); await Promise.resolve();
+    assert.equal(capture.profile, undefined, 'camera opens only after foreground resumes');
+    suspended.setProp('visible', true); await Promise.resolve(); await Promise.resolve();
+    suspended.setProp('visible', false);
+    capture.resolve({ resultCode: 0, resultUri: capture.profile.saveUri, mediaType: 'photo' }); await Promise.resolve(); await Promise.resolve();
+    assert.deepEqual(replies, [], 'captured file waits while hidden');
+    suspended.setProp('visible', true); await Promise.resolve(); await Promise.resolve();
+    assert.deepEqual(replies, [[capture.profile.saveUri]]);
+    suspended.onDestroy();
+  }
+  permission = deferred(); let acceptedMedia = 0;
+  mediaView.permissionRequest({ getAccessibleResource: () => ['video', 'audio'], getOrigin: () => 'https://trusted.test', grant: () => acceptedMedia++, deny: () => assert.fail('trusted media denied') });
+  permission.resolve({ authResults: [0, 0] }); await Promise.resolve(); await Promise.resolve();
+  assert.equal(acceptedMedia, 1, 'trusted document retains camera and microphone with independent navigation');
   const captureEvents = []; mediaView.setProp('onEvent', event => captureEvents.push(event));
   let captureCompletions = 0;
   permission = deferred(); capture = deferred();

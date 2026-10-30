@@ -110,6 +110,9 @@ export class GYWebView extends KuiklyRenderBaseView {
   private ports: webview.WebMessagePort[] = [];
   private permissionRequests: Set<PermissionRequest> = new Set();
   private fileResults: Set<FileSelectorResult> = new Set();
+  private pageOwnerActive: boolean | null = null;
+  private fileGeneration: number = 0;
+  private fileVisibilityWaiters: Set<() => void> = new Set();
   private captureFiles: Set<string> = new Set();
   private fullscreenHandler: FullScreenExitHandler | null = null;
   private fullscreenLease: FullscreenWindowLease | null = null;
@@ -159,12 +162,18 @@ export class GYWebView extends KuiklyRenderBaseView {
   setProp(key: string, value: KRAny | KuiklyRenderCallback): boolean {
     if (this.lifetime.disposed) return true;
     if (key === 'onEvent') { this.eventCallback = value as KuiklyRenderCallback; return true; }
+    if (key === 'pageOwnerActive') {
+      this.pageOwnerActive = value === true;
+      if (!this.pageOwnerActive) this.revokeFilePickers();
+      return true;
+    }
     if (key === 'visible') {
       const changed = this.visible !== (value === true);
+      if (!changed) return true;
       this.visible = value === true;
       const controllerOwner = this.controller;
       const ownerToken = this.renderToken;
-      this.revokePending(!this.visible);
+      this.revokePending(!this.visible, this.pageOwnerActive === true && this.fileResults.size > 0);
       if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
       if (this.attached) {
         try {
@@ -186,6 +195,7 @@ export class GYWebView extends KuiklyRenderBaseView {
           }
         } catch (_) { this.fail('LOAD_EXCEPTION', 'ArkWeb visibility update failed'); }
       }
+      if (this.visible) this.resumeFilePickers();
       return true;
     }
     if (key !== 'request') return super.setProp(key, value);
@@ -563,7 +573,12 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
   /** 接管原生选择/拍摄；结果只结算一次，拍摄临时文件保留到文档撤销，供内核上传读取。 */
   selectFile(event: OnShowFileSelectorEvent): boolean {
     this.fileResults.add(event.result);
+    let valid = (): boolean => false;
     const complete = (files: string[]): void => {
+      if (files.length > 0 && !this.visible && valid()) {
+        this.fileVisibilityWaiters.add(() => complete(valid() ? files : []));
+        return;
+      }
       // 先移出 pending，再调用系统结果；同步抛错或迟到 Promise 都不能二次结算。
       if (!this.fileResults.delete(event.result)) return;
       try { event.result.handleFileList(files); } catch (_) {}
@@ -571,14 +586,15 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     try {
       const current = this.request;
       const value = this.currentUrl();
-      // SDK 未提供真实来源 frame；仅允许就绪的可信 HTTPS 当前主文档。
-      if (!current || !this.visible || !this.documentReady || this.lifetime.disposed ||
+      // SDK 未提供真实来源 frame；仅允许就绪的可信当前主文档。
+      if (!current || !this.visible || this.pageOwnerActive === false || !this.documentReady || this.lifetime.disposed ||
         !current.security.fileChooserEnabled || !trusted(value, current.security)) {
         complete([]); return true;
       }
       const context = (this.getUIContext() as UIContext).getHostContext() as common.UIAbilityContext;
-      const generation = this.lifetime.generation;
-      const valid = (): boolean => this.lifetime.current(generation) && this.visible && this.request === current && this.documentReady &&
+      const generation = this.fileGeneration;
+      valid = (): boolean => !this.lifetime.disposed && this.fileGeneration === generation && this.fileResults.has(event.result) &&
+        (this.visible || this.pageOwnerActive === true) && this.pageOwnerActive !== false && this.request === current && this.documentReady &&
         origin(value) === origin(this.currentUrl()) && trusted(this.currentUrl(), current.security);
       const accepts = event.fileSelector.getAcceptType().flatMap(type => type.split(',')).map(type => type.trim().toLowerCase()).filter(type => !!type);
       if (event.fileSelector.isCapture()) {
@@ -595,6 +611,8 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
             if (denied.length > 0) this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
             complete([]); return;
           }
+          if (!this.visible) await new Promise<void>(resolve => this.fileVisibilityWaiters.add(resolve));
+          if (!valid() || !this.visible) { complete([]); return; }
           const path = `${context.cacheDir}/gy-webview-${util.generateRandomUUID()}${video ? '.mp4' : '.jpg'}`;
           const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE); fileIo.closeSync(file);
           this.captureFiles.add(path);
@@ -789,7 +807,19 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     this.fail('RENDER_PROCESS', 'Web renderer exited');
   }
   private closePorts(): void { this.ports.forEach(port => { try { port.close(); } catch (_) {} }); this.ports = []; }
-  private revokePending(revokePageChannels: boolean = true): void {
+  private resumeFilePickers(): void {
+    const waiters = Array.from(this.fileVisibilityWaiters); this.fileVisibilityWaiters.clear();
+    waiters.forEach(waiter => waiter());
+  }
+  private revokeFilePickers(): void {
+    this.fileGeneration++;
+    const results = Array.from(this.fileResults); this.fileResults.clear();
+    const files = Array.from(this.captureFiles); this.captureFiles.clear();
+    this.resumeFilePickers();
+    files.forEach(path => { try { fileIo.unlinkSync(path); } catch (_) {} });
+    results.forEach(result => { try { result.handleFileList([]); } catch (_) {} });
+  }
+  private revokePending(revokePageChannels: boolean = true, preserveFilePickers: boolean = false): void {
     if (revokePageChannels) {
       this.pageMessageActive = false; this.pageMessageSecret = ''; this.pageMessageNonce = '';
       this.pageMessageReplies.clear();
@@ -800,8 +830,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     this.bridgeVisibilityPending = false;
     this.lifetime.invalidate(); this.closePorts();
     this.permissionRequests.forEach(request => { try { request.deny(); } catch (_) {} }); this.permissionRequests.clear();
-    this.fileResults.forEach(result => { try { result.handleFileList([]); } catch (_) {} }); this.fileResults.clear();
-    this.captureFiles.forEach(path => { try { fileIo.unlinkSync(path); } catch (_) {} }); this.captureFiles.clear();
+    if (!preserveFilePickers) this.revokeFilePickers();
   }
   onDestroy(): void {
     if (this.environmentContext && this.environmentId !== null) {

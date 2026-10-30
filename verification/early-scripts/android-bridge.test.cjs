@@ -1,0 +1,48 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync('webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebBridge.kt', 'utf8');
+const script = source.split('internal const val APP_WEB_BRIDGE_SCRIPT = """')[1].split('"""')[0];
+function document(tokenRequired) {
+  const sent = [], window = { __GY_WEBVIEW_TOKEN_REQUIRED__: tokenRequired,
+    ComposeWebViewBridgeTransport: { postMessage: value => sent.push(value) } };
+  window.top = window;
+  const context = vm.createContext({ window, console });
+  vm.runInContext(script, context);
+  return { window, sent, context };
+}
+const page = document(true);
+page.window.GYWebViewBridge.postMessage('ready', '{}');
+assert.deepEqual(page.sent, [], 'early message must wait for document token');
+vm.runInContext(script, page.context);
+page.window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = 'current';
+page.window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true);
+assert.deepEqual(page.sent, ['current\u001eready\u001f{}'], 'same document flushes once');
+page.window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true);
+assert.equal(page.sent.length, 1, 'flush is not repeated');
+const hidden = document(true);
+hidden.window.JSAndroidBridge.handleJSBridgeMessage('old', '{}');
+hidden.window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = 'hidden';
+hidden.window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__(false);
+hidden.window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = 'resumed';
+hidden.window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true);
+assert.deepEqual(hidden.sent, [], 'hidden page drops early messages');
+const old = document(true), next = document(true);
+old.window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = 'old-document'; old.window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true);
+next.window.GYWebViewBridge.postMessage('ready', '{}');
+next.window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = 'new-document'; next.window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true);
+old.window.GYWebViewBridge.postMessage('late', '{}');
+assert.equal(old.sent[0].startsWith('new-document\u001e'), false, 'old document keeps its old token');
+assert.equal(next.sent[0].startsWith('new-document\u001e'), true, 'new document uses its own token');
+const legacy = document(false);
+legacy.window.GYWebViewBridge.postMessage('legacy', '{}');
+assert.deepEqual(legacy.sent, ['legacy\u001f{}'], 'untokened native consumers keep their existing contract');
+const bounded = document(true);
+for (let i = 0; i < 130; i++) bounded.window.GYWebViewBridge.postMessage('ready', '{}');
+bounded.window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = 'current'; bounded.window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true);
+assert.equal(bounded.sent.length, 128, 'early queue is bounded');
+const oversized = document(true);
+oversized.window.GYWebViewBridge.postMessage('ready', 'x'.repeat(65536));
+oversized.window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = 'current'; oversized.window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true);
+assert.equal(oversized.sent.length, 0, 'early queue bounds total input size');
+console.log('PASS Android Bridge: early queue, same-document flush, hide discard, bounded queue, legacy transport');

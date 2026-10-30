@@ -3,6 +3,15 @@ package io.github.gycrosskit.composewebview
 import kotlin.test.*
 
 class WebViewWireTest {
+    @Test fun httpTrustRoundTrips() {
+        val trust = WebViewTrustPolicy(listOf("http://shop.example:8080"), setOf("jd.com"))
+        val request = WebViewRequest(WebViewContent.Url("http://shop.example:8080"), security = WebViewSecurity(trust, appBridgeEnabled = true))
+        val decoded = WebViewWire.decodeRequest(WebViewWire.encodeRequest(request))
+        assertTrue(decoded.security.trustedOrigins.isTrusted("http://shop.example:8080/cart"))
+        assertTrue(decoded.security.trustedOrigins.isTrusted("http://m.jd.com"))
+        assertFalse(decoded.security.trustedOrigins.isTrusted("https://shop.example:8080"))
+        assertFalse(decoded.security.trustedOrigins.isTrusted("http://jd.com.evil.test"))
+    }
     @Test fun nativeNavigationFlagsRequireJsonBooleans() {
         for (blocked in listOf(true, false)) {
             val event = WebViewWire.decodeEvent("""{"type":"navigation","url":"https://safe.example","isMainFrame":true,"hasUserGesture":false,"blocked":$blocked}""") as WebViewEvent.Navigation

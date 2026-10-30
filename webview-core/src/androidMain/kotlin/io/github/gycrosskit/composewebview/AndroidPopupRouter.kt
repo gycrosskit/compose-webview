@@ -37,18 +37,20 @@ class AndroidPopupRouter(
             if (routed || popup !in popups || !parent.isActiveAppWebView() || !parent.isShown) return
             routed = true
             val current = request()
-            val trusted =
-                !(current.security.appBridgeEnabled || current.security.pageBridgeEnabled) ||
-                    current.canUseAppBridgeAt(target)
-            val decision = onNavigation(
-                WebViewNavigationRequest(
-                    url = target,
-                    isMainFrame = true,
-                    hasUserGesture = hasUserGesture,
-                    target = WebViewNavigationTarget.NEW_WINDOW,
-                ),
+            val navigation = WebViewNavigationRequest(
+                url = target,
+                isMainFrame = true,
+                hasUserGesture = hasUserGesture,
+                target = WebViewNavigationTarget.NEW_WINDOW,
             )
-            if (trusted && decision == WebViewNavigationDecision.ALLOW && popup in popups && parent.isActiveAppWebView() && parent.isShown) {
+            val allowed = !current.shouldBlockMainFrameNavigation(target, true) &&
+                (current.navigationPolicy.navigationOrigins == null || current.allowsNavigation(navigation))
+            val decision = onNavigation(navigation)
+            if (popup !in popups || !parent.isActiveAppWebView() || !parent.isShown) return
+            val latest = request()
+            val stillAllowed = !latest.shouldBlockMainFrameNavigation(target, true) &&
+                (latest.navigationPolicy.navigationOrigins == null || latest.allowsNavigation(navigation))
+            if (allowed && stillAllowed && decision == WebViewNavigationDecision.ALLOW && popup in popups && parent.isActiveAppWebView() && parent.isShown) {
                 parent.loadUrl(target)
             }
             close(popup)

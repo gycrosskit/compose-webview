@@ -35,6 +35,9 @@ internal class AndroidWebFileChooserController(
     private var pendingIntent: Intent? = null
     private var permissionKey: Any? = null
     private var externalResultInFlight = false
+    private var suspendedOwner: WebView? = null
+    private var pendingResult: Array<Uri>? = null
+    private var launchAfterResume = false
     private var requestId = 0L
     private var destroyed = false
     private val key = UUID.randomUUID().toString()
@@ -132,6 +135,25 @@ internal class AndroidWebFileChooserController(
         if (callbackOwner === owner) cancel()
     }
 
+    /** 系统选择器导致 Activity 暂停时，等原页面恢复再交付结果。 */
+    fun suspendForExternal(owner: WebView): Boolean {
+        if ((!externalResultInFlight && permissionKey == null) || callbackOwner !== owner) return false
+        suspendedOwner = owner
+        return true
+    }
+
+    fun resume(owner: WebView) {
+        if (suspendedOwner !== owner) return
+        suspendedOwner = null
+        pendingResult?.let { result -> pendingResult = null; complete(result); return }
+        if (launchAfterResume) {
+            launchAfterResume = false
+            val intent = pendingIntent
+            pendingIntent = null
+            if (intent != null && callbackOwner === owner) launch(intent)
+        }
+    }
+
     private fun launchLegacyChooser(
         acceptTypes: List<String>,
         captureEnabled: Boolean,
@@ -214,7 +236,7 @@ internal class AndroidWebFileChooserController(
             permissions = missing,
             purpose = WebPermissionPurpose.FILE_CAPTURE,
             stillAllowed = {
-                callbackOwner === webView && webView != null && isAttached(webView) &&
+                callbackOwner === webView && webView != null && (isAttached(webView) || suspendedOwner === webView) &&
                     request().security.run {
                         fileChooserEnabled && mediaCaptureEnabled && trustedOrigins.isTrusted(webView.url)
                     }
@@ -222,9 +244,13 @@ internal class AndroidWebFileChooserController(
             onResult = permissionResult@ { granted ->
                 if (permissionKey !== key) return@permissionResult
                 val pending = pendingIntent
-                pendingIntent = null
                 permissionKey = null
-                if (granted && pending != null) launch(pending) else cancel()
+                if (granted && pending != null && suspendedOwner === webView && webView != null && !isAttached(webView)) {
+                    launchAfterResume = true
+                } else {
+                    pendingIntent = null
+                    if (granted && pending != null) launch(pending) else cancel()
+                }
             },
         )
     }
@@ -257,6 +283,13 @@ internal class AndroidWebFileChooserController(
 
     /** 系统 RESULT_OK 不代表输出有效；成功文件保留到文档撤销，供内核异步上传。 */
     private fun complete(result: Array<Uri>?) {
+        val suspended = suspendedOwner
+        if (result != null && suspended != null && suspended === callbackOwner && !isAttached(suspended)) {
+            pendingResult = result
+            return
+        }
+        suspendedOwner = null
+        pendingResult = null
         val current = callback
         val permitted = callbackOwner?.let(::allowed) == true && result != null &&
             result.size in 1..maxFiles && result.all(::validFile)
@@ -309,6 +342,7 @@ internal class AndroidWebFileChooserController(
         permissionKey = null
         if (key != null) permissions.cancel(key)
         pendingIntent = null
+        launchAfterResume = false
         complete(null)
     }
 }

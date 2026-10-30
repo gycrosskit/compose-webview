@@ -17,7 +17,7 @@ sealed interface WebViewContent {
     /**
      * 直接加载的 HTML 文本。
      *
-     * [baseUrl] 决定相对链接解析和页面来源；高权限能力必须使用可被信任策略验证的 HTTPS 地址。
+     * [baseUrl] 决定相对链接解析和页面来源；高权限能力必须使用可被信任策略验证的 HTTP(S) 地址。
      * @property html 非空 HTML 正文，可能包含业务敏感内容。
      * @property baseUrl 相对地址基准，默认 null；无基准时不能获得来源授权。
      * @property mimeType MIME 类型，默认 text/html；OHOS 接受合法 type/subtype 并传递给 ArkWeb，实际渲染范围由内核决定。

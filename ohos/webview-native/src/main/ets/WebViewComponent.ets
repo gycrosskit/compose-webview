@@ -17,7 +17,7 @@ function webViewAttributes(view: GYWebView, token: number) {
   .forceDarkAccess(view.darkTheme && view.settings().algorithmicDarkeningAllowed !== false)
   .multiWindowAccess(true)
   .allowWindowOpenMethod(view.settings().javaScriptCanOpenWindowsAutomatically === true)
-  .mixedMode(view.settings().mixedContentPolicy === 'ALWAYS_ALLOW' ? MixedMode.All :
+  .mixedMode(!view.settings().mixedContentPolicy || view.settings().mixedContentPolicy === 'ALWAYS_ALLOW' ? MixedMode.All :
     (view.settings().mixedContentPolicy === 'COMPATIBILITY' ? MixedMode.Compatible : MixedMode.None))
   .cacheMode(view.settings().cachePolicy === 'NO_CACHE' ? CacheMode.Online :
     (view.settings().cachePolicy === 'CACHE_ONLY' ? CacheMode.Only :

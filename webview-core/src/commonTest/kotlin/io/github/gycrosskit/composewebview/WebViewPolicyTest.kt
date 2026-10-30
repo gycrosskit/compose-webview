@@ -127,9 +127,9 @@ class WebViewPolicyTest {
         }
         assertFails { WebViewSecurity(WebViewTrustPolicy(listOf(trustedUrl)), appBridgeEnabled = true, pageBridgeEnabled = true) }
         val httpTrust = WebViewTrustPolicy(listOf("http://legacy.example"))
-        assertTrue(httpTrust.isEmpty)
-        assertFalse(httpTrust.isTrusted("http://legacy.example"))
-        assertFails { WebViewSecurity(httpTrust, appBridgeEnabled = true) }
+        assertFalse(httpTrust.isEmpty)
+        assertTrue(httpTrust.isTrusted("http://legacy.example"))
+        WebViewSecurity(httpTrust, appBridgeEnabled = true)
     }
 
     @Test fun exactMainFrameUrlsComposeWithExistingPolicyAndStrictWire() {

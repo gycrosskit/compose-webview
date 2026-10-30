@@ -10,7 +10,7 @@ HAR `1.0.2` 候选包含按 WindowStage 注入窗口策略，system-actions-nati
 
 底层使用 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb。请求、安全、导航、脚本与事件由 core 共享，账号、鉴权、品牌 URL、页面状态与业务路由由宿主提供。H5 视频控制保留 core 媒体脚本/镜像、Android 原生控件与 KuiklyCompose overlay；不改系统播放器层级限制。
 
-iOS 常规网页最低 15.0；受控文件选择要求 iOS18.4+，旧系统开启时明确 Unsupported，关闭时的 DOM 拦截不保证旧 WebKit 原生文件隔离。MP4-only 上传保留 MOV 转换及输入/输出各 50 MiB 限制，转码过程磁盘不承诺硬上限。完整合同见 [功能与平台差异](docs/功能与平台差异.md)。
+iOS 常规网页最低 15.0；受控文件选择要求 iOS18.4+，旧系统关闭本次文件选择并报告 Unsupported，页面继续加载；DOM 拦截不保证旧 WebKit 原生文件隔离。MP4-only 上传保留 MOV 转换及输入/输出各 50 MiB 限制，转码过程磁盘不承诺硬上限。完整合同见 [功能与平台差异](docs/功能与平台差异.md)。
 
 迁移与本轮渠道组合见 [RC 迁移说明](docs/RC迁移说明.md)。
 
@@ -163,7 +163,7 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 
 ## 能力与安全边界
 
-- JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTPS 来源；TLS 错误拒绝加载。
+- JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTP(S) 来源；TLS 错误拒绝加载。
 - iOS Native 候选可由宿主通过 `pictureInPicturePageActive` 保留当前视频页的系统 PiP 后台播放，默认隐藏仍停播；业务 Bridge 与采集权限继续按可见性撤销，详见[全屏视频与 PiP 边界](docs/功能与平台差异.md#h5-全屏视频控制)。
 - 导航拦截由预先下发的 `navigationPolicy` 同步判断，事件用于报告结果；`allowedOrigins` 精确匹配 scheme、host 和有效端口。
 - rc.11 增加 `allowedUrls`，按完整 URL 字符串同步限制主文档，与 scheme、来源和拒绝规则同时生效；空集合不增加限制，不归一化默认端口、路径、查询或 fragment，也不限制 iframe/子资源。
@@ -172,11 +172,11 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 - iOS 18.4 以下不能开启受控原生文件选择，返回 `CapabilityUnsupported(FILE_CHOOSER)`；旧系统的 DOM 拦截不能保证原生文件隔离。iOS18.4+ 与 HarmonyOS H5 `capture` 复用系统拍摄能力，核验权限、来源、文档代次、MIME 和大小；取消/失败不回传文件，成功临时文件在文档撤销时清理。
 - 导航、隐藏、请求切换和销毁撤销旧消息端口、系统请求与迟到回调。隐藏不取消当前文档初始化：脚本仍受 JavaScript 开关与可信主文档门禁，显示不会重跑副作用脚本或重载页面。应用负责业务脚本输入编码和页面生命周期。
 
-明确开启 `pageBridgeEnabled` 的初始 HTTP(S) 页面可执行同源业务脚本，沿用手动 `evaluateJavascript` 的低权限边界；`onlyForTrustedMainFrame` 保持开启。HTTP 不能进入高权限 HTTPS 白名单，也不因此获得文件或媒体权限。仅允许一个旧页面时同时设置 `allowedUrls = setOf(pageUrl)`。Kuikly 原生背景默认透明，页面自己的 CSS 背景由 H5 控制。
+明确开启 `pageBridgeEnabled` 的初始 HTTP(S) 页面可执行同源业务脚本，沿用手动 `evaluateJavascript` 的低权限边界；`onlyForTrustedMainFrame` 保持开启。HTTP 页面也可显式配置为可信来源，但系统或内核可能限制非安全上下文的媒体采集。仅允许一个旧页面时同时设置 `allowedUrls = setOf(pageUrl)`。Kuikly 原生背景默认透明，页面自己的 CSS 背景由 H5 控制。
 
 Android 旧内核不支持 document-start 时仍会晚注入；需要先于 H5 启动的协议必须由宿主校验 READY/版本并在错误或超时时失败关闭。Android Bridge 的文档 nonce 在提交后安装，单次早期 READY 可由页面专属 facade 暂存，宿主收到 `FirstContentVisible` 后用已有脚本命令冲刷。协议映射、输入 JSON 编码和业务状态留在宿主，不新增业务原生通道。
 
-`navigationPolicy.allowedOrigins` 与 JS/Bridge 权限独立；调用方传入的 `Set` 可变且 `data class.copy` 保留引用，因此每次解析，不缓存归一化结果。Android 文件选择与媒体权限回执交付前核对当前 owner、可见生命周期和主页面信任；已进入平台的 ActivityResult 保留 in-flight 标记至真实回执，避免新请求接到旧结果；媒体请求自身 origin 也须可信，允许多个可信 origin 的合法 iframe。iOS 隐藏撤销待交付媒体授权的 generation，重新显示不恢复旧授权。
+`navigationPolicy.allowedOrigins` 与 JS/Bridge 权限独立；未发布的 `navigationOrigins` 可进一步独立声明主文档精确来源和限定 scheme、端口的域后缀，省略时保留历史 Bridge 导航限制。调用方传入的 `Set` 可变且 `data class.copy` 保留引用，因此每次解析，不缓存归一化结果。Android 文件选择与媒体权限回执交付前核对当前 owner、可见生命周期和主页面信任；已进入平台的 ActivityResult 保留 in-flight 标记至真实回执，避免新请求接到旧结果；媒体请求自身 origin 也须可信，允许多个可信 origin 的合法 iframe。iOS 隐藏撤销待交付媒体授权的 generation，重新显示不恢复旧授权。
 
 ## 文档与反馈
 

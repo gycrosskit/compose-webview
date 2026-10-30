@@ -30,6 +30,31 @@ class GYWebViewNativeTest {
     )
 
     @Test
+    fun `early bridge queue is discarded on hide and stop until a new document starts`() {
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        val trusted = request.copy(security = WebViewSecurity(
+            trustedOrigins = WebViewTrustPolicy(listOf("https://trusted.test")), appBridgeEnabled = true))
+        native.setProp("request", WebViewWire.encodeRequest(trusted))
+        val owner = native.getChildAt(0) as WebView
+        val shadow = Shadow.extract<RecordingWebView>(owner)
+        val client = shadow.webViewClient
+        client.onPageStarted(owner, owner.url, null)
+        client.onPageCommitVisible(owner, owner.url)
+        assertTrue(shadow.scripts.last { it.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__") }.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true)"))
+        native.setProp("visible", false)
+        native.setProp("visible", true)
+        assertTrue(shadow.scripts.last().contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(false)"))
+        client.onPageStarted(owner, owner.url, null)
+        native.call("stopLoading", null, null)
+        client.onPageCommitVisible(owner, owner.url)
+        assertTrue(shadow.scripts.last { it.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__") }.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(false)"))
+        client.onPageStarted(owner, owner.url, null)
+        client.onPageCommitVisible(owner, owner.url)
+        assertTrue(shadow.scripts.last { it.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__") }.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true)"))
+        native.onDestroy()
+    }
+
+    @Test
     fun `hidden document initializes once and resumes without reload`() {
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())
         native.setProp("visible", false)

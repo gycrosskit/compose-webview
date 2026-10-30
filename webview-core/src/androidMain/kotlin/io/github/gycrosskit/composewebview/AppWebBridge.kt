@@ -164,8 +164,27 @@ internal const val APP_WEB_BRIDGE_SCRIPT = """
         if (window !== window.top) return;
         var transport = window.ComposeWebViewBridgeTransport;
         if (!transport || typeof transport.postMessage !== 'function') return;
+        var pending = window.__GY_WEBVIEW_BRIDGE_PENDING__;
+        if (!pending) {
+          pending = {messages: [], size: 0};
+          window.__GY_WEBVIEW_BRIDGE_PENDING__ = pending;
+          window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__ = function(deliver) {
+            var messages = pending.messages;
+            pending.messages = []; pending.size = 0;
+            var token = window.__GY_WEBVIEW_DOCUMENT_TOKEN__;
+            if (deliver && token) for (var i = 0; i < messages.length; i++) {
+              try { transport.postMessage(String(token) + '\u001E' + messages[i]); } catch (_) {}
+            }
+          };
+        }
         function publish(raw) {
           var token = window.__GY_WEBVIEW_DOCUMENT_TOKEN__;
+          if (!token && window.__GY_WEBVIEW_TOKEN_REQUIRED__) {
+            if (pending.messages.length < 128 && pending.size + raw.length <= 65536) {
+              pending.messages.push(raw); pending.size += raw.length;
+            }
+            return;
+          }
           transport.postMessage(token ? String(token) + '\u001E' + raw : raw);
         }
         window.GYWebViewBridge = {

@@ -36,6 +36,9 @@ object WebViewWire {
             put("allowedSchemes", strings(request.navigationPolicy.allowedSchemes))
             put("allowedOrigins", strings(request.navigationPolicy.allowedOrigins))
             put("allowedUrls", strings(request.navigationPolicy.allowedUrls))
+            request.navigationPolicy.navigationOrigins?.let { origins -> put("navigationOrigins", buildJsonObject {
+                put("exactOrigins", strings(origins.exactOrigins)); put("hostSuffixOrigins", strings(origins.hostSuffixOrigins))
+            }) }
             put("blockedRules", rules(request.navigationPolicy.blockedRules))
             put("allowNewWindows", request.navigationPolicy.allowNewWindows)
         })
@@ -70,6 +73,10 @@ object WebViewWire {
                 decodeRules(policy["blockedRules"]), policy.boolean("allowNewWindows", false),
                 policy.strings("allowedOrigins").toSet(),
                 policy.strings("allowedUrls").toSet(),
+                policy["navigationOrigins"]?.jsonObject?.let {
+                    require("exactOrigins" in it && "hostSuffixOrigins" in it)
+                    WebViewNavigationOrigins(it.strings("exactOrigins").toSet(), it.strings("hostSuffixOrigins").toSet())
+                },
             ),
             pageMessageChannels = value.strings("pageMessageChannels").toSet(),
         )
