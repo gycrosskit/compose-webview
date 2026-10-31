@@ -1,5 +1,12 @@
 # 更新记录
 
+## 1.1.0（待发布）
+
+- KuiklyCompose 统一入口新增有类型的页面归属、PiP 保留与宿主扩展配置，保留旧参数调用兼容。
+- 商城导航与能力来源独立，支持显式 HTTP(S) 域后缀及任意有效端口；修复跨域早期 Bridge 和文件选择返回的生命周期处理。
+- Android、iOS、鸿蒙统一超时及 TLS 错误分类，保留原始错误码；iOS 验证工程统一最低版本为 15.0。
+- Maven、Git Pod、HAR/OHPM 准备 1.1.0；PiP 与文件选择的真实设备业务验收仍独立记录。
+
 ## 1.0.2（未发布候选）
 
 - Maven / iOS Git Pod / OHOS HAR / OHPM 统一准备 `1.0.2`，精确依赖 SystemActions Native `1.0.1`；Maven / Git Pod 使用新的 `1.0.2` 标签，HAR 使用新的 `har-1.0.2` 标签。
