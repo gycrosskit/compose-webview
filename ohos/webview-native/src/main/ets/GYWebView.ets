@@ -12,10 +12,13 @@ import { camera, cameraPicker } from '@kit.CameraKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
 import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings } from './WebViewWire';
 import { createGYWebView } from './WebViewComponent';
+import { createWebPermissionDialog, WebPermissionDialogOptions } from './WebPermissionDialog';
 
 interface EvalParams { script: string; }
 interface PageReplyParams { replyId: string; data: string; }
 interface PendingPageReply { nonce: string; channel: string; }
+interface HostPermissionExplanation { requestId: string; complete: (accepted: boolean) => void; }
+interface PermissionExplanationResponse { requestId: string; accepted: boolean; }
 interface BridgeMessage { handlerName: string; data: string; }
 /**
  * 发往 Kuikly 的中立事件，仅设置与 type 对应的字段，业务正文、URL 和文件地址不得直接记日志。
@@ -43,7 +46,7 @@ export interface WebEvent {
   type: string; url?: string; title?: string; progress?: number; canGoBack?: boolean; canGoForward?: boolean;
   handlerName?: string; data?: string; isFullscreen?: boolean; kind?: string; message?: string;
   errorCode?: number; httpStatus?: number; isMainFrame?: boolean; hasUserGesture?: boolean;
-  target?: string; blocked?: boolean; permissions?: string[]; capability?: string; channel?: string; replyId?: string;
+  target?: string; requestId?: string; blocked?: boolean; permissions?: string[]; capability?: string; channel?: string; replyId?: string;
 }
 
 // 端口只由原生发送给主文档；不使用注册到所有 iframe 的 JavaScriptProxy。
@@ -109,6 +112,10 @@ export class GYWebView extends KuiklyRenderBaseView {
   private loadSubmitted: boolean = false;
   private ports: webview.WebMessagePort[] = [];
   private permissionRequests: Set<PermissionRequest> = new Set();
+  private cancelPermissionExplanation: (() => void) | null = null;
+  private permissionExplanationForFile: boolean = false;
+  private hostPermissionExplanation: HostPermissionExplanation | null = null;
+  private requestRevision: number = 0;
   private fileResults: Set<FileSelectorResult> = new Set();
   private pageOwnerActive: boolean | null = null;
   private fileGeneration: number = 0;
@@ -164,7 +171,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     if (key === 'onEvent') { this.eventCallback = value as KuiklyRenderCallback; return true; }
     if (key === 'pageOwnerActive') {
       this.pageOwnerActive = value === true;
-      if (!this.pageOwnerActive) this.revokeFilePickers();
+      if (!this.pageOwnerActive) { const cancel = this.cancelPermissionExplanation; this.revokeFilePickers(); cancel?.(); }
       return true;
     }
     if (key === 'visible') {
@@ -199,6 +206,7 @@ export class GYWebView extends KuiklyRenderBaseView {
       return true;
     }
     if (key !== 'request') return super.setProp(key, value);
+    const requestRevision = ++this.requestRevision;
     if (this.request && !this.renderFailed && typeof value === 'string') {
       try {
         const next = decodeRequest(value as string, false);
@@ -206,6 +214,7 @@ export class GYWebView extends KuiklyRenderBaseView {
           JSON.stringify(this.request.content) === JSON.stringify(next.content) &&
           JSON.stringify(this.request.settings) === JSON.stringify(next.settings) &&
           JSON.stringify(this.request.security) === JSON.stringify(next.security) &&
+          (this.request.permissionPresentation ?? 'NATIVE') === (next.permissionPresentation ?? 'NATIVE') &&
           JSON.stringify(this.request.scripts) === JSON.stringify(next.scripts) &&
           JSON.stringify(this.request.pageMessageChannels) === JSON.stringify(next.pageMessageChannels) &&
           JSON.stringify(this.request.blockedResourceRules) === JSON.stringify(next.blockedResourceRules)) { this.request.navigationPolicy = next.navigationPolicy; return true; }
@@ -214,9 +223,9 @@ export class GYWebView extends KuiklyRenderBaseView {
     const controllerOwner = this.controller;
     const ownerToken = this.renderToken;
     this.revokePending();
-    if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
+    if (requestRevision !== this.requestRevision || controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
     this.exitFullscreen();
-    if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
+    if (requestRevision !== this.requestRevision || controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
     if (this.attached) { try { this.controller.stop(); this.controller.stopAllMedia(); } catch (_) {} }
     this.attached = false;
     this.renderFailed = false;
@@ -538,13 +547,99 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     }).catch(() => { if (this.lifetime.current(generation)) this.fail('LOAD_EXCEPTION', 'Bridge bootstrap failed'); });
   }
 
+  private async authorizeCapture(context: common.UIAbilityContext, permissions: Permissions[],
+    valid: () => boolean, fileCapture: boolean): Promise<boolean> {
+    if (!valid()) return false;
+    const access = abilityAccessCtrl.createAtManager();
+    const states = permissions.map(permission => access.getSelfPermissionStatus(permission));
+    if (states.some(status => status === abilityAccessCtrl.PermissionStatus.RESTRICTED)) return false;
+    if (states.every(status => status === abilityAccessCtrl.PermissionStatus.GRANTED)) return true;
+    if (states.some(status => status === abilityAccessCtrl.PermissionStatus.NOT_DETERMINED) &&
+      !await this.explainCapture(context, permissions.filter((_permission, index) => states[index] === abilityAccessCtrl.PermissionStatus.NOT_DETERMINED), valid, fileCapture)) return false;
+    if (!valid()) return false;
+    const result = await access.requestPermissionsFromUser(context, permissions);
+    if (!valid()) return false;
+    if (result.authResults.length === permissions.length && result.authResults.every(state => state === 0)) return true;
+    const denied = permissions.filter((_permission, index) => result.authResults[index] === -1 && result.dialogShownResults?.[index] === false);
+    if (denied.length > 0) this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
+    return false;
+  }
+
+  private explainCapture(context: common.UIAbilityContext, permissions: Permissions[], valid: () => boolean,
+    fileCapture: boolean): Promise<boolean> {
+    if (this.cancelPermissionExplanation || !this.visible || !valid()) return Promise.resolve(false);
+    if (this.request?.permissionPresentation === 'HOST') {
+      return new Promise<boolean>(resolve => {
+        const requestId = util.generateRandomUUID(true);
+        const finish = (accepted: boolean, revoked: boolean): void => {
+          if (this.hostPermissionExplanation?.requestId !== requestId) return;
+          this.hostPermissionExplanation = null;
+          if (this.cancelPermissionExplanation === cancel) { this.cancelPermissionExplanation = null; this.permissionExplanationForFile = false; }
+          if (revoked) { try { this.emit({ type: 'permissionExplanationCancelled', requestId: requestId }); } catch (_) {} }
+          resolve(accepted && this.visible && valid());
+        };
+        const cancel = (): void => finish(false, true);
+        this.hostPermissionExplanation = { requestId: requestId, complete: accepted => finish(accepted, false) };
+        this.cancelPermissionExplanation = cancel; this.permissionExplanationForFile = fileCapture;
+        try { this.emit({ type: 'permissionExplanationRequested', requestId: requestId,
+          permissions: permissions.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') }); }
+        catch (_) { cancel(); }
+      });
+    }
+    const chinese = context.config.language?.startsWith('zh') === true;
+    const camera = permissions.indexOf('ohos.permission.CAMERA') >= 0;
+    const microphone = permissions.indexOf('ohos.permission.MICROPHONE') >= 0;
+    const name = camera && microphone ? (chinese ? '相机和麦克风' : 'camera and microphone') :
+      microphone ? (chinese ? '麦克风' : 'microphone') : (chinese ? '相机' : 'camera');
+    const scenario = fileCapture ? (chinese ? '用于拍摄并上传照片或视频。' : 'Used to capture and upload photos or videos.') :
+      (chinese ? '用于当前网页的音视频采集或通话。' : 'Used for audio/video capture or calls on the current page.');
+    const uiContext = this.getUIContext();
+    if (!uiContext) return Promise.resolve(false);
+    const prompt = uiContext.getPromptAction();
+    return new Promise<boolean>(resolve => {
+      let completed = false;
+      let opened = false;
+      let disposed = false;
+      const dispose = (): void => { if (!disposed) { disposed = true; try { content.dispose(); } catch (_) {} } };
+      const close = async (): Promise<boolean> => {
+        try { await prompt.closeCustomDialog(content); dispose(); return true; }
+        catch (_) { dispose(); return false; }
+      };
+      const finish = (accepted: boolean): void => {
+        if (completed) return;
+        completed = true;
+        if (this.cancelPermissionExplanation === cancel) {
+          this.cancelPermissionExplanation = null; this.permissionExplanationForFile = false;
+        }
+        // 确认须等说明退出；取消发生在异步打开期间时，也不能留下失去 owner 的弹窗。
+        if (opened) close().then(closed => resolve(accepted && closed && this.visible && valid()));
+        else resolve(false);
+      };
+      const cancel = (): void => finish(false);
+      const options: WebPermissionDialogOptions = {
+        title: chinese ? '权限使用说明' : 'Permission usage',
+        message: chinese ? `需要${name}权限。\n\n${scenario}拒绝后将无法使用对应功能，其他浏览功能不受影响。` :
+          `${name} access is required.\n\n${scenario} If declined, this feature is unavailable; other browsing is unaffected.`,
+        cancel: chinese ? '取消' : 'Cancel', confirm: chinese ? '我已了解，继续' : 'Continue', complete: finish
+      };
+      const content = new ComponentContent<WebPermissionDialogOptions>(uiContext,
+        wrapBuilder<[WebPermissionDialogOptions]>(createWebPermissionDialog), options);
+      this.cancelPermissionExplanation = cancel; this.permissionExplanationForFile = fileCapture;
+      Promise.resolve().then(() => prompt.openCustomDialog(content, { autoCancel: false, onWillDismiss: action => { action.dismiss(); finish(false); } })).then(() => {
+        opened = true;
+        if (completed) close();
+        else if (!this.visible || !valid()) cancel();
+      }).catch(() => { finish(false); dispose(); });
+    });
+  }
+
   /** 主文档来源授权通过后申请系统权限；取消/异源/部分授权均 deny，结果只结算一次。 */
   permissionRequest(request: PermissionRequest): void {
     try {
       const current = this.request;
       const resources = request.getAccessibleResource();
       const value = request.getOrigin();
-      if (!current || !this.visible || !current.security.mediaCaptureEnabled || !trusted(value, current.security) ||
+      if (!current || !this.visible || this.pageOwnerActive === false || !current.security.mediaCaptureEnabled || !trusted(value, current.security) ||
         origin(value) !== origin(this.currentUrl()) || resources.length === 0 ||
         resources.some(resource => resource !== ProtectedResourceType.VIDEO_CAPTURE && resource !== ProtectedResourceType.AUDIO_CAPTURE)) {
         request.deny(); return;
@@ -553,16 +648,15 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
       const context = (this.getUIContext() as UIContext).getHostContext() as common.UIAbilityContext;
       const generation = this.lifetime.generation;
       this.permissionRequests.add(request);
-      abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, permissions).then(result => {
+      const valid = (): boolean => this.lifetime.current(generation) && this.visible && this.pageOwnerActive !== false &&
+        this.request === current && this.permissionRequests.has(request) && trusted(this.currentUrl(), current.security) &&
+        origin(value) === origin(this.currentUrl());
+      this.authorizeCapture(context, permissions, valid, false).then(granted => {
         if (!this.permissionRequests.delete(request)) return;
-        if (!this.lifetime.current(generation) || !this.visible || this.request !== current ||
-          !trusted(this.currentUrl(), current.security) || origin(value) !== origin(this.currentUrl())) { request.deny(); return; }
-        if (result.authResults.length === permissions.length && result.authResults.every(state => state === 0)) request.grant(resources);
-        else {
-          request.deny();
-          const denied = permissions.filter((_permission, index) => result.authResults[index] === -1 && result.dialogShownResults?.[index] === false);
-          if (denied.length > 0) this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
-        }
+        if (granted && this.lifetime.current(generation) && this.visible && this.pageOwnerActive !== false &&
+          this.request === current && trusted(this.currentUrl(), current.security) && origin(value) === origin(this.currentUrl())) {
+          request.grant(resources);
+        } else request.deny();
       }).catch(() => { if (this.permissionRequests.delete(request)) request.deny(); });
     } catch (_) {
       this.permissionRequests.delete(request);
@@ -604,13 +698,8 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
           complete([]); return true;
         }
         const permissions: Permissions[] = video ? ['ohos.permission.CAMERA', 'ohos.permission.MICROPHONE'] : ['ohos.permission.CAMERA'];
-        abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, permissions).then(async result => {
-          if (!valid()) { complete([]); return; }
-          if (result.authResults.length !== permissions.length || result.authResults.some(state => state !== 0)) {
-            const denied = permissions.filter((_permission, index) => result.authResults[index] === -1 && result.dialogShownResults?.[index] === false);
-            if (denied.length > 0) this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
-            complete([]); return;
-          }
+        this.authorizeCapture(context, permissions, valid, true).then(async granted => {
+          if (!valid() || !granted) { complete([]); return; }
           if (!this.visible) await new Promise<void>(resolve => this.fileVisibilityWaiters.add(resolve));
           if (!valid() || !this.visible) { complete([]); return; }
           const path = `${context.cacheDir}/gy-webview-${util.generateRandomUUID()}${video ? '.mp4' : '.jpg'}`;
@@ -739,6 +828,17 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
   }
 
   call(method: string, params: KRAny, callback: KuiklyRenderCallback | null): KRAny {
+    if (method === 'completePermissionExplanation') {
+      let accepted = false;
+      try {
+        const response = JSON.parse(typeof params === 'string' ? params : '{}') as PermissionExplanationResponse;
+        const pending = this.hostPermissionExplanation;
+        if (!this.lifetime.disposed && pending && response.requestId === pending.requestId && typeof response.accepted === 'boolean') {
+          accepted = true; pending.complete(response.accepted);
+        }
+      } catch (_) {}
+      callback?.({ result: accepted }); return null;
+    }
     if (method === 'replyPageMessage') { this.replyPageMessage(params, callback); return null; }
     if (this.lifetime.disposed) return null;
     if (!this.attached || !this.request) { callback?.({ result: null }); return null; }
@@ -812,14 +912,17 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     waiters.forEach(waiter => waiter());
   }
   private revokeFilePickers(): void {
+    const cancel = this.permissionExplanationForFile ? this.cancelPermissionExplanation : null;
     this.fileGeneration++;
     const results = Array.from(this.fileResults); this.fileResults.clear();
     const files = Array.from(this.captureFiles); this.captureFiles.clear();
+    cancel?.();
     this.resumeFilePickers();
     files.forEach(path => { try { fileIo.unlinkSync(path); } catch (_) {} });
     results.forEach(result => { try { result.handleFileList([]); } catch (_) {} });
   }
   private revokePending(revokePageChannels: boolean = true, preserveFilePickers: boolean = false): void {
+    const cancel = this.cancelPermissionExplanation;
     if (revokePageChannels) {
       this.pageMessageActive = false; this.pageMessageSecret = ''; this.pageMessageNonce = '';
       this.pageMessageReplies.clear();
@@ -829,8 +932,10 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     }
     this.bridgeVisibilityPending = false;
     this.lifetime.invalidate(); this.closePorts();
-    this.permissionRequests.forEach(request => { try { request.deny(); } catch (_) {} }); this.permissionRequests.clear();
+    const requests = Array.from(this.permissionRequests); this.permissionRequests.clear();
     if (!preserveFilePickers) this.revokeFilePickers();
+    cancel?.();
+    requests.forEach(request => { try { request.deny(); } catch (_) {} });
   }
   onDestroy(): void {
     if (this.environmentContext && this.environmentId !== null) {

@@ -86,10 +86,16 @@ sealed interface WebViewEvent {
      */
     data class CapabilityUnsupported(val capability: WebViewCapability) : WebViewEvent
 
-    /**
-     * 系统已禁止再次询问所需权限，宿主可提供应用设置入口。
-     * @property permissions 非空权限集合；不代表本次仍有未完成系统授权请求。
-     */
+    /** HOST 模式的用途说明；宿主须等待 UI 退出，再回执当前 requestId，不得自行申请系统权限。 */
+    data class PermissionExplanationRequested(val requestId: String, val permissions: Set<WebViewPermission>) : WebViewEvent {
+        init { require(requestId.isNotBlank() && requestId.length <= 128 && permissions.isNotEmpty()) }
+    }
+    /** 原生已撤销本次说明；宿主应结束对应 UI，不再申请或重放请求。 */
+    data class PermissionExplanationCancelled(val requestId: String) : WebViewEvent {
+        init { require(requestId.isNotBlank() && requestId.length <= 128) }
+    }
+
+    /** 原生请求已结束；宿主可引导设置，返回后不能重放旧请求。 */
     data class PermissionSettingsRequired(
         val permissions: Set<WebViewPermission>,
     ) : WebViewEvent {
