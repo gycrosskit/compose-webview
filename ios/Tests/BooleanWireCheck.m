@@ -149,7 +149,8 @@ static void CheckPictureInPictureMediaVisibility(void) {
 - (NSString *)host { return @"safe.example"; }
 - (NSInteger)port { return 443; }
 @end
-@interface PermissionFrame : WKFrameInfo
+// WKFrameInfo 的释放依赖 WebKit 内部状态，不能用直接 new 的子类模拟。
+@interface PermissionFrame : NSObject
 @property(nonatomic, strong) WKWebView *probeWebView;
 @property(nonatomic, copy) NSString *probeURL;
 @property(nonatomic) BOOL childFrame;
@@ -448,7 +449,7 @@ static void CheckWebRTCPermissionSettings(void) {
             }
         };
         WKMediaCaptureType type = [mode isEqual:@"microphone"] ? WKMediaCaptureTypeMicrophone : [mode isEqual:@"both"] ? WKMediaCaptureTypeCameraAndMicrophone : WKMediaCaptureTypeCamera;
-        [page webView:owner requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)[PermissionOrigin new] initiatedByFrame:frame type:type decisionHandler:^(WKPermissionDecision value) {
+        [page webView:owner requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)[PermissionOrigin new] initiatedByFrame:(WKFrameInfo *)frame type:type decisionHandler:^(WKPermissionDecision value) {
             replies++; result = value;
             if ([mode isEqual:@"cancelReentrant"]) [weakPage explainMediaPermissions:@[AVMediaTypeAudio] fileCapture:NO completion:^(BOOL accepted) { freshReplies++; }];
         }];
