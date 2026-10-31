@@ -29,6 +29,37 @@ class AndroidPageChannelsNativeTest {
         pageMessageChannels = setOf("PageReady"),
     )
 
+    @Test fun `independent navigation installs bridge for later trusted document without granting other frames`() {
+        NativePageProvider.listeners.clear()
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        val events = mutableListOf<Map<String, Any?>>()
+        native.setProp("onEvent", { event: Any? -> @Suppress("UNCHECKED_CAST") events.add(event as Map<String, Any?>) })
+        val request = WebViewRequest(WebViewContent.Url("https://other.test/start"),
+            settings = WebViewSettings(javaScriptEnabled = true),
+            security = WebViewSecurity(WebViewTrustPolicy(listOf("https://trusted.test")), appBridgeEnabled = true),
+            navigationPolicy = WebViewNavigationPolicy(navigationOrigins = WebViewNavigationOrigins(
+                exactOrigins = setOf("https://other.test", "https://trusted.test"))))
+        native.setProp("request", WebViewWire.encodeRequest(request))
+        val owner = native.getChildAt(0) as WebView
+        val listener = NativePageProvider.listeners.getValue(owner).getValue("ComposeWebViewBridgeTransport")
+        val client = Shadow.extract<RecordingWebView>(owner).webViewClient
+        fun token(): String = native.javaClass.getDeclaredField("documentToken").let { it.isAccessible = true; it.get(native) as String }
+        fun send(origin: String, main: Boolean, documentToken: String) = listener.onPostMessage(owner,
+            WebMessageCompat("$documentToken\u001Eecho\u001F{}"), Uri.parse(origin), main, NativePageReply())
+        val oldToken = token()
+        send("https://other.test", true, oldToken)
+        send("https://trusted.test", false, oldToken)
+        assertEquals(0, events.count { it["type"] == "bridgeMessage" })
+        client.onPageStarted(owner, "https://trusted.test/page", null)
+        send("https://trusted.test", true, oldToken)
+        send("https://trusted.test", true, token())
+        assertEquals(1, events.count { it["type"] == "bridgeMessage" })
+        native.setProp("visible", false)
+        send("https://trusted.test", true, token())
+        assertEquals(1, events.count { it["type"] == "bridgeMessage" })
+        native.onDestroy()
+    }
+
     @Test fun `Kuikly early message single reply hide reload and replacement stay owner scoped`() {
         NativePageProvider.listeners.clear()
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())

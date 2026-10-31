@@ -74,11 +74,11 @@ object WebViewErrorHelper {
         return when (code) {
             WebViewClient.ERROR_HOST_LOOKUP,
             WebViewClient.ERROR_CONNECT,
-            WebViewClient.ERROR_TIMEOUT,
             WebViewClient.ERROR_IO,
             WebViewClient.ERROR_PROXY_AUTHENTICATION,
             WebViewClient.ERROR_AUTHENTICATION,
             -> WebViewErrorKind.NETWORK
+            WebViewClient.ERROR_TIMEOUT -> WebViewErrorKind.TIMEOUT
             WebViewClient.ERROR_FAILED_SSL_HANDSHAKE -> WebViewErrorKind.SSL
             else -> WebViewErrorKind.UNKNOWN
         }

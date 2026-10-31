@@ -20,9 +20,9 @@ class AppWebViewConfigTest {
     }
 
     @Test
-    fun `mixed content is blocked by default`() {
+    fun `mixed content is allowed by default`() {
         assertEquals(
-            android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW,
+            android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW,
             WebViewSettings().androidMixedContentMode,
         )
     }

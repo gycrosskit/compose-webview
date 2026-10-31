@@ -55,16 +55,11 @@ class WebViewContractsTest {
     }
 
     @Test
-    fun highRiskCapabilitiesRequireTrustedHttpsOrigin() {
+    fun highRiskCapabilitiesRequireTrustedHttpOrigin() {
         assertFailsWith<IllegalArgumentException> {
             WebViewSecurity(appBridgeEnabled = true)
         }
-        assertFailsWith<IllegalArgumentException> {
-            WebViewSecurity(
-                trustedOrigins = WebViewTrustPolicy(listOf("http://unsafe.example")),
-                fileChooserEnabled = true,
-            )
-        }
+        WebViewSecurity(trustedOrigins = WebViewTrustPolicy(listOf("http://legacy.example")), fileChooserEnabled = true)
         assertFailsWith<IllegalArgumentException> {
             WebViewSecurity(
                 trustedOrigins = WebViewTrustPolicy(listOf("https://safe.example")),

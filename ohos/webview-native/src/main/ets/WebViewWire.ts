@@ -1,4 +1,41 @@
+import { WebNetErrorList } from '@kit.ArkWeb';
 import { url } from '@kit.ArkTS';
+
+/** 原生网络错误在组件边界分类，原始错误码仍随事件保留。 */
+export function networkErrorKind(code: number): string {
+  switch (code) {
+    case WebNetErrorList.ERR_TIMED_OUT:
+    case WebNetErrorList.ERR_CONNECTION_TIMED_OUT:
+    case WebNetErrorList.ERR_DNS_TIMED_OUT: return 'TIMEOUT';
+    case WebNetErrorList.ERR_SSL_PROTOCOL_ERROR:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_CERT_NEEDED:
+    case WebNetErrorList.ERR_NO_SSL_VERSIONS_ENABLED:
+    case WebNetErrorList.ERR_SSL_VERSION_OR_CIPHER_MISMATCH:
+    case WebNetErrorList.ERR_SSL_RENEGOTIATION_REQUESTED:
+    case WebNetErrorList.ERR_BAD_SSL_CLIENT_AUTH_CERT:
+    case WebNetErrorList.ERR_SSL_NO_RENEGOTIATION:
+    case WebNetErrorList.ERR_SSL_DECOMPRESSION_FAILURE_ALERT:
+    case WebNetErrorList.ERR_SSL_BAD_RECORD_MAC_ALERT:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_PRIVATE_KEY_ACCESS_DENIED:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_CERT_NO_PRIVATE_KEY:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED:
+    case WebNetErrorList.ERR_SSL_HANDSHAKE_NOT_COMPLETED:
+    case WebNetErrorList.ERR_SSL_BAD_PEER_PUBLIC_KEY:
+    case WebNetErrorList.ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN:
+    case WebNetErrorList.ERR_CLIENT_AUTH_CERT_TYPE_UNSUPPORTED:
+    case WebNetErrorList.ERR_SSL_DECRYPT_ERROR_ALERT:
+    case WebNetErrorList.ERR_SSL_SERVER_CERT_CHANGED:
+    case WebNetErrorList.ERR_SSL_UNRECOGNIZED_NAME_ALERT:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_CERT_BAD_FORMAT:
+    case WebNetErrorList.ERR_SSL_SERVER_CERT_BAD_FORMAT:
+    case WebNetErrorList.ERR_SSL_OBSOLETE_CIPHER:
+    case WebNetErrorList.ERR_SSL_CLIENT_AUTH_NO_COMMON_ALGORITHMS:
+    case WebNetErrorList.ERR_SSL_KEY_USAGE_INCOMPATIBLE:
+      return 'SSL';
+    default:
+      return code <= WebNetErrorList.ERR_CERT_COMMON_NAME_INVALID && code > WebNetErrorList.ERR_CERT_END ? 'SSL' : 'NETWORK';
+  }
+}
 
 /**
  * 中立内容 wire；由 decodeRequest 校验后使用，正文和 URL 可能包含敏感数据。
@@ -21,7 +58,7 @@ export interface WebViewContent {
  * @property domStorageEnabled 默认 true。
  * @property allowFileAccess 默认 false，显式开启允许 ArkWeb 访问应用沙箱文件子资源；顶层仍受 HTTP(S) 导航门禁。
  * @property allowContentAccess 必须关闭。
- * @property mixedContentPolicy 默认 NEVER_ALLOW。
+ * @property mixedContentPolicy 默认 ALWAYS_ALLOW。
  * @property cachePolicy 默认 DEFAULT。
  * @property acceptsThirdPartyCookies 默认 false，不能启用。
  * @property supportMultipleWindows 默认 false；新窗口始终路由到当前页面，不创建第二窗口。
@@ -84,7 +121,8 @@ export interface WebViewScript { id: string; source: string; injectionTime: stri
  * @property blockedRules 主文档拒绝规则。
  * @property allowNewWindows 默认 false；允许目标复用当前窗口导航。
  */
-export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; allowedUrls?: string[]; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; }
+export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; allowedUrls?: string[]; navigationOrigins?: NavigationOrigins; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; }
+export interface NavigationOrigins { exactOrigins: string[]; hostSuffixOrigins: string[]; hostSuffixAnyPortOrigins?: string[]; }
 /**
  * 单个原生实例的完整 JSON 输入；变化重建 Controller 并撤销旧异步操作。
  * @property content 本次声明式内容。
@@ -124,7 +162,7 @@ function validHost(value: string): boolean {
 /** 按 HTTPS 精确来源或域标签后缀同步检查；不读取网络或系统状态。 */
 export function trusted(value: string, security: WebViewSecurity): boolean {
   const target = origin(value);
-  if (!target.startsWith('https:')) return false;
+  if (!target.startsWith('https:') && !target.startsWith('http:')) return false;
   const parsed = new url.URL(value);
   const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
   return security.trustedOrigins.urls.some(item => origin(item) === target) ||
@@ -163,10 +201,26 @@ export function navigationAllowed(value: string, mainFrame: boolean, request: We
       !request.navigationPolicy.allowedOrigins.some(item => origin(item) === origin(value))) return false;
     if (mainFrame && request.navigationPolicy.allowedUrls && request.navigationPolicy.allowedUrls.length > 0 &&
       !request.navigationPolicy.allowedUrls.includes(value)) return false;
+    const independent = request.navigationPolicy.navigationOrigins;
+    if (mainFrame && independent) {
+      const target = new url.URL(value);
+      const host = target.hostname.toLowerCase().replace(/\.$/, '');
+      const allowed = independent.exactOrigins.some(item => origin(item) === origin(value)) || independent.hostSuffixOrigins.some(item => {
+        const suffix = new url.URL(item);
+        const suffixHost = suffix.hostname.toLowerCase().replace(/\.$/, '');
+        return target.protocol === suffix.protocol && (target.port || (target.protocol === 'https:' ? '443' : '80')) ===
+          (suffix.port || (suffix.protocol === 'https:' ? '443' : '80')) && (host === suffixHost || host.endsWith(`.${suffixHost}`));
+      }) || (independent.hostSuffixAnyPortOrigins || []).some(item => {
+        const suffix = new url.URL(item);
+        const suffixHost = suffix.hostname.toLowerCase().replace(/\.$/, '');
+        return target.protocol === suffix.protocol && (host === suffixHost || host.endsWith(`.${suffixHost}`));
+      });
+      if (!allowed) return false;
+    }
     if (mainFrame && request.navigationPolicy.blockedRules.some(rule => matches(value, rule))) return false;
     if (!mainFrame && request.blockedResourceRules.some(rule => matches(value, rule))) return false;
-    if (mainFrame && request.security.appBridgeEnabled && !trusted(value, request.security)) return false;
-    if (mainFrame && request.security.pageBridgeEnabled) {
+    if (mainFrame && !independent && request.security.appBridgeEnabled && !trusted(value, request.security)) return false;
+    if (mainFrame && !independent && request.security.pageBridgeEnabled) {
       const initial = request.content.type === 'url' ? request.content.url || '' : request.content.baseUrl || '';
       if (!origin(initial) || origin(initial) !== origin(value)) return false;
     }
@@ -203,6 +257,21 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   request.navigationPolicy.allowedOrigins?.forEach(item => {
     if (typeof item !== 'string' || !origin(item)) throw new Error('Invalid allowed origin');
   });
+  const navigationOrigins = request.navigationPolicy.navigationOrigins;
+  if (navigationOrigins !== undefined) {
+    if (!navigationOrigins || typeof navigationOrigins !== 'object' || Array.isArray(navigationOrigins) ||
+      !Array.isArray(navigationOrigins.exactOrigins) || !Array.isArray(navigationOrigins.hostSuffixOrigins)) throw new Error('Invalid navigation origins');
+    navigationOrigins.exactOrigins.forEach(item => { if (typeof item !== 'string' || !origin(item)) throw new Error('Invalid navigation origin'); });
+    navigationOrigins.hostSuffixOrigins.forEach(item => {
+      if (typeof item !== 'string' || !origin(item) || !validHost(new url.URL(item).hostname)) throw new Error('Invalid navigation suffix');
+    });
+    if (navigationOrigins.hostSuffixAnyPortOrigins !== undefined && !Array.isArray(navigationOrigins.hostSuffixAnyPortOrigins)) throw new Error('Invalid navigation suffix');
+    navigationOrigins.hostSuffixAnyPortOrigins?.forEach(item => {
+      if (typeof item !== 'string' || !origin(item) || !validHost(new url.URL(item).hostname)) throw new Error('Invalid navigation suffix');
+      const suffix = new url.URL(item);
+      if (suffix.port && suffix.port !== (suffix.protocol === 'https:' ? '443' : '80')) throw new Error('Invalid navigation suffix port');
+    });
+  }
   if (request.navigationPolicy.allowedUrls !== undefined && !Array.isArray(request.navigationPolicy.allowedUrls)) throw new Error('Invalid allowed URLs');
   request.navigationPolicy.allowedUrls?.forEach(item => {
     if (typeof item !== 'string' || item !== item.trim() || !origin(item)) throw new Error('Invalid allowed URL');
@@ -224,7 +293,7 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   if (request.settings.cachePolicy && !['DEFAULT', 'NO_CACHE', 'CACHE_ELSE_NETWORK', 'CACHE_ONLY'].includes(request.settings.cachePolicy)) throw new Error('Invalid cache policy');
   if (request.settings.userAgentSuffix !== undefined && request.settings.userAgentSuffix !== null &&
     (typeof request.settings.userAgentSuffix !== 'string' || /[\r\n]/.test(request.settings.userAgentSuffix))) throw new Error('Invalid User-Agent suffix');
-  request.security.trustedOrigins.urls.forEach(item => { if (typeof item !== 'string' || !origin(item).startsWith('https:')) throw new Error('Invalid trusted origin'); });
+  request.security.trustedOrigins.urls.forEach(item => { if (typeof item !== 'string' || !origin(item)) throw new Error('Invalid trusted origin'); });
   request.security.trustedOrigins.trustedHostSuffixes.forEach(item => { if (typeof item !== 'string' || !validHost(item)) throw new Error('Invalid trusted suffix'); });
   request.navigationPolicy.allowedSchemes.forEach(item => { if (typeof item !== 'string' || !item) throw new Error('Invalid scheme'); });
   request.navigationPolicy.blockedRules.concat(request.blockedResourceRules).forEach(rule => {
@@ -265,9 +334,9 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
     if (content.historyUrl && !content.baseUrl) throw new Error('HTML historyUrl requires baseUrl');
   } else throw new Error('Unsupported content type');
   if (request.security.appBridgeEnabled || request.security.fileChooserEnabled || request.security.mediaCaptureEnabled) {
-    if (!request.security.trustedOrigins.urls.some(item => origin(item).startsWith('https:')) &&
+    if (!request.security.trustedOrigins.urls.some(item => trusted(item, request.security)) &&
       !request.security.trustedOrigins.trustedHostSuffixes.some(item => trusted(`https://${item}/`, request.security))) {
-      throw new Error('High privilege capability requires trusted HTTPS origins');
+      throw new Error('High privilege capability requires trusted HTTP(S) origins');
     }
   }
   request.scripts.forEach(script => {
@@ -279,11 +348,11 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
 
 /** 自定义脚本沿用手动执行的来源边界；pageBridge 只放行初始同源主文档，不授予高权限。 */
 export function guardedScript(script: WebViewScript, request: WebViewRequest): string {
-  const exact = JSON.stringify(request.security.trustedOrigins.urls.map(item => origin(item)).filter(item => item.startsWith('https:')));
+  const exact = JSON.stringify(request.security.trustedOrigins.urls.map(item => origin(item)).filter(Boolean));
   const suffixes = JSON.stringify(request.security.trustedOrigins.trustedHostSuffixes.filter(item => /^[a-zA-Z0-9.-]+$/.test(item)));
   const initial = request.content.type === 'url' ? request.content.url || '' : request.content.baseUrl || '';
   const pageOrigin = request.security.pageBridgeEnabled && !request.security.appBridgeEnabled ? origin(initial) : '';
-  const trustedGuard = `location.protocol==='https:'&&(${exact}.includes(location.protocol+'//'+location.hostname.toLowerCase().replace(/\\.$/,'')+':'+(location.port||'443'))||${suffixes}.some(function(s){s=s.toLowerCase().replace(/^\\.|\\.$/g,'');return location.hostname===s||location.hostname.endsWith('.'+s)}))`;
+  const trustedGuard = `(location.protocol==='https:'||location.protocol==='http:')&&(${exact}.includes(location.protocol+'//'+location.hostname.toLowerCase().replace(/\\.$/,'')+':'+(location.port||(location.protocol==='https:'?'443':'80')))||${suffixes}.some(function(s){s=s.toLowerCase().replace(/^\\.|\\.$/g,'');return location.hostname===s||location.hostname.endsWith('.'+s)}))`;
   const page = pageOrigin ? new url.URL(pageOrigin) : null;
   const defaultPort = page?.protocol === 'https:' ? '443' : '80';
   const pageGuard = page ? `location.protocol===${JSON.stringify(page.protocol)}&&(location.hostname===${JSON.stringify(page.hostname)}||location.hostname===${JSON.stringify(page.hostname + '.')})&&(location.port||${JSON.stringify(defaultPort)})===${JSON.stringify(page.port || defaultPort)}` : 'false';

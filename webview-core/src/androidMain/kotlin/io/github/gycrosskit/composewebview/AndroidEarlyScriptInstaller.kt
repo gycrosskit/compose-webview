@@ -11,6 +11,8 @@ import androidx.webkit.WebViewFeature
 class AndroidEarlyScriptInstaller(
     private val onMetric: (WebView, WebViewPerformanceMetric, Long) -> Unit,
 ) {
+    /** Kuikly 的消息必须绑定当前文档；普通原生调用方沿用无 token 合同。 */
+    var requireDocumentToken: Boolean = false
     private val handlers = mutableMapOf<WebView, List<ScriptHandler>>()
     private val messageListeners = mutableSetOf<WebView>()
 
@@ -32,12 +34,20 @@ class AndroidEarlyScriptInstaller(
             messageListeners += view
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            val bridge = (if (requireDocumentToken) "window.__GY_WEBVIEW_TOKEN_REQUIRED__=true;" else "") + APP_WEB_BRIDGE_SCRIPT
             if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
-                request.canUseAppBridgeAt(request.content.initialOrigin())
-            ) {
+                request.security.appBridgeEnabled && request.navigationPolicy.navigationOrigins != null) {
+                val trust = request.security.trustedOrigins
                 installedHandlers += WebViewCompat.addDocumentStartJavaScript(
                     view,
-                    APP_WEB_BRIDGE_SCRIPT,
+                    "(function(){if(!(${trust.javascriptTrustExpression()}))return;$bridge})();",
+                    trust.documentStartOriginRules(),
+                )
+            } else if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
+                request.canUseAppBridgeAt(request.content.initialOrigin())) {
+                installedHandlers += WebViewCompat.addDocumentStartJavaScript(
+                    view,
+                    bridge,
                     setOf(WILDCARD_ORIGIN_RULE),
                 )
             }

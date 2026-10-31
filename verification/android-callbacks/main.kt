@@ -10,6 +10,34 @@ import androidx.activity.result.ActivityResult
 
 fun main() {
     var cases=0
+    // 系统选择器导致页面暂停，结果等同一页面恢复后再交付；真正离页仍撤销。
+    for (photo in listOf(false, true)) for (leave in listOf(false, true)) {
+        val activity=ComponentActivity(); if(photo) activity.contentResolver.mime="image/jpeg"
+        val owner=WebView(); var attached=true
+        val chooser=AndroidWebFileChooserController(activity,{WebViewRequest()},{attached},AndroidWebPermissionController())
+        Build.VERSION.SDK_INT=if(photo)33 else 32
+        val replies=mutableListOf<Array<Uri>?>()
+        chooser.show(owner,ValueCallback{replies.add(it)},WebChromeClient.FileChooserParams(if(photo)arrayOf("image/*") else arrayOf("application/pdf")))
+        check(chooser.suspendForExternal(owner)); attached=false
+        if(leave) chooser.release(owner)
+        activity.activityResultRegistry.launchers[if(photo)1 else 0].deliver(if(photo)Uri("content://new") else ActivityResult(Activity.RESULT_OK,Intent().apply{data=Uri("content://new")}))
+        if(leave) check(replies.size==1 && replies.single()==null)
+        else { check(replies.isEmpty()); attached=true; chooser.resume(owner); check(replies.single()!!.single().value=="content://new") }
+        chooser.destroy(); cases++
+    }
+    run {
+        val activity=ComponentActivity(); val owner=WebView(); val permission=AndroidWebPermissionController()
+        var attached=true; val chooser=AndroidWebFileChooserController(activity,{WebViewRequest()},{attached},permission)
+        val replies=mutableListOf<Array<Uri>?>()
+        chooser.show(owner,ValueCallback{replies.add(it)},WebChromeClient.FileChooserParams(arrayOf("image/*"),true))
+        check(chooser.suspendForExternal(owner)); attached=false
+        permission.callback!!(true)
+        check(activity.activityResultRegistry.launchers[0].launches==0 && replies.isEmpty())
+        attached=true; chooser.resume(owner)
+        check(activity.activityResultRegistry.launchers[0].launches==1 && replies.isEmpty())
+        chooser.release(owner); check(replies.size==1 && replies.single()==null)
+        chooser.destroy(); cases++
+    }
     for (photo in listOf(false,true)) for (revoke in listOf("hidden","foreign","released")) {
         val activity=ComponentActivity();val permission=AndroidWebPermissionController()
         var attached=true;val owner=WebView();val request=WebViewRequest()

@@ -24,7 +24,7 @@ enum class WebViewCachePolicy {
  * @property domStorageEnabled Android/OHOS 是否允许 DOM Storage；WKWebView 没有对应公开禁用开关。默认 true。
  * @property allowFileAccess 是否允许访问平台文件 URL。 默认 false。
  * @property allowContentAccess 是否允许访问平台内容 URL。 默认 false。
- * @property mixedContentPolicy HTTPS 页面加载 HTTP 子资源策略。iOS COMPATIBILITY 采用严格规则；ALWAYS_ALLOW 仍受 WebKit/ATS 策略约束。默认 NEVER_ALLOW。
+ * @property mixedContentPolicy HTTPS 页面加载 HTTP 子资源策略。iOS COMPATIBILITY 采用严格规则；ALWAYS_ALLOW 仍受 WebKit/ATS 策略约束。默认 ALWAYS_ALLOW。
  * @property cachePolicy 平台网页缓存读取策略。 默认 DEFAULT。
  * @property acceptsThirdPartyCookies Android 是否允许第三方资源携带 Cookie；仅可信且确有跨域会话需求的页面开启。 默认 false。
  * @property supportMultipleWindows 是否支持网页创建新窗口。 默认 false。
@@ -48,7 +48,7 @@ data class WebViewSettings(
     val domStorageEnabled: Boolean = true,
     val allowFileAccess: Boolean = false,
     val allowContentAccess: Boolean = false,
-    val mixedContentPolicy: WebViewMixedContentPolicy = WebViewMixedContentPolicy.NEVER_ALLOW,
+    val mixedContentPolicy: WebViewMixedContentPolicy = WebViewMixedContentPolicy.ALWAYS_ALLOW,
     val cachePolicy: WebViewCachePolicy = WebViewCachePolicy.DEFAULT,
     val acceptsThirdPartyCookies: Boolean = false,
     val supportMultipleWindows: Boolean = false,

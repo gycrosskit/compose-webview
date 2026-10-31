@@ -25,14 +25,23 @@ install! 'cocoapods', :integrate_targets => false
 platform :ios, '15.0'
 use_frameworks!
 target 'KuiklyRenderProbe' do
-  pod 'OpenKuiklyIOSRender', '2.29.1'
-  unless ENV.fetch('GYC_MODULE_POD').empty?
+  if ENV.fetch('GYC_MODULE_POD').empty?
+    pod 'OpenKuiklyIOSRender', '2.29.1'
+  else
+    # Module 的 podspec 已精确约束 Renderer；历史 tag 继续使用其自身版本。
     source = if ENV.fetch('GYC_MODULE_TAG').empty?
       { :path => ENV.fetch('GYC_MODULE_SOURCE') }
     else
       { :git => "https://github.com/gycrosskit/#{ENV.fetch('GYC_MODULE_REPOSITORY')}.git", :tag => ENV.fetch('GYC_MODULE_TAG') }
     end
     pod ENV.fetch('GYC_MODULE_POD'), **source
+  end
+end
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+    end
   end
 end
 POD

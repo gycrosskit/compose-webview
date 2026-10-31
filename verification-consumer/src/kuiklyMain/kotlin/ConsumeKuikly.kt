@@ -5,7 +5,12 @@ import io.github.gycrosskit.composewebview.kuikly.GYWebView
 
 fun ViewContainer<*, *>.consumeKuikly() {
     GYWebView {
-        attr { request(consumerRequest()); size(320f, 480f) }
+        attr {
+            pageOwnerActive(true)
+            pictureInPicturePageActive(true)
+            request(consumerRequest())
+            size(320f, 480f)
+        }
         event { onEvent { } }
     }
 }
