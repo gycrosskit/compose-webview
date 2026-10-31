@@ -115,7 +115,6 @@ export class GYWebView extends KuiklyRenderBaseView {
   private cancelPermissionExplanation: (() => void) | null = null;
   private permissionExplanationForFile: boolean = false;
   private hostPermissionExplanation: HostPermissionExplanation | null = null;
-  private nextPermissionExplanationId: number = 0;
   private requestRevision: number = 0;
   private fileResults: Set<FileSelectorResult> = new Set();
   private pageOwnerActive: boolean | null = null;
@@ -571,7 +570,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     if (this.cancelPermissionExplanation || !this.visible || !valid()) return Promise.resolve(false);
     if (this.request?.permissionPresentation === 'HOST') {
       return new Promise<boolean>(resolve => {
-        const requestId = `permission-${++this.nextPermissionExplanationId}`;
+        const requestId = util.generateRandomUUID(true);
         const finish = (accepted: boolean, revoked: boolean): void => {
           if (this.hostPermissionExplanation?.requestId !== requestId) return;
           this.hostPermissionExplanation = null;

@@ -880,6 +880,12 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     const respond = (requestId, accepted) => { let result; host.call('completePermissionExplanation', JSON.stringify({ requestId, accepted }), value => result = value.result); return result; };
     request(); await flushNativeCallbacks();
     const first = events.at(-1); assert.equal(first.type, 'permissionExplanationRequested');
+    const other = new GYWebView(); let otherId;
+    other.setProp('request', encoded(hostPolicy)); other.onControllerAttached(); other.onPageVisible('https://trusted.test/page');
+    other.setProp('onEvent', event => { if (event.type === 'permissionExplanationRequested') otherId = event.requestId; });
+    other.permissionRequest({ getAccessibleResource: () => ['video'], getOrigin: () => 'https://trusted.test', grant: () => {}, deny: () => {} });
+    await flushNativeCallbacks(); assert.notEqual(otherId, first.requestId, 'different native owners must not reuse explanation ids');
+    other.onDestroy();
     assert.deepEqual(Array.from(first.permissions), ['CAMERA', 'MICROPHONE']);
     assert.equal(permissionCalls, calls); assert.equal(permissionDialogs.length, dialogs);
     assert.equal(respond(first.requestId, 'true'), false); assert.equal(respond('stale', true), false);
