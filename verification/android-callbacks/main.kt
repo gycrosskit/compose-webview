@@ -38,6 +38,33 @@ fun main() {
         chooser.release(owner); check(replies.size==1 && replies.single()==null)
         chooser.destroy(); cases++
     }
+    // 宿主用途说明不是外部系统页面，隐藏时撤销。
+    run {
+        val activity=ComponentActivity();val owner=WebView()
+        val permission=AndroidWebPermissionController().apply { systemRequestInFlight=false }
+        val chooser=AndroidWebFileChooserController(activity,{WebViewRequest()},{true},permission)
+        val replies=mutableListOf<Array<Uri>?>()
+        chooser.show(owner,ValueCallback { replies.add(it) },WebChromeClient.FileChooserParams(arrayOf("image/*"),true))
+        check(!chooser.suspendForExternal(owner))
+        chooser.release(owner)
+        check(replies.size==1 && replies.single()==null && permission.callback==null)
+        chooser.destroy();cases++
+    }
+    // 用途说明取消事件同步新建选择器，旧权限取消不能清掉新文件回执。
+    run {
+        val activity=ComponentActivity();val owner=WebView();val permission=AndroidWebPermissionController()
+        val chooser=AndroidWebFileChooserController(activity,{WebViewRequest()},{true},permission)
+        val oldReplies=mutableListOf<Array<Uri>?>();val newReplies=mutableListOf<Array<Uri>?>()
+        chooser.show(owner,ValueCallback { oldReplies.add(it) },WebChromeClient.FileChooserParams(arrayOf("image/*"),true))
+        permission.onCancel={
+            permission.onCancel=null
+            chooser.show(owner,ValueCallback { newReplies.add(it) },WebChromeClient.FileChooserParams())
+        }
+        chooser.release(owner)
+        activity.activityResultRegistry.launchers[0].deliver(ActivityResult(Activity.RESULT_OK,Intent().apply { data=Uri("content://replacement") }))
+        check(oldReplies.size==1 && oldReplies.single()==null && newReplies.single()!!.single().value=="content://replacement")
+        chooser.destroy();cases++
+    }
     for (photo in listOf(false,true)) for (revoke in listOf("hidden","foreign","released")) {
         val activity=ComponentActivity();val permission=AndroidWebPermissionController()
         var attached=true;val owner=WebView();val request=WebViewRequest()

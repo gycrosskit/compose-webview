@@ -37,6 +37,13 @@ class GYWebView : DeclarativeBaseView<GYWebViewAttr, GYWebViewEvent>() {
         }
     }
 
+    /** 一次性说明回执；true 只表示原生接受此 id，不代表系统权限已授权。 */
+    fun completePermissionExplanation(requestId: String, accepted: Boolean, callback: (Boolean) -> Unit = {}) {
+        command("completePermissionExplanation", JSONObject().put("requestId", requestId).put("accepted", accepted).toString()) {
+            callback(it as? Boolean ?: false)
+        }
+    }
+
     private fun command(method: String, params: String? = null, callback: ((Any?) -> Unit)? = null) {
         performTaskWhenRenderViewDidLoad {
             renderView?.callMethod(method, params) { result -> callback?.invoke((result as? JSONObject)?.opt("result")) }

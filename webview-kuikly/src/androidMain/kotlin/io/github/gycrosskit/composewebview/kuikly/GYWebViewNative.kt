@@ -34,12 +34,17 @@ class GYWebViewNative @JvmOverloads constructor(
     private var crashed = false
     private var initialHtmlNavigation = false
     private var callbackGeneration = 0L
+    private var requestGeneration = 0L
     private var documentToken = UUID.randomUUID().toString()
     private var discardEarlyBridgeMessages = false
     private var pageVisible = true
     private var finishedScriptsInjected = false
     private var fullscreenHost: AndroidWebFullscreenHost? = null
     private var capabilities: AndroidWebCapabilities? = null
+    private class PendingPermissionExplanation(val requestId: String, val owner: WebView?, val generation: Long, val complete: (Boolean) -> Unit) {
+        var resolved = false
+    }
+    private var permissionExplanation: PendingPermissionExplanation? = null
     private var popupRouter: AndroidPopupRouter? = null
     private var pageMessageChannels: AndroidPageMessageChannels? = null
     private val earlyScripts = AndroidEarlyScriptInstaller { owner, metric, duration ->
@@ -55,9 +60,12 @@ class GYWebViewNative @JvmOverloads constructor(
                     if (webView != null && !crashed && previous?.copy(navigationPolicy = next.navigationPolicy) == next) {
                         request = next
                     } else {
+                        val generation = ++requestGeneration
                         releaseWebView()
-                        request = next
-                        createWebView(next)
+                        if (!destroyed && generation == requestGeneration) {
+                            request = next
+                            createWebView(next)
+                        }
                     }
                 }
             } catch (error: Exception) {
@@ -80,12 +88,13 @@ class GYWebViewNative @JvmOverloads constructor(
                 callbackGeneration++; pageMessageChannels?.revoke()
                 webView?.let { owner ->
                     val activity = context.findComponentActivity()
-                    if (activity != null && capabilities?.pauseForSystemPicker(owner) == true) {
+                    val oldCapabilities = capabilities
+                    if (activity != null && oldCapabilities?.pauseForSystemPicker(owner) == true) {
                         // renderer.onPause 可能早于 Activity 的 ON_PAUSE；下一轮再区分真正离页。
                         Handler(Looper.getMainLooper()).post {
                             if (owner === webView && !pageVisible && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) capabilities?.release(owner)
                         }
-                    } else capabilities?.release(owner)
+                    } else oldCapabilities?.release(owner)
                 }
                 popupRouter?.release()
             } else webView?.let { capabilities?.resume(it) }
@@ -118,6 +127,19 @@ class GYWebViewNative @JvmOverloads constructor(
                 owner != null
             }
             "exitFullscreen" -> exitFullscreen()
+            "completePermissionExplanation" -> {
+                val value = runCatching { JSONObject(params ?: "{}") }.getOrNull()
+                val requestId = value?.opt("requestId") as? String
+                val accepted = value?.opt("accepted") as? Boolean
+                val pending = permissionExplanation
+                if (!destroyed && !crashed && pageVisible && pending != null && pending.owner === webView &&
+                    pending.generation == callbackGeneration && requestId == pending.requestId && accepted != null) {
+                    permissionExplanation = null
+                    pending.resolved = true
+                    pending.complete(accepted)
+                    true
+                } else false
+            }
             "evaluateJavascript" -> {
                 val script = runCatching { JSONObject(params ?: "{}").getString("script") }.getOrNull()
                 if (owner != null && script != null && pageVisible && request?.canEvaluateJavascriptAt(owner.url) == true) {
@@ -157,7 +179,8 @@ class GYWebViewNative @JvmOverloads constructor(
         val hostActivity = context.findComponentActivity()
         capabilities = hostActivity?.let {
             AndroidWebCapabilities(it, { requireNotNull(request) }, { target -> target === webView && pageVisible && !destroyed && !crashed },
-                { emit(WebViewEvent.PermissionSettingsRequired(it)) })
+                { emit(WebViewEvent.PermissionSettingsRequired(it)) },
+                if (current.permissionPresentation == WebViewPermissionPresentation.HOST) ::showPermissionExplanation else null)
         }
         popupRouter = AndroidPopupRouter({ requireNotNull(request) }, { emit(WebViewEvent.Navigation(it, true)) }) { navigation ->
             if (route(navigation)) WebViewNavigationDecision.BLOCK else WebViewNavigationDecision.ALLOW
@@ -171,7 +194,12 @@ class GYWebViewNative @JvmOverloads constructor(
                 initialHtmlNavigation = false
                 finishedScriptsInjected = false
                 discardEarlyBridgeMessages = !pageVisible
-                callbackGeneration++; documentToken = UUID.randomUUID().toString(); capabilities?.release(owner); popupRouter?.release()
+                callbackGeneration++; documentToken = UUID.randomUUID().toString()
+                val oldCapabilities = capabilities
+                val oldPopupRouter = popupRouter
+                oldCapabilities?.release(owner)
+                oldPopupRouter?.release()
+                if (owner !== webView || destroyed) return
                 emit(WebViewEvent.PageStarted(url)); history(owner) }
             override fun onPageLoadFinished(url: String?) { if (owner !== webView || destroyed) return; emit(WebViewEvent.PageFinished(url)); history(owner) }
             override fun onPageCommitVisible(url: String?) { if (owner !== webView || destroyed) return; emit(WebViewEvent.FirstContentVisible(url)) }
@@ -181,6 +209,7 @@ class GYWebViewNative @JvmOverloads constructor(
                 if (error.kind == WebViewErrorKind.RENDER_PROCESS) {
                     crashed = true
                     WebViewDiagnostics.markReleased(owner, true)
+                    capabilities?.release(owner)
                 }
                 emit(WebViewEvent.LoadFailed(error))
             }
@@ -254,7 +283,12 @@ class GYWebViewNative @JvmOverloads constructor(
         val internalHtmlLoad = initialHtmlNavigation && navigation.isInternalHtmlInitialNavigation()
         if (navigation.isMainFrame) initialHtmlNavigation = false
         val blocked = (!internalHtmlLoad && request?.allowsNavigation(navigation) != true) || destroyed || crashed
-        if (!blocked && navigation.isMainFrame && !internalHtmlLoad) pageMessageChannels?.revoke()
+        if (!blocked && navigation.isMainFrame && !internalHtmlLoad) {
+            val owner = webView
+            val oldCapabilities = capabilities
+            pageMessageChannels?.revoke()
+            if (owner != null) oldCapabilities?.release(owner)
+        }
         emit(WebViewEvent.Navigation(navigation, blocked))
         return blocked
     }
@@ -285,29 +319,52 @@ class GYWebViewNative @JvmOverloads constructor(
 
     private fun emit(event: WebViewEvent) { if (!destroyed) onEvent?.invoke(WebViewWire.eventValues(event)) }
 
+    private fun showPermissionExplanation(permissions: Set<WebViewPermission>, complete: (Boolean) -> Unit): () -> Unit {
+        val pending = PendingPermissionExplanation(UUID.randomUUID().toString(), webView, callbackGeneration, complete)
+        permissionExplanation = pending
+        emit(WebViewEvent.PermissionExplanationRequested(pending.requestId, permissions))
+        return {
+            if (!pending.resolved) {
+                pending.resolved = true
+                if (permissionExplanation === pending) permissionExplanation = null
+                // 同步重入后仍须撤掉旧说明，且不能清掉新请求；销毁也交付取消。
+                onEvent?.invoke(WebViewWire.eventValues(WebViewEvent.PermissionExplanationCancelled(pending.requestId)))
+            }
+        }
+    }
+
     private fun exitFullscreen(): Boolean = fullscreenHost?.hide() ?: false
 
     private fun releaseWebView() {
         callbackGeneration++
-        pageMessageChannels?.revoke()
+        val owner = webView
+        val oldCapabilities = capabilities
+        val oldPopupRouter = popupRouter
+        val oldChannels = pageMessageChannels
+        val oldFullscreen = fullscreenHost
+        val wasCrashed = crashed
+        webView = null
+        capabilities = null
+        popupRouter = null
         pageMessageChannels = null
+        fullscreenHost = null
         initialHtmlNavigation = false
         finishedScriptsInjected = false
-        exitFullscreen()
-        fullscreenHost = null
-        val owner = webView ?: return
-        webView = null
-        popupRouter?.release(); popupRouter = null
-        capabilities?.release(owner); capabilities?.destroy(); capabilities = null
-        WebViewDiagnostics.markReleased(owner, crashed)
+        crashed = false
+        oldChannels?.revoke()
+        oldFullscreen?.hide()
+        oldPopupRouter?.release()
+        if (owner == null) { oldCapabilities?.destroy(); return }
+        oldCapabilities?.release(owner)
+        oldCapabilities?.destroy()
+        WebViewDiagnostics.markReleased(owner, wasCrashed)
         earlyScripts.remove(owner)
         owner.removeAppWebBridge()
-        if (!crashed) { runCatching { owner.onPause() }; runCatching { owner.stopLoading() } }
+        if (!wasCrashed) { runCatching { owner.onPause() }; runCatching { owner.stopLoading() } }
         removeView(owner)
         owner.webChromeClient = null
         owner.webViewClient = android.webkit.WebViewClient()
         runCatching { owner.destroy() }
-        crashed = false
     }
 
     override fun onDestroy() {

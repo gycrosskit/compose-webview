@@ -15,16 +15,26 @@ import androidx.activity.ComponentActivity
  * @param request 获取当前最新声明式请求。
  * @param isAttached 确認原生实例仍属于可见页面；异步结果交付前再次检查。
  * @param onPermissionSettingsRequired 系统拒绝且不提供重试说明时交付设置提示；不得自动打开设置页。
+ * @param showPermissionExplanation 替换用途说明 UI，返回撤销句柄；系统权限申请仍由组件执行。
  */
 class AndroidWebCapabilities(
     activity: ComponentActivity,
     request: () -> WebViewRequest,
     isAttached: (WebView) -> Boolean,
     onPermissionSettingsRequired: (Set<WebViewPermission>) -> Unit,
+    showPermissionExplanation: ((Set<WebViewPermission>, (Boolean) -> Unit) -> (() -> Unit))?,
 ) {
+    constructor(
+        activity: ComponentActivity,
+        request: () -> WebViewRequest,
+        isAttached: (WebView) -> Boolean,
+        onPermissionSettingsRequired: (Set<WebViewPermission>) -> Unit,
+    ) : this(activity, request, isAttached, onPermissionSettingsRequired, null)
+
     private val permissions = AndroidWebPermissionController(
         activity = activity,
         onPermissionSettingsRequired = onPermissionSettingsRequired,
+        showPermissionExplanation = showPermissionExplanation,
     )
     private val fileChooser = AndroidWebFileChooserController(
         activity = activity,

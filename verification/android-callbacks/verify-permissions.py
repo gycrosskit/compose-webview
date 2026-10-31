@@ -95,8 +95,10 @@ with TemporaryDirectory(prefix='webview-permissions-') as directory:
         (output / name).write_text(fixtures[name])
     sources = [str(output / name) for name in names]
     sources += [str(ROOT / 'webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebPermissionController.kt'),
-                str(Path(__file__).with_name('permission-main.kt'))]
+                str(Path(__file__).with_name('permission-main.kt')),
+                str(Path(__file__).with_name('host-permission-main.kt'))]
     subprocess.run(['java', '-cp', os.pathsep.join(compiler), 'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler',
                     '-no-stdlib', '-no-reflect', '-classpath', compiler[1], '-d', str(output / 'classes'), *sources], check=True)
-    subprocess.run(['java', '-cp', str(output / 'classes') + os.pathsep + compiler[1],
-                    'io.github.gycrosskit.composewebview.Permission_mainKt'], check=True)
+    for main in ('Permission_mainKt', 'Host_permission_mainKt'):
+        subprocess.run(['java', '-cp', str(output / 'classes') + os.pathsep + compiler[1],
+                        'io.github.gycrosskit.composewebview.' + main], check=True)

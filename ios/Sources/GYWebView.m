@@ -172,6 +172,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 @property(nonatomic, assign) NSUInteger filePickerRevision;
 @property(nonatomic, strong) NSNumber *pageOwnerActive;
 @property(nonatomic, strong) UIAlertController *permissionExplanation;
+@property(nonatomic, copy) NSString *permissionExplanationRequestId;
 @property(nonatomic, copy) void (^permissionExplanationCompletion)(BOOL);
 @property(nonatomic, assign) BOOL permissionExplanationForFilePicker;
 @property(nonatomic, copy) void (^pendingFilePickerAction)(void);
@@ -279,6 +280,8 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 }
 - (BOOL)validRequest:(NSDictionary *)request {
     if (!request) return NO;
+    id presentation = request[@"permissionPresentation"];
+    if (presentation && ![@[@"NATIVE", @"HOST"] containsObject:presentation]) return NO;
     NSDictionary *content = request[@"content"], *security = request[@"security"], *settings = request[@"settings"], *policy = request[@"navigationPolicy"];
     if (![content isKindOfClass:NSDictionary.class]) return NO;
     for (id value in @[security ?: @{}, settings ?: @{}, policy ?: @{}]) if (![value isKindOfClass:NSDictionary.class]) return NO;
@@ -667,7 +670,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO) && [self trusted:url] && [self trusted:view.URL.absoluteString] &&
         [GYFrameOrigin(frame) isEqual:GYOrigin(url)] && [GYOrigin(url) isEqual:GYOrigin(view.URL.absoluteString)] &&
         [GYPageMessageDocumentURL(frame.request.URL.absoluteString) isEqual:GYPageMessageDocumentURL(view.URL.absoluteString)];
-    if (!allow || self.permissionExplanation) { decision(WKPermissionDecisionDeny); return; }
+    if (!allow || self.permissionExplanationCompletion) { decision(WKPermissionDecisionDeny); return; }
     NSArray<AVMediaType> *mediaTypes;
     switch (type) {
         case WKMediaCaptureTypeCamera: mediaTypes = @[AVMediaTypeVideo]; break;
@@ -691,7 +694,10 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     }
     NSUInteger generation = self.callbackGeneration;
     [self explainMediaPermissions:undetermined fileCapture:NO completion:^(BOOL accepted) {
-        BOOL current = accepted && !self.released && self.webView == view && self.pageVisible && (!self.pageOwnerActive || self.pageOwnerActive.boolValue) && self.callbackGeneration == generation;
+        BOOL current = accepted && !self.released && self.webView == view && self.pageVisible && (!self.pageOwnerActive || self.pageOwnerActive.boolValue) && self.callbackGeneration == generation &&
+            frame.isMainFrame && frame.webView == view && GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO) && [self trusted:url] && [self trusted:view.URL.absoluteString] &&
+            [GYFrameOrigin(frame) isEqual:GYOrigin(url)] && [GYOrigin(url) isEqual:GYOrigin(view.URL.absoluteString)] &&
+            [GYPageMessageDocumentURL(frame.request.URL.absoluteString) isEqual:GYPageMessageDocumentURL(view.URL.absoluteString)];
         if (!current) { decision(WKPermissionDecisionDeny); return; }
         // 说明停留期间，系统设置可能已被更改；继续前重新读取，不把 UI 确认当成授权。
         NSMutableArray<NSString *> *nowDenied = [NSMutableArray array];
@@ -755,9 +761,21 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 }
 - (void)hrv_callWithMethod:(NSString *)method params:(NSString *)params callback:(KuiklyRenderCallback)callback {
     WKWebView *owner = self.webView;
-    if (self.released) { if ([@[@"replyPageMessage", @"goBack", @"exitFullscreen"] containsObject:method] && callback) callback(@{@"result": @NO}); return; }
+    if (self.released) { if ([@[@"replyPageMessage", @"goBack", @"exitFullscreen", @"completePermissionExplanation"] containsObject:method] && callback) callback(@{@"result": @NO}); return; }
     id result = @NO;
-    if ([method isEqual:@"reload"]) {
+    if ([method isEqual:@"completePermissionExplanation"]) {
+        NSDictionary *value = GYObject(params);
+        NSString *requestId = GYString(value[@"requestId"]);
+        id accepted = value[@"accepted"];
+        if (requestId && [requestId isEqual:self.permissionExplanationRequestId] && self.permissionExplanationCompletion &&
+            [accepted isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)accepted) == CFBooleanGetTypeID()) {
+            self.permissionExplanationRequestId = nil;
+            void (^finish)(void) = [self takePermissionExplanationResult:[accepted boolValue]];
+            if (finish) finish();
+            result = @YES;
+        }
+    }
+    else if ([method isEqual:@"reload"]) {
         // 重建具名频道 owner，旧文档不能抢占宿主 reload 的下一次导航授权。
         if (owner && [self.request[@"pageMessageChannels"] count]) {
             NSUInteger generation = self.callbackGeneration + 1;
@@ -850,10 +868,15 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 - (void (^)(void))takePermissionExplanationResult:(BOOL)accepted {
     void (^completion)(BOOL) = self.permissionExplanationCompletion;
     UIAlertController *alert = self.permissionExplanation;
+    NSString *requestId = self.permissionExplanationRequestId;
+    KuiklyRenderCallback cancelled = requestId ? self.onEvent : nil;
     self.permissionExplanation = nil; self.permissionExplanationCompletion = nil;
+    self.permissionExplanationRequestId = nil;
     self.permissionExplanationForFilePicker = NO;
     if (!completion) return nil;
     return ^{
+        // 释放时也交付宿主撤销通知；旧状态已摘除，事件重入不会清除新说明。
+        if (cancelled) cancelled(@{@"type": @"permissionExplanationCancelled", @"requestId": requestId});
         void (^settle)(void) = ^{ completion(accepted); };
         id<UIViewControllerTransitionCoordinator> transition = alert.transitionCoordinator;
         // UIAlertAction 可能已开始自动退出，等同一次转场结束后再交付结果。
@@ -871,8 +894,19 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     if (finish) finish();
 }
 - (void)explainMediaPermissions:(NSArray<AVMediaType> *)mediaTypes fileCapture:(BOOL)fileCapture completion:(void (^)(BOOL))completion {
-    if (self.permissionExplanation) { completion(NO); return; }
+    if (self.permissionExplanationCompletion) { completion(NO); return; }
     if (!mediaTypes.count) { completion(YES); return; }
+    if ([self.request[@"permissionPresentation"] isEqual:@"HOST"]) {
+        if (!self.pageVisible || self.released || (self.pageOwnerActive && !self.pageOwnerActive.boolValue) || !self.onEvent) { completion(NO); return; }
+        self.permissionExplanationCompletion = completion;
+        self.permissionExplanationForFilePicker = fileCapture;
+        self.permissionExplanationRequestId = NSUUID.UUID.UUIDString;
+        NSMutableArray<NSString *> *permissions = [NSMutableArray array];
+        if ([mediaTypes containsObject:AVMediaTypeVideo]) [permissions addObject:@"CAMERA"];
+        if ([mediaTypes containsObject:AVMediaTypeAudio]) [permissions addObject:@"MICROPHONE"];
+        [self emit:@{@"type": @"permissionExplanationRequested", @"requestId": self.permissionExplanationRequestId, @"permissions": permissions}];
+        return;
+    }
     UIViewController *presenter = [self filePresenter];
     if (!presenter || !self.pageVisible || self.released) { completion(NO); return; }
     BOOL camera = [mediaTypes containsObject:AVMediaTypeVideo], microphone = [mediaTypes containsObject:AVMediaTypeAudio];

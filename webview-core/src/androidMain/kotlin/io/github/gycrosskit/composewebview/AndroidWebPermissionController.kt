@@ -10,9 +10,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import java.util.UUID
 
-/** 串行管理 WebView 的原生权限说明与系统申请。 */
+/** 串行管理 WebView 的权限说明与原生系统申请。 */
 internal class AndroidWebPermissionController(
     private val activity: ComponentActivity,
+    private val showPermissionExplanation: ((Set<WebViewPermission>, (Boolean) -> Unit) -> (() -> Unit))? = null,
     private val onPermissionSettingsRequired: (Set<WebViewPermission>) -> Unit,
 ) {
     private data class PendingPermission(
@@ -30,6 +31,7 @@ internal class AndroidWebPermissionController(
     private val queue = ArrayDeque<PendingPermission>()
     private var active: PendingPermission? = null
     private var explanation: AlertDialog? = null
+    private var cancelHostExplanation: (() -> Unit)? = null
     private var systemRequestInFlight = false
     private var destroyed = false
     private val launcher = activity.activityResultRegistry.register(
@@ -96,12 +98,18 @@ internal class AndroidWebPermissionController(
         pending.cancelled = true
         if (systemRequestInFlight) return
         active = null
+        val cancelHost = cancelHostExplanation
+        cancelHostExplanation = null
         explanation?.setOnCancelListener(null)
         explanation?.setOnDismissListener(null)
         explanation?.dismiss()
         explanation = null
+        cancelHost?.invoke()
         launchNext()
     }
+
+    fun isSystemRequestInFlight(key: Any?): Boolean =
+        key != null && active?.key === key && systemRequestInFlight
 
     fun isGranted(permission: String): Boolean =
         ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED
@@ -112,10 +120,13 @@ internal class AndroidWebPermissionController(
         queue.clear()
         active = null
         systemRequestInFlight = false
+        val cancelHost = cancelHostExplanation
+        cancelHostExplanation = null
         explanation?.setOnCancelListener(null)
         explanation?.setOnDismissListener(null)
         explanation?.dismiss()
         explanation = null
+        cancelHost?.invoke()
         launcher.unregister()
     }
 
@@ -142,6 +153,27 @@ internal class AndroidWebPermissionController(
     }
 
     private fun showExplanation(next: PendingPermission, missing: List<String>) {
+        val host = showPermissionExplanation
+        if (host != null) {
+            runCatching {
+                val cancel = host(missing.toWebViewPermissions()) { accepted ->
+                    if (!destroyed && active === next && !next.cancelled && !systemRequestInFlight) {
+                        cancelHostExplanation = null
+                        if (accepted) launchSystemPermission(next, missing)
+                        else completeExplanation(next, granted = false)
+                    }
+                }
+                // 宿主事件可能同步确认、隐藏或替换 owner；旧取消句柄不能覆盖新请求。
+                if (active === next && !next.cancelled && !systemRequestInFlight) cancelHostExplanation = cancel
+                else cancel()
+            }.onFailure {
+                if (active === next && !next.cancelled) {
+                    logWebError("无法展示宿主 WebView 权限用途说明", it)
+                    completeExplanation(next, granted = false)
+                }
+            }
+            return
+        }
         val content = activity.webPermissionExplanation(next.purpose, missing)
         var launchAfterDismiss = false
         runCatching {

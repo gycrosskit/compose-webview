@@ -1,5 +1,8 @@
 package io.github.gycrosskit.composewebview
 
+/** NATIVE 保留平台说明；HOST 等待宿主说明回执，仍由原生申请和验证系统权限。 */
+enum class WebViewPermissionPresentation { NATIVE, HOST }
+
 /**
  * 单个网页实例的声明式输入；事件回调由具体 UI 控件单独持有。
  *
@@ -9,6 +12,7 @@ package io.github.gycrosskit.composewebview
  * @property scripts 按声明时机在可信主文档执行的命名脚本。
  * @property blockedResourceRules 平台支持时应拦截的子资源规则，默认空。
  * @property navigationPolicy 原生同步导航门禁；默认允许 HTTP/HTTPS 并拒绝新窗口。
+ * @property permissionPresentation HOST 交由宿主显示用途说明并回执；默认 NATIVE 保留原生说明。
  * @property pageMessageChannels 初始 HTTP(S) 主文档的具名早期消息入口，默认关闭；不授予应用 Bridge 权限。
  */
 data class WebViewRequest(
@@ -19,6 +23,7 @@ data class WebViewRequest(
     val blockedResourceRules: List<WebViewUrlRule> = emptyList(),
     val navigationPolicy: WebViewNavigationPolicy = WebViewNavigationPolicy(),
     val pageMessageChannels: Set<String> = emptySet(),
+    val permissionPresentation: WebViewPermissionPresentation = WebViewPermissionPresentation.NATIVE,
 ) {
     init {
         require(pageMessageChannels.size <= 16 && pageMessageChannels.all(::isValidPageMessageChannel)) {

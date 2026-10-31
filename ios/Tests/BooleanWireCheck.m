@@ -141,6 +141,13 @@ static void CheckPictureInPictureMediaVisibility(void) {
     return self.permissionPresenter;
 }
 @end
+@interface PermissionRequestPage : PermissionPage
+@property(nonatomic, copy) NSDictionary *loadedRequest;
+@property(nonatomic) NSUInteger loads;
+@end
+@implementation PermissionRequestPage
+- (void)loadContent { self.loadedRequest = self.request; self.loads++; }
+@end
 // WKSecurityOrigin 禁止直接初始化；fixture 只提供生产门禁读取的 origin 属性。
 @interface PermissionOrigin : NSObject
 @end
@@ -324,6 +331,199 @@ static void DeliverCapturePermission(BOOL granted) {
     __block BOOL drained = NO;
     dispatch_async(dispatch_get_main_queue(), ^{ drained = YES; });
     WaitUntil(^BOOL { return drained; }, @"Capture permission callback did not reach the main queue");
+}
+static BOOL CompleteHostExplanation(GYWebView *page, NSString *requestId, id accepted) {
+    __block BOOL received = NO, result = NO;
+    NSDictionary *value = @{@"requestId": requestId ?: @"", @"accepted": accepted ?: NSNull.null};
+    [page hrv_callWithMethod:@"completePermissionExplanation" params:RequestJSON(value) callback:^(id response) {
+        RequireBoolean(response[@"result"], [response[@"result"] boolValue], @"Host explanation receipt");
+        received = YES; result = [response[@"result"] boolValue];
+    }];
+    Require(received, @"Host explanation command must always return a receipt");
+    return result;
+}
+static void CheckHostPermissionExplanation(void) {
+    GYWebView *validation = [[GYWebView alloc] initWithFrame:CGRectZero];
+    NSMutableDictionary *request = [@{@"content": @{@"type": @"url", @"url": @"https://safe.example"}} mutableCopy];
+    Require([validation validRequest:request], @"Missing permission presentation must keep the native default");
+    for (id presentation in @[@"NATIVE", @"HOST", @"host", @YES, NSNull.null]) {
+        request[@"permissionPresentation"] = presentation;
+        Require([validation validRequest:request] == [@[@"NATIVE", @"HOST"] containsObject:presentation], @"Permission presentation wire accepted an invalid mode");
+    }
+    [validation hrv_removeFromSuperview];
+    for (NSNumber *accepted in @[@NO, @YES]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        page.request = @{@"permissionPresentation": @"HOST"};
+        __block NSDictionary *event;
+        __block NSUInteger replies = 0, events = 0;
+        page.onEvent = ^(id value) { event = JSONRoundTrip(value); events++; };
+        [page explainMediaPermissions:@[AVMediaTypeVideo, AVMediaTypeAudio] fileCapture:NO completion:^(BOOL value) {
+            Require(value == accepted.boolValue, @"Host explanation changed its answer"); replies++;
+        }];
+        NSString *requestId = event[@"requestId"];
+        Require([event[@"type"] isEqual:@"permissionExplanationRequested"] && requestId.length &&
+            [event[@"permissions"] isEqual:@[@"CAMERA", @"MICROPHONE"]] && !page.permissionExplanation && !page.permissionPresenter,
+            @"HOST must emit wire capabilities without creating a native presenter");
+        for (id invalid in @[@1, @"true", NSNull.null]) Require(!CompleteHostExplanation(page, requestId, invalid), @"Host explanation accepted a non-Boolean answer");
+        Require(!CompleteHostExplanation(page, @"stale", accepted) && replies == 0, @"Stale host id completed a pending explanation");
+        Require(CompleteHostExplanation(page, requestId, accepted) && replies == 1 && events == 1, @"Host answer must settle exactly once without a cancellation echo");
+        Require(!CompleteHostExplanation(page, requestId, @YES) && replies == 1, @"Duplicate host answer settled twice");
+        [page hrv_removeFromSuperview];
+        Require(!CompleteHostExplanation(page, requestId, @YES), @"Released owner accepted a host answer");
+    }
+    for (NSString *mode in @[@"hide", @"navigate", @"stop", @"leave", @"file", @"release", @"reentrant"]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
+        page.request = @{@"permissionPresentation": @"HOST"};
+        __block NSMutableArray *events = [NSMutableArray array];
+        __block NSUInteger replies = 0, freshReplies = 0;
+        __weak PermissionPage *weakPage = page;
+        page.onEvent = ^(id value) {
+            [events addObject:JSONRoundTrip(value)];
+            if ([mode isEqual:@"reentrant"] && [value[@"type"] isEqual:@"permissionExplanationCancelled"])
+                [weakPage explainMediaPermissions:@[AVMediaTypeAudio] fileCapture:NO completion:^(BOOL accepted) { freshReplies++; }];
+        };
+        [page explainMediaPermissions:@[AVMediaTypeVideo] fileCapture:YES completion:^(BOOL value) { Require(!value, @"Revoked HOST explanation was accepted"); replies++; }];
+        NSString *old = page.permissionExplanationRequestId;
+        if ([mode isEqual:@"hide"]) [page hrv_setPropWithKey:@"visible" propValue:@NO];
+        else if ([mode isEqual:@"navigate"]) [page webView:page.webView didStartProvisionalNavigation:nil];
+        else if ([mode isEqual:@"stop"]) [page hrv_callWithMethod:@"stopLoading" params:nil callback:nil];
+        else if ([mode isEqual:@"leave"]) [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
+        else if ([mode isEqual:@"release"]) { page.webView = nil; [page hrv_removeFromSuperview]; }
+        else [page cancelFilePicker];
+        Require(replies == 1 && [events[1][@"type"] isEqual:@"permissionExplanationCancelled"] && [events[1][@"requestId"] isEqual:old], @"Lifecycle cancellation must notify HOST and settle once");
+        Require(!CompleteHostExplanation(page, old, @YES) && replies == 1, @"Cancelled HOST explanation accepted a late answer");
+        if ([mode isEqual:@"reentrant"]) Require(page.permissionExplanationRequestId && ![page.permissionExplanationRequestId isEqual:old] && freshReplies == 0, @"Old cancellation cleared a reentrant HOST explanation");
+        else Require(events.count == 2, @"Lifecycle cancellation emitted more than one HOST cancellation");
+        page.onEvent = nil; page.webView = nil;
+        [page hrv_removeFromSuperview];
+    }
+    for (NSNumber *policyOnly in @[@YES, @NO]) for (NSNumber *validOuter in @[@YES, @NO]) {
+        PermissionRequestPage *page = [[PermissionRequestPage alloc] initWithFrame:CGRectZero];
+        NSDictionary *initial = @{@"content": @{@"type": @"url", @"url": @"https://safe.example/initial"}, @"permissionPresentation": @"HOST"};
+        NSMutableDictionary *replacement = [initial mutableCopy];
+        if (policyOnly.boolValue) replacement[@"navigationPolicy"] = @{@"allowedOrigins": @[@"https://safe.example"]};
+        else replacement[@"content"] = @{@"type": @"url", @"url": @"https://safe.example/reentrant"};
+        [page hrv_setPropWithKey:@"request" propValue:RequestJSON(initial)];
+        WKWebView *oldOwner = page.webView;
+        __block WKWebView *freshOwner;
+        __block NSString *freshId;
+        __block NSUInteger cancellations = 0, replies = 0, freshReplies = 0;
+        __weak PermissionRequestPage *weakPage = page;
+        page.onEvent = ^(id event) {
+            if (![event[@"type"] isEqual:@"permissionExplanationCancelled"]) return;
+            cancellations++;
+            [weakPage hrv_setPropWithKey:@"request" propValue:RequestJSON(replacement)];
+            freshOwner = weakPage.webView;
+            [weakPage explainMediaPermissions:@[AVMediaTypeAudio] fileCapture:NO completion:^(BOOL accepted) { freshReplies++; }];
+            freshId = weakPage.permissionExplanationRequestId;
+        };
+        [page explainMediaPermissions:@[AVMediaTypeVideo] fileCapture:NO completion:^(BOOL accepted) { Require(!accepted, @"Replacing request accepted its old HOST explanation"); replies++; }];
+        NSString *oldId = page.permissionExplanationRequestId;
+        NSDictionary *outer = validOuter.boolValue ? @{@"content": @{@"type": @"url", @"url": @"https://safe.example/outer"}, @"permissionPresentation": @"HOST"} : @{};
+        [page hrv_setPropWithKey:@"request" propValue:RequestJSON(outer)];
+        Require(cancellations == 1 && replies == 1 && freshReplies == 0 && freshOwner && freshOwner != oldOwner && page.webView == freshOwner,
+            @"Old request setter cleared the reentrant owner or HOST explanation");
+        Require([page.request isEqual:replacement] && [page.loadedRequest isEqual:replacement] && page.loads == 2 && [page.permissionExplanationRequestId isEqual:freshId],
+            @"Old request setter overwrote a reentrant content or navigationPolicy-only request");
+        Require(!CompleteHostExplanation(page, oldId, @YES) && freshReplies == 0, @"Old request id completed the reentrant explanation");
+        Require(CompleteHostExplanation(page, freshId, @YES) && freshReplies == 1, @"Reentrant HOST explanation did not remain usable");
+        page.onEvent = nil;
+        [page hrv_removeFromSuperview];
+    }
+    puts("PASS: HOST explanation wire: strict answers, confirmation/decline, stale/duplicate receipts, lifecycle cancellation, release and event reentry");
+}
+static void CheckHostMediaPermissionContinuation(void) {
+    Method status = class_getClassMethod(AVCaptureDevice.class, @selector(authorizationStatusForMediaType:));
+    IMP originalStatus = method_setImplementation(status, (IMP)CapturePermissionStatus);
+    for (NSString *mode in @[@"accept", @"decline", @"denied", @"restricted", @"frame", @"child", @"source", @"owner", @"hidden", @"inactive", @"generation", @"sync"]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        WKWebView *owner = [[UploadWebView alloc] initWithFrame:CGRectZero]; page.webView = owner;
+        page.request = @{@"permissionPresentation": @"HOST", @"security": @{@"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+        PermissionFrame *frame = [PermissionFrame new]; frame.probeWebView = owner;
+        capturePermissionStatus = AVAuthorizationStatusNotDetermined;
+        __block NSUInteger replies = 0, settings = 0, explanations = 0;
+        __block WKPermissionDecision decision = WKPermissionDecisionGrant;
+        __weak PermissionPage *weakPage = page;
+        page.onEvent = ^(id event) {
+            if ([event[@"type"] isEqual:@"permissionSettingsRequired"]) settings++;
+            if ([event[@"type"] isEqual:@"permissionExplanationRequested"]) {
+                explanations++;
+                Require([event[@"permissions"] isEqual:@[@"CAMERA", @"MICROPHONE"]], @"WebRTC HOST lost native media capabilities");
+                if ([mode isEqual:@"sync"]) Require(CompleteHostExplanation(weakPage, event[@"requestId"], @YES), @"Synchronous HOST answer failed");
+            }
+        };
+        [page webView:owner requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)[PermissionOrigin new] initiatedByFrame:(WKFrameInfo *)frame type:WKMediaCaptureTypeCameraAndMicrophone decisionHandler:^(WKPermissionDecision value) { replies++; decision = value; }];
+        NSString *requestId = page.permissionExplanationRequestId;
+        if (![mode isEqual:@"sync"]) {
+            Require(replies == 0 && requestId.length, @"WebRTC must wait for HOST explanation");
+            __block NSUInteger concurrentReplies = 0;
+            [page webView:owner requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)[PermissionOrigin new] initiatedByFrame:(WKFrameInfo *)frame type:WKMediaCaptureTypeCamera decisionHandler:^(WKPermissionDecision value) { Require(value == WKPermissionDecisionDeny, @"Concurrent media request replaced HOST owner"); concurrentReplies++; }];
+            Require(concurrentReplies == 1 && [requestId isEqual:page.permissionExplanationRequestId], @"Concurrent media request displaced the explanation");
+            if ([mode isEqual:@"denied"]) capturePermissionStatus = AVAuthorizationStatusDenied;
+            if ([mode isEqual:@"restricted"]) capturePermissionStatus = AVAuthorizationStatusRestricted;
+            if ([mode isEqual:@"frame"]) frame.probeURL = @"https://safe.example/changed";
+            if ([mode isEqual:@"child"]) frame.childFrame = YES;
+            if ([mode isEqual:@"source"]) page.request = @{@"permissionPresentation": @"HOST", @"security": @{@"mediaCaptureEnabled": @NO}};
+            if ([mode isEqual:@"owner"]) frame.probeWebView = [[UploadWebView alloc] initWithFrame:CGRectZero];
+            if ([mode isEqual:@"hidden"]) page.pageVisible = NO;
+            if ([mode isEqual:@"inactive"]) page.pageOwnerActive = @NO;
+            if ([mode isEqual:@"generation"]) page.callbackGeneration++;
+            Require(CompleteHostExplanation(page, requestId, [mode isEqual:@"decline"] ? @NO : @YES), @"Current HOST receipt failed");
+            Require(!CompleteHostExplanation(page, requestId, @YES), @"WebRTC accepted duplicate HOST answer");
+        }
+        Require(replies == 1 && explanations == 1 && settings == ([mode isEqual:@"denied"] ? 1 : 0), @"WebRTC HOST continuation did not settle or inspect current AV status");
+        Require(decision == ([@[@"accept", @"sync"] containsObject:mode] ? WKPermissionDecisionPrompt : WKPermissionDecisionDeny), @"HOST confirmation bypassed WebKit Prompt or current frame/source/owner/visibility checks");
+        page.onEvent = nil; page.webView = nil; [page hrv_removeFromSuperview];
+    }
+    Method request = class_getClassMethod(AVCaptureDevice.class, @selector(requestAccessForMediaType:completionHandler:));
+    Method available = class_getClassMethod(UIImagePickerController.class, @selector(isSourceTypeAvailable:));
+    Method usage = class_getInstanceMethod(NSBundle.class, @selector(objectForInfoDictionaryKey:));
+    originalCaptureRequest = method_setImplementation(request, (IMP)CapturePermissionRequest);
+    originalCameraAvailable = method_setImplementation(available, (IMP)CaptureCameraAvailable);
+    originalUsageDescription = method_setImplementation(usage, (IMP)CaptureUsageDescription);
+    for (NSString *mode in @[@"camera", @"microphone", @"decline", @"denied", @"leave", @"reentrant"]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
+        page.request = @{@"permissionPresentation": @"HOST", @"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+        page.fileOrigin = @"https://safe.example"; page.fileTypes = [mode isEqual:@"microphone"] ? @[UTTypeMovie] : @[UTTypeImage];
+        page.filePickerGeneration = page.callbackGeneration;
+        capturePermissionStatus = AVAuthorizationStatusNotDetermined; capturePermissionReplies = [NSMutableArray array];
+        __block NSUInteger replies = 0, freshReplies = 0;
+        __block NSDictionary *explanation;
+        __weak PermissionPage *weakPage = page;
+        page.onEvent = ^(id event) { if ([event[@"type"] isEqual:@"permissionExplanationRequested"]) explanation = event; };
+        page.filePickerCompletion = ^(NSArray<NSURL *> *files) {
+            Require(files == nil, @"HOST capture denial disclosed files"); replies++;
+            if ([mode isEqual:@"reentrant"]) {
+                weakPage.filePickerGeneration = weakPage.callbackGeneration;
+                weakPage.filePickerCompletion = ^(NSArray<NSURL *> *value) { freshReplies++; };
+                [weakPage captureFile:weakPage.webView];
+            }
+        };
+        [page captureFile:page.webView];
+        NSString *old = page.permissionExplanationRequestId;
+        Require(old.length && capturePermissionReplies.count == 0 && [explanation[@"permissions"] isEqual:([mode isEqual:@"microphone"] ? @[@"CAMERA", @"MICROPHONE"] : @[@"CAMERA"])], @"File capture must ask HOST before system authorization");
+        if ([mode isEqual:@"denied"]) capturePermissionStatus = AVAuthorizationStatusDenied;
+        if ([mode isEqual:@"leave"]) [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
+        else Require(CompleteHostExplanation(page, old, [@[@"decline", @"reentrant"] containsObject:mode] ? @NO : @YES), @"File capture HOST receipt failed");
+        if ([@[@"camera", @"microphone"] containsObject:mode]) {
+            Require(capturePermissionReplies.count == 1, @"HOST confirmation must still request real camera access");
+            if ([mode isEqual:@"microphone"]) { DeliverCapturePermission(YES); Require(capturePermissionReplies.count == 1, @"Video capture skipped real microphone access"); }
+            capturePermissionStatus = AVAuthorizationStatusDenied;
+            DeliverCapturePermission(NO);
+        }
+        Require(replies == 1 && freshReplies == 0 && capturePermissionReplies.count == 0, @"File capture HOST cancellation failed to settle once or prompted unexpectedly");
+        Require(!CompleteHostExplanation(page, old, @YES), @"File capture accepted a stale HOST answer");
+        if ([mode isEqual:@"reentrant"]) Require(page.permissionExplanationRequestId && ![old isEqual:page.permissionExplanationRequestId], @"Old HOST answer cancelled reentrant capture");
+        page.onEvent = nil; page.webView = nil; [page hrv_removeFromSuperview];
+    }
+    method_setImplementation(status, originalStatus);
+    method_setImplementation(request, originalCaptureRequest);
+    method_setImplementation(available, originalCameraAvailable);
+    method_setImplementation(usage, originalUsageDescription);
+    capturePermissionReplies = nil;
+    puts("PASS: HOST WebRTC/file capture continuations retain real frame/source/owner/AV authorization, WebKit Prompt, cancellation and reentry gates");
 }
 static void CheckCapturePermissionSettings(void) {
     Method request = class_getClassMethod(AVCaptureDevice.class, @selector(requestAccessForMediaType:completionHandler:));
@@ -694,6 +894,8 @@ static void CheckNavigationErrors(void) {
 static void Check(void) {
     CheckNavigationErrors();
     CheckPermissionExplanationPresentation();
+    CheckHostPermissionExplanation();
+    CheckHostMediaPermissionContinuation();
     CheckCapturePermissionSettings();
     CheckWebRTCPermissionSettings();
     puts("PHASE: System WebKit readiness");

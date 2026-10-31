@@ -17,6 +17,8 @@ import { createWebPermissionDialog, WebPermissionDialogOptions } from './WebPerm
 interface EvalParams { script: string; }
 interface PageReplyParams { replyId: string; data: string; }
 interface PendingPageReply { nonce: string; channel: string; }
+interface HostPermissionExplanation { requestId: string; complete: (accepted: boolean) => void; }
+interface PermissionExplanationResponse { requestId: string; accepted: boolean; }
 interface BridgeMessage { handlerName: string; data: string; }
 /**
  * 发往 Kuikly 的中立事件，仅设置与 type 对应的字段，业务正文、URL 和文件地址不得直接记日志。
@@ -44,7 +46,7 @@ export interface WebEvent {
   type: string; url?: string; title?: string; progress?: number; canGoBack?: boolean; canGoForward?: boolean;
   handlerName?: string; data?: string; isFullscreen?: boolean; kind?: string; message?: string;
   errorCode?: number; httpStatus?: number; isMainFrame?: boolean; hasUserGesture?: boolean;
-  target?: string; blocked?: boolean; permissions?: string[]; capability?: string; channel?: string; replyId?: string;
+  target?: string; requestId?: string; blocked?: boolean; permissions?: string[]; capability?: string; channel?: string; replyId?: string;
 }
 
 // 端口只由原生发送给主文档；不使用注册到所有 iframe 的 JavaScriptProxy。
@@ -112,6 +114,9 @@ export class GYWebView extends KuiklyRenderBaseView {
   private permissionRequests: Set<PermissionRequest> = new Set();
   private cancelPermissionExplanation: (() => void) | null = null;
   private permissionExplanationForFile: boolean = false;
+  private hostPermissionExplanation: HostPermissionExplanation | null = null;
+  private nextPermissionExplanationId: number = 0;
+  private requestRevision: number = 0;
   private fileResults: Set<FileSelectorResult> = new Set();
   private pageOwnerActive: boolean | null = null;
   private fileGeneration: number = 0;
@@ -167,7 +172,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     if (key === 'onEvent') { this.eventCallback = value as KuiklyRenderCallback; return true; }
     if (key === 'pageOwnerActive') {
       this.pageOwnerActive = value === true;
-      if (!this.pageOwnerActive) { this.cancelPermissionExplanation?.(); this.revokeFilePickers(); }
+      if (!this.pageOwnerActive) { const cancel = this.cancelPermissionExplanation; this.revokeFilePickers(); cancel?.(); }
       return true;
     }
     if (key === 'visible') {
@@ -202,6 +207,7 @@ export class GYWebView extends KuiklyRenderBaseView {
       return true;
     }
     if (key !== 'request') return super.setProp(key, value);
+    const requestRevision = ++this.requestRevision;
     if (this.request && !this.renderFailed && typeof value === 'string') {
       try {
         const next = decodeRequest(value as string, false);
@@ -209,6 +215,7 @@ export class GYWebView extends KuiklyRenderBaseView {
           JSON.stringify(this.request.content) === JSON.stringify(next.content) &&
           JSON.stringify(this.request.settings) === JSON.stringify(next.settings) &&
           JSON.stringify(this.request.security) === JSON.stringify(next.security) &&
+          (this.request.permissionPresentation ?? 'NATIVE') === (next.permissionPresentation ?? 'NATIVE') &&
           JSON.stringify(this.request.scripts) === JSON.stringify(next.scripts) &&
           JSON.stringify(this.request.pageMessageChannels) === JSON.stringify(next.pageMessageChannels) &&
           JSON.stringify(this.request.blockedResourceRules) === JSON.stringify(next.blockedResourceRules)) { this.request.navigationPolicy = next.navigationPolicy; return true; }
@@ -217,9 +224,9 @@ export class GYWebView extends KuiklyRenderBaseView {
     const controllerOwner = this.controller;
     const ownerToken = this.renderToken;
     this.revokePending();
-    if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
+    if (requestRevision !== this.requestRevision || controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
     this.exitFullscreen();
-    if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
+    if (requestRevision !== this.requestRevision || controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return true;
     if (this.attached) { try { this.controller.stop(); this.controller.stopAllMedia(); } catch (_) {} }
     this.attached = false;
     this.renderFailed = false;
@@ -562,6 +569,24 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
   private explainCapture(context: common.UIAbilityContext, permissions: Permissions[], valid: () => boolean,
     fileCapture: boolean): Promise<boolean> {
     if (this.cancelPermissionExplanation || !this.visible || !valid()) return Promise.resolve(false);
+    if (this.request?.permissionPresentation === 'HOST') {
+      return new Promise<boolean>(resolve => {
+        const requestId = `permission-${++this.nextPermissionExplanationId}`;
+        const finish = (accepted: boolean, revoked: boolean): void => {
+          if (this.hostPermissionExplanation?.requestId !== requestId) return;
+          this.hostPermissionExplanation = null;
+          if (this.cancelPermissionExplanation === cancel) { this.cancelPermissionExplanation = null; this.permissionExplanationForFile = false; }
+          if (revoked) { try { this.emit({ type: 'permissionExplanationCancelled', requestId: requestId }); } catch (_) {} }
+          resolve(accepted && this.visible && valid());
+        };
+        const cancel = (): void => finish(false, true);
+        this.hostPermissionExplanation = { requestId: requestId, complete: accepted => finish(accepted, false) };
+        this.cancelPermissionExplanation = cancel; this.permissionExplanationForFile = fileCapture;
+        try { this.emit({ type: 'permissionExplanationRequested', requestId: requestId,
+          permissions: permissions.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') }); }
+        catch (_) { cancel(); }
+      });
+    }
     const chinese = context.config.language?.startsWith('zh') === true;
     const camera = permissions.indexOf('ohos.permission.CAMERA') >= 0;
     const microphone = permissions.indexOf('ohos.permission.MICROPHONE') >= 0;
@@ -804,6 +829,17 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
   }
 
   call(method: string, params: KRAny, callback: KuiklyRenderCallback | null): KRAny {
+    if (method === 'completePermissionExplanation') {
+      let accepted = false;
+      try {
+        const response = JSON.parse(typeof params === 'string' ? params : '{}') as PermissionExplanationResponse;
+        const pending = this.hostPermissionExplanation;
+        if (!this.lifetime.disposed && pending && response.requestId === pending.requestId && typeof response.accepted === 'boolean') {
+          accepted = true; pending.complete(response.accepted);
+        }
+      } catch (_) {}
+      callback?.({ result: accepted }); return null;
+    }
     if (method === 'replyPageMessage') { this.replyPageMessage(params, callback); return null; }
     if (this.lifetime.disposed) return null;
     if (!this.attached || !this.request) { callback?.({ result: null }); return null; }
@@ -877,16 +913,17 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     waiters.forEach(waiter => waiter());
   }
   private revokeFilePickers(): void {
-    if (this.permissionExplanationForFile) this.cancelPermissionExplanation?.();
+    const cancel = this.permissionExplanationForFile ? this.cancelPermissionExplanation : null;
     this.fileGeneration++;
     const results = Array.from(this.fileResults); this.fileResults.clear();
     const files = Array.from(this.captureFiles); this.captureFiles.clear();
+    cancel?.();
     this.resumeFilePickers();
     files.forEach(path => { try { fileIo.unlinkSync(path); } catch (_) {} });
     results.forEach(result => { try { result.handleFileList([]); } catch (_) {} });
   }
   private revokePending(revokePageChannels: boolean = true, preserveFilePickers: boolean = false): void {
-    this.cancelPermissionExplanation?.();
+    const cancel = this.cancelPermissionExplanation;
     if (revokePageChannels) {
       this.pageMessageActive = false; this.pageMessageSecret = ''; this.pageMessageNonce = '';
       this.pageMessageReplies.clear();
@@ -896,8 +933,10 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     }
     this.bridgeVisibilityPending = false;
     this.lifetime.invalidate(); this.closePorts();
-    this.permissionRequests.forEach(request => { try { request.deny(); } catch (_) {} }); this.permissionRequests.clear();
+    const requests = Array.from(this.permissionRequests); this.permissionRequests.clear();
     if (!preserveFilePickers) this.revokeFilePickers();
+    cancel?.();
+    requests.forEach(request => { try { request.deny(); } catch (_) {} });
   }
   onDestroy(): void {
     if (this.environmentContext && this.environmentId !== null) {

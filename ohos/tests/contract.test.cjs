@@ -868,6 +868,60 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     assert.deepEqual(replies, [[capture.profile.saveUri]]);
     suspended.onDestroy();
   }
+  // HOST 仅接管说明，确认不是授权；旧/重复/撤销回执不能启动系统或交付旧页面。
+  {
+    const host = new GYWebView(), events = [];
+    const hostPolicy = { ...mediaPolicy, permissionPresentation: 'HOST' };
+    host.setProp('request', encoded(hostPolicy)); host.onControllerAttached(); host.onPageVisible('https://trusted.test/page');
+    host.setProp('onEvent', event => events.push(event));
+    permissionStatus = 1; permission = deferred(); const calls = permissionCalls, dialogs = permissionDialogs.length;
+    let denied = 0, granted = 0;
+    const request = () => host.permissionRequest({ getAccessibleResource: () => ['video', 'audio'], getOrigin: () => 'https://trusted.test', grant: () => granted++, deny: () => denied++ });
+    const respond = (requestId, accepted) => { let result; host.call('completePermissionExplanation', JSON.stringify({ requestId, accepted }), value => result = value.result); return result; };
+    request(); await flushNativeCallbacks();
+    const first = events.at(-1); assert.equal(first.type, 'permissionExplanationRequested');
+    assert.deepEqual(Array.from(first.permissions), ['CAMERA', 'MICROPHONE']);
+    assert.equal(permissionCalls, calls); assert.equal(permissionDialogs.length, dialogs);
+    assert.equal(respond(first.requestId, 'true'), false); assert.equal(respond('stale', true), false);
+    assert.equal(respond(first.requestId, true), true); await flushNativeCallbacks();
+    assert.equal(permissionCalls, calls + 1); assert.equal(granted, 0, 'UI confirmation is not OS authorization');
+    assert.equal(respond(first.requestId, true), false);
+    permission.resolve({ authResults: [0, 0] }); await flushNativeCallbacks(); assert.equal(granted, 1);
+    request(); await flushNativeCallbacks(); const hidden = events.at(-1);
+    host.setProp('visible', false); await flushNativeCallbacks();
+    assert.equal(events.at(-1).type, 'permissionExplanationCancelled'); assert.equal(events.at(-1).requestId, hidden.requestId);
+    assert.equal(denied, 1); assert.equal(respond(hidden.requestId, true), false); assert.equal(permissionCalls, calls + 1);
+    host.setProp('visible', true); request(); await flushNativeCallbacks(); const declined = events.at(-1);
+    assert.equal(respond(declined.requestId, false), true); await flushNativeCallbacks();
+    assert.equal(events.at(-1).type, 'permissionExplanationRequested', 'host decline does not echo cancellation');
+    assert.equal(denied, 2);
+    const replies = []; host.setProp('pageOwnerActive', true);
+    host.selectFile({ fileSelector: { isCapture: () => true, getAcceptType: () => ['image/jpeg'] }, result: { handleFileList: files => replies.push(Array.from(files)) } });
+    await flushNativeCallbacks(); const fileExplanation = events.at(-1);
+    host.setProp('visible', false); await flushNativeCallbacks();
+    assert.equal(respond(fileExplanation.requestId, true), false);
+    assert.deepEqual(replies, [[]], 'HOST explanation hidden is cancelled, not treated as external picker');
+    assert.equal(permissionCalls, calls + 1); host.onDestroy(); permissionStatus = 2;
+  }
+  {
+    const host = new GYWebView(); const hostPolicy = { ...mediaPolicy, permissionPresentation: 'HOST' };
+    host.setProp('request', encoded(hostPolicy)); host.onControllerAttached(); host.onPageVisible('https://trusted.test/page');
+    permissionStatus = 1; let oldDenied = 0, freshExplanation;
+    host.permissionRequest({ getAccessibleResource: () => ['video'], getOrigin: () => 'https://trusted.test', grant: () => assert.fail(), deny: () => oldDenied++ });
+    await flushNativeCallbacks();
+    host.setProp('onEvent', event => {
+      if (event.type === 'permissionExplanationCancelled') {
+        host.setProp('request', encoded({ ...hostPolicy, content: { type: 'url', url: 'https://trusted.test/fresh' } }));
+        host.onControllerAttached(); host.onPageVisible('https://trusted.test/fresh');
+        host.permissionRequest({ getAccessibleResource: () => ['video'], getOrigin: () => 'https://trusted.test', grant: () => {}, deny: () => {} });
+      } else if (event.type === 'permissionExplanationRequested') freshExplanation = event;
+    });
+    host.setProp('request', encoded({ ...hostPolicy, content: { type: 'url', url: 'https://trusted.test/obsolete' } }));
+    await flushNativeCallbacks();
+    assert.equal(host.request.content.url, 'https://trusted.test/fresh', 'old setProp cannot overwrite Cancelled reentry');
+    assert.ok(freshExplanation); assert.equal(host.hostPermissionExplanation.requestId, freshExplanation.requestId);
+    assert.equal(oldDenied, 1); host.setProp('onEvent', () => {}); host.onDestroy(); permissionStatus = 2;
+  }
   // 真实权限说明控制路径：确认前、退出转场中及 owner 撤销后均不能申请系统权限。
   {
     const explained = new GYWebView(); const events = [];
