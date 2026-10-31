@@ -574,8 +574,11 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
       let completed = false;
       let opened = false;
       let disposed = false;
-      const dispose = (): void => { if (!disposed) { disposed = true; content.dispose(); } };
-      const close = (): Promise<boolean> => prompt.closeCustomDialog(content).then(() => { dispose(); return true; }).catch(() => { dispose(); return false; });
+      const dispose = (): void => { if (!disposed) { disposed = true; try { content.dispose(); } catch (_) {} } };
+      const close = async (): Promise<boolean> => {
+        try { await prompt.closeCustomDialog(content); dispose(); return true; }
+        catch (_) { dispose(); return false; }
+      };
       const finish = (accepted: boolean): void => {
         if (completed) return;
         completed = true;
@@ -596,7 +599,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
       const content = new ComponentContent<WebPermissionDialogOptions>(this.getUIContext(),
         wrapBuilder<[WebPermissionDialogOptions]>(createWebPermissionDialog), options);
       this.cancelPermissionExplanation = cancel; this.permissionExplanationForFile = fileCapture;
-      prompt.openCustomDialog(content, { autoCancel: false, onWillDismiss: action => { action.dismiss(); finish(false); } }).then(() => {
+      Promise.resolve().then(() => prompt.openCustomDialog(content, { autoCancel: false, onWillDismiss: action => { action.dismiss(); finish(false); } })).then(() => {
         opened = true;
         if (completed) close();
         else if (!this.visible || !valid()) cancel();

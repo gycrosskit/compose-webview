@@ -74,9 +74,10 @@ let permissionStatus = 2;
 let permissionCalls = 0;
 const permissionDialogs = [];
 let dialogClosing = null;
+let dialogFailure = null;
 const flushNativeCallbacks = () => new Promise(resolve => setImmediate(resolve));
 class BaseView {
-  getUIContext() { return { getPromptAction: () => ({ openCustomDialog: async content => { permissionDialogs.push(content); }, closeCustomDialog: async content => { if (dialogClosing) await dialogClosing.promise; content.closed = true; } }), getHostContext: () => ({ cacheDir: "/cache", config: { fontSizeScale: 1, colorMode: 1, language: 'zh' }, getApplicationContext: () => applicationContext }), postFrameCallback: callback => contexts.push(callback) }; }
+  getUIContext() { return { getPromptAction: () => ({ openCustomDialog: content => { if (dialogFailure === 'open') throw new Error('native dialog open failed'); permissionDialogs.push(content); return Promise.resolve(); }, closeCustomDialog: content => { if (dialogFailure === 'close') throw new Error('native dialog close failed'); return (dialogClosing ? dialogClosing.promise : Promise.resolve()).then(() => { content.closed = true; }); } }), getHostContext: () => ({ cacheDir: "/cache", config: { fontSizeScale: 1, colorMode: 1, language: 'zh' }, getApplicationContext: () => applicationContext }), postFrameCallback: callback => contexts.push(callback) }; }
   setProp() { return false; } onDestroy() {} call() {}
 }
 const windowObject = { Orientation: { UNSPECIFIED: 0, AUTO_ROTATION_LANDSCAPE: 1 }, getLastWindow: async () => ({}) };
@@ -888,6 +889,16 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     explained.setProp('visible', true); permissionStatus = 3; request(); await flushNativeCallbacks();
     assert.equal(permissionCalls, calls + 1); assert.equal(events.some(event => event.type === 'permissionSettingsRequired'), false);
     permissionStatus = 0; request(); await flushNativeCallbacks(); assert.equal(granted, 2); assert.equal(permissionCalls, calls + 1);
+    permissionStatus = 1;
+    for (const failure of ['open', 'close']) {
+      const deniedBefore = denied;
+      dialogFailure = failure; request(); await flushNativeCallbacks();
+      if (failure === 'close') { permissionDialogs.at(-1).options.complete(true); await flushNativeCallbacks(); }
+      assert.equal(denied, deniedBefore + 1, `${failure} failure settles native permission once`);
+      assert.equal(explained.cancelPermissionExplanation, null, `${failure} failure releases explanation owner`);
+      assert.equal(permissionCalls, calls + 1, `${failure} failure must not request system permission`);
+      dialogFailure = null;
+    }
     explained.onDestroy(); permissionStatus = 2;
   }
   permission = deferred(); let acceptedMedia = 0;
@@ -1098,7 +1109,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   }
   class ScopedPolicyView extends GYWebView {
     windowPolicyController() { return this.selectedPolicy; }
-    getUIContext() { return { getPromptAction: () => ({ openCustomDialog: async content => { permissionDialogs.push(content); }, closeCustomDialog: async content => { if (dialogClosing) await dialogClosing.promise; content.closed = true; } }), getHostContext: () => this.windowContext }; }
+    getUIContext() { return { getPromptAction: () => ({ openCustomDialog: content => { if (dialogFailure === 'open') throw new Error('native dialog open failed'); permissionDialogs.push(content); return Promise.resolve(); }, closeCustomDialog: content => { if (dialogFailure === 'close') throw new Error('native dialog close failed'); return (dialogClosing ? dialogClosing.promise : Promise.resolve()).then(() => { content.closed = true; }); } }), getHostContext: () => this.windowContext }; }
   }
   const mainWindow = scopedWindow(); const audienceWindow = scopedWindow();
   windowObject.getLastWindow = async context => context.window;
