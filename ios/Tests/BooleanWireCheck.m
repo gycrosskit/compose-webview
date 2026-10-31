@@ -393,8 +393,14 @@ static void CheckHostPermissionExplanation(void) {
         else [page cancelFilePicker];
         Require(replies == 1 && [events[1][@"type"] isEqual:@"permissionExplanationCancelled"] && [events[1][@"requestId"] isEqual:old], @"Lifecycle cancellation must notify HOST and settle once");
         Require(!CompleteHostExplanation(page, old, @YES) && replies == 1, @"Cancelled HOST explanation accepted a late answer");
-        if ([mode isEqual:@"reentrant"]) Require(page.permissionExplanationRequestId && ![page.permissionExplanationRequestId isEqual:old] && freshReplies == 0, @"Old cancellation cleared a reentrant HOST explanation");
-        else Require(events.count == 2, @"Lifecycle cancellation emitted more than one HOST cancellation");
+        // 导航还会发 pageStarted；一次性约束针对说明事件，不把其他生命周期事件算成撤销。
+        NSArray *cancelled = [events filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"type == %@", @"permissionExplanationCancelled"]];
+        NSArray *requested = [events filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"type == %@", @"permissionExplanationRequested"]];
+        Require(cancelled.count == 1 && [cancelled.firstObject[@"requestId"] isEqual:old], [NSString stringWithFormat:@"%@ must cancel only the old HOST id once: %@", mode, events]);
+        Require(requested.count == ([mode isEqual:@"reentrant"] ? 2 : 1) && [requested.firstObject[@"requestId"] isEqual:old], @"Lifecycle cancellation changed the explanation request owner or count");
+        if ([mode isEqual:@"reentrant"]) Require(page.permissionExplanationRequestId && ![page.permissionExplanationRequestId isEqual:old] &&
+            [requested.lastObject[@"requestId"] isEqual:page.permissionExplanationRequestId] && [events[2][@"type"] isEqual:@"permissionExplanationRequested"] && freshReplies == 0,
+            @"Old cancellation cleared or reordered a reentrant HOST explanation");
         page.onEvent = nil; page.webView = nil;
         [page hrv_removeFromSuperview];
     }
