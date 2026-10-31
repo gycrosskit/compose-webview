@@ -51,7 +51,7 @@ class PublicationContracts(unittest.TestCase):
             'verify-consumer': version('scripts/verify.sh', r'-PwebViewVersion=([^\s]+)'),
             'har': har['version'],
         }
-        self.assertEqual(versions, {name: '1.1.0' for name in versions})
+        self.assertEqual(versions, {name: '1.2.0' for name in versions})
         self.assertEqual(har['dependencies']['@gycrosskit/system-actions-native'], '1.0.1')
 
     def test_empty_resource_and_forwarding_removed_api_preserved(self):
