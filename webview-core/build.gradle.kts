@@ -39,6 +39,9 @@ android {
     // 独立下载的测试 SDK 使用既有受控镜像，避免 Maven Central 入口限流。
     testOptions.unitTests.all {
         it.systemProperty("robolectric.dependency.repo.url", "https://repo.huaweicloud.com/repository/maven")
+        val scripts = rootProject.layout.buildDirectory.dir("early-scripts/${it.name}")
+        it.outputs.dir(scripts)
+        it.systemProperty("webview.earlyScriptsOutput", scripts.get().asFile.absolutePath)
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
