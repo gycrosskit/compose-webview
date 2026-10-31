@@ -19,12 +19,12 @@ fun WebViewRequest.canReceiveAppBridgeMessage(sourceUrl: String?, isMainFrame: B
     isMainFrame && canUseAppBridgeAt(sourceUrl)
 
 /**
- * Bridge 开启后，主框架只能停留在对应来源；子资源和 iframe 仍由各自策略处理。
+ * 未显式配置独立导航来源时，Bridge 开启后主框架只能停留在对应来源。
  */
 fun WebViewRequest.shouldBlockMainFrameNavigation(
     url: String?,
     isMainFrame: Boolean,
-): Boolean = isMainFrame &&
+): Boolean = isMainFrame && navigationPolicy.navigationOrigins == null &&
     (security.appBridgeEnabled || security.pageBridgeEnabled) &&
     !canUseAppBridgeAt(url)
 
@@ -75,7 +75,7 @@ internal data class WebViewHttpOrigin(
 
 private val HTTP_SCHEMES = setOf("http", "https")
 
-/** 手动执行脚本允许可信 HTTPS 或明确启用的低权限初始同源页面。 */
+/** 手动执行脚本允许可信 HTTP(S) 或明确启用的低权限初始同源页面。 */
 fun WebViewRequest.canEvaluateJavascriptAt(url: String?): Boolean =
     settings.javaScriptEnabled && (security.trustedOrigins.isTrusted(url) ||
         (security.pageBridgeEnabled && canUseAppBridgeAt(url)))

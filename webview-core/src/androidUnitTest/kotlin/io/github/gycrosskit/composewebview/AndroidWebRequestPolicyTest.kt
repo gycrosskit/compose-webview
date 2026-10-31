@@ -27,6 +27,7 @@ class AndroidWebRequestPolicyTest {
         val restrictedPolicies = listOf(
             WebViewNavigationPolicy(allowedUrls = setOf(allowed)),
             WebViewNavigationPolicy(allowedOrigins = setOf("https://page.test")),
+            WebViewNavigationPolicy(navigationOrigins = WebViewNavigationOrigins(exactOrigins = setOf("https://page.test"))),
             WebViewNavigationPolicy(blockedRules = listOf(WebViewUrlRule.ExactHost("other.test"))),
             WebViewNavigationPolicy(allowedSchemes = setOf("https")),
         )
@@ -36,14 +37,14 @@ class AndroidWebRequestPolicyTest {
             assertNull(current.interceptAndroidRequest(resource(allowed, main = false), rejected::add))
             assertNull(current.interceptAndroidRequest(resource(allowed, method = "GET"), rejected::add))
         }
-        assertEquals(4, rejected.size)
+        assertEquals(5, rejected.size)
         assertNull(request.interceptAndroidRequest(resource(allowed), rejected::add))
         val bridge = request.copy(security = WebViewSecurity(appBridgeEnabled = true, trustedOrigins = WebViewTrustPolicy(listOf(allowed))))
         assertNull(bridge.interceptAndroidRequest(resource(allowed), rejected::add))
         assertNotNull(bridge.interceptAndroidRequest(resource("https://other.test"), rejected::add))
         val resources = request.copy(blockedResourceRules = listOf(WebViewUrlRule.ExactHost("other.test")))
         assertNotNull(resources.interceptAndroidRequest(resource("https://other.test", main = false), rejected::add))
-        assertEquals(5, rejected.size)
+        assertEquals(6, rejected.size)
     }
 
 }

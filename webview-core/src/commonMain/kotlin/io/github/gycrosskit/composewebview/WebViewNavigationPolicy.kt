@@ -2,6 +2,35 @@ package io.github.gycrosskit.composewebview
 
 import io.ktor.http.Url
 
+/** 独立主文档来源；不限端口项使用 HTTP(S) URL 的默认端口声明协议与域后缀。 */
+data class WebViewNavigationOrigins(
+    val exactOrigins: Set<String> = emptySet(),
+    val hostSuffixOrigins: Set<String> = emptySet(),
+    val hostSuffixAnyPortOrigins: Set<String> = emptySet(),
+) {
+    init {
+        require((exactOrigins + hostSuffixOrigins + hostSuffixAnyPortOrigins).all { it.toHttpOrigin() != null })
+        require(hostSuffixAnyPortOrigins.all { value -> value.toHttpOrigin()?.let {
+            it.port == if (it.scheme == "https") 443 else 80
+        } == true })
+        require((hostSuffixOrigins + hostSuffixAnyPortOrigins).all { value -> value.toHttpOrigin()?.host?.split('.')?.all {
+            it.length <= 63 && it.matches(Regex("[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"))
+        } == true })
+    }
+
+    internal fun allows(url: String): Boolean {
+        val target = url.toHttpOrigin() ?: return false
+        return exactOrigins.any { it.toHttpOrigin() == target } || hostSuffixOrigins.any {
+            val suffix = it.toHttpOrigin() ?: return@any false
+            target.scheme == suffix.scheme && target.port == suffix.port &&
+                (target.host == suffix.host || target.host.endsWith(".${suffix.host}"))
+        } || hostSuffixAnyPortOrigins.any {
+            val suffix = it.toHttpOrigin() ?: return@any false
+            target.scheme == suffix.scheme && (target.host == suffix.host || target.host.endsWith(".${suffix.host}"))
+        }
+    }
+}
+
 /**
  * Kuikly 事件没有同步返回值，导航决定必须随请求下发到原生。
  * @property allowedSchemes 允许的规范化小写 scheme，默认 HTTP/HTTPS；平台可以进一步限制。
@@ -17,6 +46,8 @@ data class WebViewNavigationPolicy(
     val allowedOrigins: Set<String> = emptySet(),
     /** 主帧完整 URL 字符串白名单；不归一化路径、查询或默认端口，空集合不限制。 */
     val allowedUrls: Set<String> = emptySet(),
+    /** null 沿用历史 Bridge 导航限制；非 null 以此来源集合独立控制主文档。 */
+    val navigationOrigins: WebViewNavigationOrigins? = null,
 ) {
     init {
         require(allowedSchemes.all { it.matches(Regex("[a-z][a-z0-9+.-]*")) })
@@ -31,6 +62,7 @@ data class WebViewNavigationPolicy(
             (navigation.target != WebViewNavigationTarget.NEW_WINDOW || allowNewWindows) &&
             (!navigation.isMainFrame || blockedRules.none { it.matches(navigation.url) }) &&
             (!navigation.isMainFrame || allowedUrls.isEmpty() || navigation.url in allowedUrls) &&
+            (!navigation.isMainFrame || navigationOrigins == null || navigationOrigins.allows(navigation.url)) &&
             (!navigation.isMainFrame || allowedOrigins.isEmpty() ||
                 navigation.url.toHttpOrigin()?.let { origin -> allowedOrigins.any { it.toHttpOrigin() == origin } } == true)
     }

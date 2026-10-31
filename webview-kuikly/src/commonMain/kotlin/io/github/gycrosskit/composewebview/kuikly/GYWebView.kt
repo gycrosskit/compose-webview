@@ -49,6 +49,18 @@ class GYWebView : DeclarativeBaseView<GYWebViewAttr, GYWebViewEvent>() {
 
 /** 随 Kuikly 渲染任务下发网页声明与可见性；输入变化撤销旧页面的异步操作。 */
 class GYWebViewAttr : Attr() {
+    /** 页面是否仍归属当前路由；离页先设 false 再隐藏。省略保留原生旧行为，不能用短暂不可见代替离页。 */
+    fun pageOwnerActive(value: Boolean): GYWebViewAttr {
+        "pageOwnerActive" with value
+        return this
+    }
+
+    /** iOS 当前视频页是否仍拥有播放会话，默认 false；离页先撤销，再更新可见性。 */
+    fun pictureInPicturePageActive(value: Boolean): GYWebViewAttr {
+        "pictureInPicturePageActive" with value
+        return this
+    }
+
     /** 编码中立输入为 JSON；模型构造负责公共契约校验，平台仍可拒绝不支持的配置，安全变化可能重建实例；仅 navigationPolicy 变化即时更新门禁并保留当前 DOM。 */
     fun request(value: WebViewRequest): GYWebViewAttr {
         "request" with WebViewWire.encodeRequest(value)

@@ -13,6 +13,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.widget.FrameLayout
+import androidx.lifecycle.Lifecycle
 import com.tencent.kuikly.core.render.android.export.IKuiklyRenderViewExport
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
 import com.tencent.kuikly.core.render.android.IKuiklyRenderExport
@@ -34,6 +35,7 @@ class GYWebViewNative @JvmOverloads constructor(
     private var initialHtmlNavigation = false
     private var callbackGeneration = 0L
     private var documentToken = UUID.randomUUID().toString()
+    private var discardEarlyBridgeMessages = false
     private var pageVisible = true
     private var finishedScriptsInjected = false
     private var fullscreenHost: AndroidWebFullscreenHost? = null
@@ -42,7 +44,7 @@ class GYWebViewNative @JvmOverloads constructor(
     private var pageMessageChannels: AndroidPageMessageChannels? = null
     private val earlyScripts = AndroidEarlyScriptInstaller { owner, metric, duration ->
         if (owner === webView) emit(WebViewEvent.PerformanceMetric(metric, duration))
-    }
+    }.apply { requireDocumentToken = true }
 
     override fun setProp(propKey: String, propValue: Any): Boolean = when (propKey) {
         "request" -> {
@@ -68,12 +70,25 @@ class GYWebViewNative @JvmOverloads constructor(
         "visible" -> {
             val visible = propValue as? Boolean ?: false
             if (visible != pageVisible) {
+                if (!visible) discardEarlyBridgeMessages = true
                 documentToken = UUID.randomUUID().toString()
                 val owner = webView
-                if (request?.settings?.javaScriptEnabled == true && request?.canUseAppBridgeAt(owner?.url) == true) owner?.evaluateJavascript("window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = ${JSONObject.quote(documentToken)};", null)
+                if (request?.settings?.javaScriptEnabled == true && request?.canUseAppBridgeAt(owner?.url) == true) owner?.evaluateJavascript(bridgeTokenScript(visible && !discardEarlyBridgeMessages), null)
             }
             pageVisible = visible
-            if (!pageVisible) { callbackGeneration++; pageMessageChannels?.revoke(); webView?.let { capabilities?.release(it) }; popupRouter?.release() }
+            if (!pageVisible) {
+                callbackGeneration++; pageMessageChannels?.revoke()
+                webView?.let { owner ->
+                    val activity = context.findComponentActivity()
+                    if (activity != null && capabilities?.pauseForSystemPicker(owner) == true) {
+                        // renderer.onPause 可能早于 Activity 的 ON_PAUSE；下一轮再区分真正离页。
+                        Handler(Looper.getMainLooper()).post {
+                            if (owner === webView && !pageVisible && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) capabilities?.release(owner)
+                        }
+                    } else capabilities?.release(owner)
+                }
+                popupRouter?.release()
+            } else webView?.let { capabilities?.resume(it) }
             visibility = if (pageVisible) View.VISIBLE else View.INVISIBLE
             if (pageVisible) webView?.onResume() else { exitFullscreen(); webView?.onPause() }
             true
@@ -93,6 +108,7 @@ class GYWebViewNative @JvmOverloads constructor(
             "goBack" -> if (exitFullscreen()) true else owner?.let { if (it.canGoBack()) { pageMessageChannels?.revoke(); it.goBack(); true } else false } ?: false
             "goForward" -> owner?.let { if (it.canGoForward()) { pageMessageChannels?.revoke(); it.goForward(); true } else false } ?: false
             "stopLoading" -> {
+                discardEarlyBridgeMessages = true
                 callbackGeneration++
                 pageMessageChannels?.revoke()
                 // 先停止旧加载；撤销回执可能同步创建新 owner，之后不能再 stop。
@@ -154,6 +170,7 @@ class GYWebViewNative @JvmOverloads constructor(
                 exitFullscreen()
                 initialHtmlNavigation = false
                 finishedScriptsInjected = false
+                discardEarlyBridgeMessages = !pageVisible
                 callbackGeneration++; documentToken = UUID.randomUUID().toString(); capabilities?.release(owner); popupRouter?.release()
                 emit(WebViewEvent.PageStarted(url)); history(owner) }
             override fun onPageLoadFinished(url: String?) { if (owner !== webView || destroyed) return; emit(WebViewEvent.PageFinished(url)); history(owner) }
@@ -219,7 +236,7 @@ class GYWebViewNative @JvmOverloads constructor(
             )
             if (!pageVisible) pageMessageChannels?.revoke()
         }
-        if (current.canUseAppBridgeAt(origin)) owner.installAppWebBridge({ requireNotNull(request) }, { documentToken }) { handler, data ->
+        if (current.security.appBridgeEnabled || current.security.pageBridgeEnabled) owner.installAppWebBridge({ requireNotNull(request) }, { documentToken }) { handler, data ->
             if (owner === webView && pageVisible && !destroyed && !crashed) emit(WebViewEvent.BridgeMessage(WebViewBridgeMessage(handler, data)))
         }
         addView(owner, LayoutParams(-1, -1))
@@ -247,7 +264,7 @@ class GYWebViewNative @JvmOverloads constructor(
         if (owner !== webView || destroyed || crashed || !current.settings.javaScriptEnabled) return
         // 初始化属于当前文档；隐藏只撤销业务消息、权限和显式 JS 的异步回执。
         if (current.canUseAppBridgeAt(owner.url)) {
-            owner.evaluateJavascript("window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = ${JSONObject.quote(documentToken)};", null)
+            owner.evaluateJavascript(bridgeTokenScript(pageVisible && !discardEarlyBridgeMessages), null)
             owner.injectAppWebBridge()
         }
         owner.evaluateJavascript(WEB_VIEW_PERFORMANCE_SCRIPT, null)
@@ -261,6 +278,10 @@ class GYWebViewNative @JvmOverloads constructor(
     private fun history(owner: WebView) {
         if (owner === webView && !crashed) emit(WebViewEvent.HistoryChanged(owner.canGoBack(), owner.canGoForward(), owner.url))
     }
+
+    private fun bridgeTokenScript(deliver: Boolean): String =
+        "window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = ${JSONObject.quote(documentToken)};" +
+            "if(typeof window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__==='function')window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__($deliver);"
 
     private fun emit(event: WebViewEvent) { if (!destroyed) onEvent?.invoke(WebViewWire.eventValues(event)) }
 

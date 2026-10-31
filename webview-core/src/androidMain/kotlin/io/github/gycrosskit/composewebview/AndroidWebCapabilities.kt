@@ -62,6 +62,17 @@ class AndroidWebCapabilities(
         mediaCapture.release(owner, mediaRequest)
     }
 
+    /** 仅系统选择器在途时保留文件回执；媒体授权仍随页面暂停撤销。 */
+    fun pauseForSystemPicker(owner: WebView): Boolean {
+        val mediaRequest = mediaCapture.pendingRequest(owner)
+        val suspended = fileChooser.suspendForExternal(owner)
+        if (!suspended) fileChooser.release(owner)
+        mediaCapture.release(owner, mediaRequest)
+        return suspended
+    }
+
+    fun resume(owner: WebView) = fileChooser.resume(owner)
+
     /** 页面结束时撤销全部请求并注销 ActivityResult 入口；此后不可复用。 */
     fun destroy() {
         fileChooser.destroy()

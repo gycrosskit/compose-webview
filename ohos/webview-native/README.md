@@ -1,21 +1,21 @@
-> 当前 HAR 为 `1.0.2` 未发布候选，配套 system-actions-native `1.0.1`；依赖升级后须重新编译和冻结。v2 实现 pageMessageChannels 初始主文档 capability 与单次回复；私有安全随机 owner key 和 document nonce 不进入事件、日志或返回值。默认空配置保留既有行为。本地 HAR 检查、远程发布与设备验收分别记录。
+> 当前 HAR 为 `1.1.0` 未发布候选，配套 system-actions-native `1.0.1`；依赖升级后须重新编译和冻结。v2 实现 pageMessageChannels 初始主文档 capability 与单次回复；私有安全随机 owner key 和 document nonce 不进入事件、日志或返回值。默认空配置保留既有行为。本地 HAR 检查、远程发布与设备验收分别记录。
 
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **1.0.2 未发布候选**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.29.1` 与 `@gycrosskit/system-actions-native:1.0.1`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **1.1.0 未发布候选**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:2.29.1` 与 `@gycrosskit/system-actions-native:1.0.1`，后者提供共用窗口执行 owner。
 
 rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和空路径按同一文档身份匹配；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。主帧 capability、nonce、owner 与单次回复门禁保持有效。
 
 ## 安装与注册
 
-Maven / iOS Git Pod / HAR / OHPM 统一准备 1.0.2 候选，配套 system-actions 1.0.1；Maven / Git Pod 使用新标签 `1.0.2`，HAR 使用独立标签 `har-1.0.2`，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.1；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+Maven / iOS Git Pod / HAR / OHPM 统一准备 1.1.0 候选，配套 system-actions 1.0.1；Maven / Git Pod 使用新标签 `1.1.0`，HAR 使用独立标签 `har-1.1.0`，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.1；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 
 以下为本版本精确 Registry 坐标；审核通过并实际可查询、安装后使用。
 
 ```bash
-ohpm install @gycrosskit/webview@1.0.2
+ohpm install @gycrosskit/webview@1.1.0
 ```
 
 候选可从 assembleHar 输出验证；正式发布后从对应不可变 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry `1.0.1`。干净消费者核对只有一份窗口 owner。离线验证使用已核对冻结 SHA-256 的 Web HAR 和 system-actions `1.0.1` HAR，并用 root override 保证同一系统包；候选字节不得冒充公开 Release 下载或 Registry 安装。文件下载消费与 Registry 安装分开验收。

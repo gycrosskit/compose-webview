@@ -382,7 +382,39 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
     puts("PASS: Native JS-disabled real video fullscreen events, exitFullscreen and goBack preserve history; page script blocked");
 }
 
+static void CheckNavigationErrors(void) {
+    GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectZero];
+    page.webView = [[WKWebView alloc] initWithFrame:CGRectZero];
+    for (NSString *key in @[@"estimatedProgress", @"title", @"canGoBack", @"canGoForward"])
+        [page.webView addObserver:page forKeyPath:key options:0 context:nil];
+    NSMutableArray<NSDictionary *> *events = [NSMutableArray array];
+    page.onEvent = ^(id event) { [events addObject:event]; };
+    NSArray<NSNumber *> *codes = @[@(NSURLErrorTimedOut), @(NSURLErrorNotConnectedToInternet),
+        @(NSURLErrorAppTransportSecurityRequiresSecureConnection), @(NSURLErrorSecureConnectionFailed),
+        @(NSURLErrorServerCertificateHasBadDate), @(NSURLErrorServerCertificateUntrusted),
+        @(NSURLErrorServerCertificateHasUnknownRoot), @(NSURLErrorServerCertificateNotYetValid),
+        @(NSURLErrorClientCertificateRejected), @(NSURLErrorClientCertificateRequired)];
+    for (NSNumber *code in codes) {
+        NSError *error = [NSError errorWithDomain:NSURLErrorDomain code:code.integerValue userInfo:nil];
+        [page webView:page.webView didFailProvisionalNavigation:nil withError:error];
+        NSDictionary *event = events.lastObject;
+        NSString *kind = code.integerValue == NSURLErrorTimedOut ? @"TIMEOUT" :
+            (code.integerValue == NSURLErrorNotConnectedToInternet ? @"NETWORK" : @"SSL");
+        Require([event[@"kind"] isEqual:kind] && [event[@"errorCode"] isEqual:code], @"Native navigation errors retain normalized kind and original code");
+        RequireBoolean(event[@"isMainFrame"], YES, @"navigation failure belongs to the main document");
+    }
+    NSUInteger count = events.count;
+    [page webView:page.webView didFailNavigation:nil withError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]];
+    Require(events.count == count, @"Cancelled navigation is not a load failure");
+    [page webView:[WKWebView new] didFailNavigation:nil withError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:nil]];
+    Require(events.count == count, @"Old WebView cannot report a failure");
+    [page webView:page.webView didFailNavigation:nil withError:[NSError errorWithDomain:@"OtherDomain" code:NSURLErrorTimedOut userInfo:nil]];
+    Require([events.lastObject[@"kind"] isEqual:@"UNKNOWN"], @"Native error codes are scoped to their domain");
+    [page hrv_removeFromSuperview];
+}
+
 static void Check(void) {
+    CheckNavigationErrors();
     puts("PHASE: System WebKit readiness");
     NSString *startupURL = [NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"] stringByReplacingOccurrencesOfString:@"/page" withString:@"/other"];
     Require(startupURL.length, @"Missing WebKit readiness fixture");
@@ -487,6 +519,20 @@ static void Check(void) {
         [images hrv_removeFromSuperview];
     }
     GYWebView *view = [[GYWebView alloc] initWithFrame:CGRectZero];
+    view.request = @{@"content": @{@"type": @"url", @"url": @"http://shop.example:8080/page"},
+        @"security": @{@"appBridgeEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"http://shop.example:8080"], @"trustedHostSuffixes": @[]}}};
+    Require([view validRequest:view.request] && [view trusted:@"http://shop.example:8080/next"] &&
+        ![view trusted:@"https://shop.example:8080/next"], @"HTTP exact trust must preserve scheme and port");
+    NSDictionary *chooserInput = @{@"content": @{@"type": @"url", @"url": @"https://safe.example"},
+        @"security": @{@"fileChooserEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+    NSDictionary *oldSystem = GYPlatformRequest(chooserInput, NO);
+    Require([view validRequest:chooserInput] && [view validRequest:oldSystem], @"Old-system chooser fallback rejected valid page");
+    Require(![oldSystem[@"security"][@"fileChooserEnabled"] boolValue] && [chooserInput[@"security"][@"fileChooserEnabled"] boolValue], @"Chooser fallback must not mutate the original request");
+    Require(GYPlatformRequest(chooserInput, YES) == chooserInput, @"Supported system must preserve chooser request");
+    NSDictionary *invalidChooser = @{@"content": chooserInput[@"content"], @"security": @{@"fileChooserEnabled": @YES}};
+    Require(![view validRequest:invalidChooser], @"Chooser fallback must not bypass original trust validation");
+    NSDictionary *malformed = @{@"content": chooserInput[@"content"], @"security": @{@"fileChooserEnabled": @1}};
+    Require(GYPlatformRequest(malformed, NO) == malformed && ![view validRequest:malformed], @"Malformed chooser flag must not be normalized");
     view.request = @{@"security": @{@"trustedOrigins": @{@"urls": @[@"https://[::ffff:192.0.2.1]:8443", @"https://trusted.example."], @"trustedHostSuffixes": @[]}}};
     Require([[view trustExpression] containsString:@"[::ffff:c000:201]"], @"JS trust must use browser IPv6 representation");
     Require([[view trustExpression] containsString:@"location.hostname === \"trusted.example.\""], @"JS trust must preserve trailing-dot origin contract");
@@ -520,6 +566,29 @@ static void Check(void) {
     for (id allowedUrls in @[NSNull.null, @"https://safe.example", @[@1], @[@"javascript:evil"], @[@"http://user@legacy.example/captcha"], @[@"http://legacy.example:0/captcha"], @[@" http://legacy.example/captcha"]]) {
         Require(![view validRequest:@{@"content": @{@"type": @"url", @"url": @"https://safe.example"}, @"navigationPolicy": @{@"allowedUrls": allowedUrls}}], @"Malformed exact URL wire accepted");
     }
+    NSDictionary *independent = @{@"exactOrigins": @[@"https://safe.example", @"http://legacy.example:8080"], @"hostSuffixOrigins": @[@"https://shop.example:8443"]};
+    view.request = @{@"content": @{@"type": @"url", @"url": @"https://safe.example"},
+        @"security": @{@"appBridgeEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"], @"trustedHostSuffixes": @[]}},
+        @"navigationPolicy": @{@"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": independent}};
+    Require([view validRequest:view.request], @"Independent origins rejected");
+    NSDictionary *anyPort = @{ @"exactOrigins": @[], @"hostSuffixOrigins": @[], @"hostSuffixAnyPortOrigins": @[@"http://shop.example", @"https://shop.example"] };
+    view.request = @{ @"content": @{ @"type": @"url", @"url": @"https://safe.example" }, @"security": @{}, @"navigationPolicy": @{ @"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": anyPort } };
+    Require([view validRequest:view.request], @"Any-port origin rejected");
+    Require([view allows:@"http://a.shop.example:8080/path" mainFrame:YES newWindow:NO gesture:NO], @"HTTP non-default port blocked");
+    Require([view allows:@"https://shop.example:9443/path" mainFrame:YES newWindow:NO gesture:NO], @"HTTPS non-default port blocked");
+    Require(![view allows:@"https://shop.example.evil:9443/path" mainFrame:YES newWindow:NO gesture:NO], @"Any-port origin matched lookalike");
+    Require(![view allows:@"http://user@shop.example:8080/path" mainFrame:YES newWindow:NO gesture:NO], @"Any-port origin accepted credentials");
+    view.request = @{ @"content": @{ @"type": @"url", @"url": @"https://safe.example" }, @"security": @{}, @"navigationPolicy": @{ @"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": @{ @"exactOrigins": @[], @"hostSuffixOrigins": @[], @"hostSuffixAnyPortOrigins": @[@"https://shop.example"] } } };
+    Require(![view allows:@"http://shop.example:8080/path" mainFrame:YES newWindow:NO gesture:NO], @"Any-port origin broadened its scheme");
+    view.request = @{ @"content": @{ @"type": @"url", @"url": @"https://safe.example" }, @"security": @{ @"appBridgeEnabled": @YES, @"trustedOrigins": @{ @"urls": @[@"https://safe.example"], @"trustedHostSuffixes": @[] } }, @"navigationPolicy": @{ @"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": independent } };
+    for (NSString *target in @[@"http://legacy.example:8080/a", @"https://shop.example:8443", @"https://a.shop.example:8443/a"]) {
+        Require([view allows:target mainFrame:YES newWindow:NO gesture:NO], @"Independent navigation rejected");
+        Require(![view bridgeAllowed:target], @"Navigation granted Bridge");
+    }
+    for (NSString *target in @[@"https://shop.example", @"http://shop.example:8443", @"https://badshop.example:8443", @"https://shop.example.evil:8443", @"https://user@shop.example:8443"])
+        Require(![view allows:target mainFrame:YES newWindow:NO gesture:NO], @"Independent origin boundary bypassed");
+    for (id origins in @[NSNull.null, @{}, @{@"exactOrigins": @[], @"hostSuffixOrigins": @[@"https://[::1]"]}, @{@"exactOrigins": @[], @"hostSuffixOrigins": @[], @"hostSuffixAnyPortOrigins": @[@"https://shop.example:8443"]}, @{@"exactOrigins": @[], @"hostSuffixOrigins": @[], @"hostSuffixAnyPortOrigins": @YES}])
+        Require(![view validRequest:@{@"content": @{@"type": @"url", @"url": @"https://safe.example"}, @"navigationPolicy": @{@"navigationOrigins": origins}}], @"Malformed navigation origins accepted");
     view.request = @{@"navigationPolicy": @{@"allowedSchemes": @[@"https"]}, @"security": @{}};
     __block NSDictionary *event;
     [view hrv_setPropWithKey:@"onEvent" propValue:^(id value) { event = JSONRoundTrip(value); }];
@@ -770,6 +839,34 @@ static void Check(void) {
     upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { settled++; Require(files == nil, @"Stale document disclosed file"); };
     upload.filePickerGeneration = upload.callbackGeneration; upload.callbackGeneration++;
     [upload finishFiles:@[file]]; Require(settled == 2, @"Stale upload did not settle once");
+    for (NSString *outcome in @[@"resume", @"leave", @"navigate"]) {
+        [upload hrv_setPropWithKey:@"pageOwnerActive" propValue:@YES];
+        upload.filePickerGeneration = upload.callbackGeneration;
+        __block NSUInteger replies = 0;
+        upload.filePickerCompletion = ^(NSArray<NSURL *> *files) {
+            replies++;
+            Require([outcome isEqual:@"resume"] ? files.count == 1 : files == nil, @"Picker returned an incorrect result after hiding");
+        };
+        [upload hrv_setPropWithKey:@"visible" propValue:@NO];
+        Require(replies == 0, @"System picker hide cancelled the current page");
+        if ([outcome isEqual:@"leave"]) [upload hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
+        if ([outcome isEqual:@"navigate"]) [upload prepareDocumentScripts];
+        [upload finishFiles:@[file]];
+        if ([outcome isEqual:@"resume"]) Require(replies == 0, @"Hidden picker result was delivered too early");
+        [upload hrv_setPropWithKey:@"visible" propValue:@YES];
+        Require(replies == 1, @"Picker was not settled exactly once");
+    }
+    [upload hrv_setPropWithKey:@"pageOwnerActive" propValue:@YES];
+    upload.filePickerGeneration = upload.callbackGeneration;
+    __block NSUInteger queuedReplies = 0;
+    upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { queuedReplies++; Require(files == nil, @"A departed page received its queued file"); };
+    [upload hrv_setPropWithKey:@"visible" propValue:@NO];
+    [upload finishFiles:@[file]];
+    Require(queuedReplies == 0, @"Hidden result was not deferred");
+    [upload hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
+    [upload hrv_setPropWithKey:@"visible" propValue:@YES];
+    Require(queuedReplies == 1, @"Queued file was not cancelled exactly once");
+    upload.pageOwnerActive = nil;
     upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { settled++; Require(files == nil, @"Cancel disclosed file"); };
     upload.temporaryFiles = [NSMutableArray arrayWithObject:file];
     [upload cancelFilePicker]; [upload cancelFilePicker]; Require(settled == 3, @"Cancel settled repeatedly");

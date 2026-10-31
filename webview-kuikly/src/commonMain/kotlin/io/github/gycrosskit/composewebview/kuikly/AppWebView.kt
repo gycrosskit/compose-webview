@@ -23,6 +23,28 @@ fun AppWebView(
     modifier: Modifier = Modifier,
     onEvent: (WebViewEvent) -> Unit = {},
     onController: (GYWebView?) -> Unit = {},
+) = AppWebView(
+    request, visible, modifier, onEvent, onController,
+    pageOwnerActive = null,
+)
+
+/**
+ * pageOwnerActive=null 不下发归属属性，首次保留原生旧行为；启用显式归属后必须用 false 撤销，null 不重置已下发值。
+ * 显式 true 可在系统选择器短暂隐藏时保留已有选择请求。
+ * pictureInPicturePageActive 仅在当前视频页仍拥有播放会话时为 true，不能用进程前后台状态代替归属。
+ * onViewUpdate 在初始化及每次更新时先配置宿主原生扩展属性；事件、归属、可见性与 request 由本入口随后统一下发。
+ * 保留旧五参数重载，使已有位置参数和尾随 onController lambda 的含义不变。
+ */
+@Composable
+fun AppWebView(
+    request: WebViewRequest,
+    visible: Boolean = true,
+    modifier: Modifier = Modifier,
+    onEvent: (WebViewEvent) -> Unit = {},
+    onController: (GYWebView?) -> Unit = {},
+    pageOwnerActive: Boolean? = null,
+    pictureInPicturePageActive: Boolean = false,
+    onViewUpdate: (GYWebView) -> Unit = {},
 ) {
     val currentEvent by rememberUpdatedState(onEvent)
     val view = remember { GYWebView() }
@@ -37,6 +59,8 @@ fun AppWebView(
         onDispose {
             acceptingEvents[0] = false
             // 在 Renderer 销毁原生节点前撤销权限、全屏与本次异步操作。
+            view.getViewAttr().pageOwnerActive(false)
+            view.getViewAttr().pictureInPicturePageActive(false)
             view.getViewAttr().visible(false)
             view.stopLoading()
         }
@@ -45,12 +69,18 @@ fun AppWebView(
         factory = { view },
         modifier = modifier,
         viewInit = {
+            onViewUpdate(this)
             getViewEvent().onEvent { if (acceptingEvents[0]) currentEvent(it) }
+            pageOwnerActive?.let { getViewAttr().pageOwnerActive(it) }
+            getViewAttr().pictureInPicturePageActive(pictureInPicturePageActive)
             getViewAttr().visible(visible)
             getViewAttr().request(request)
             submitted[0] = request
         },
         viewUpdate = { node ->
+            onViewUpdate(node)
+            pageOwnerActive?.let { node.getViewAttr().pageOwnerActive(it) }
+            node.getViewAttr().pictureInPicturePageActive(pictureInPicturePageActive)
             node.getViewAttr().visible(visible)
             if (submitted[0] != request) {
                 node.getViewAttr().request(request)

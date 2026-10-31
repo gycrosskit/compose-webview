@@ -33,6 +33,36 @@ class AndroidPostNavigationNativeTest {
         override fun getRequestHeaders() = emptyMap<String, String>()
     }
 
+    @Test fun `popup cannot bypass explicit navigation origins even when callback allows`() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val parent = WebView(activity)
+        activity.setContentView(parent)
+        var request = WebViewRequest(WebViewContent.Url(allowed), navigationPolicy = WebViewNavigationPolicy(
+            allowNewWindows = true, navigationOrigins = WebViewNavigationOrigins(exactOrigins = setOf("https://page.test"))))
+        var changePolicy = false
+        val router = AndroidPopupRouter({ request }) {
+            if (changePolicy) request = request.copy(navigationPolicy = request.navigationPolicy.copy(navigationOrigins = WebViewNavigationOrigins()))
+            WebViewNavigationDecision.ALLOW
+        }
+        fun route(url: String) {
+            val transport = parent.WebViewTransport()
+            assertTrue(router.createWindow(parent, true, Message.obtain(Handler(Looper.getMainLooper())).apply { obj = transport }))
+            val popup = requireNotNull(transport.webView)
+            Shadow.extract<RecordingWebView>(popup).webViewClient.shouldOverrideUrlLoading(popup, resource(url, method = "GET"))
+        }
+        route("https://evil.test/")
+        assertNull(shadowOf(parent).lastLoadedUrl)
+        changePolicy = true
+        route(allowed)
+        assertNull(shadowOf(parent).lastLoadedUrl)
+        changePolicy = false
+        request = request.copy(navigationPolicy = request.navigationPolicy.copy(navigationOrigins = WebViewNavigationOrigins(exactOrigins = setOf("https://page.test"))))
+        route(allowed)
+        assertEquals(allowed, shadowOf(parent).lastLoadedUrl)
+        router.release()
+        activity.finish()
+    }
+
     @Test fun `Kuikly uses latest policy for POST and drops replaced owner notifications`() {
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())
         val events = mutableListOf<Map<String, Any?>>()

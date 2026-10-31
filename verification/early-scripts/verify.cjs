@@ -11,7 +11,7 @@ const cases = pageMode ? [
 ] : [
   ['https://trusted.test/', true], ['https://sub.trusted.test:8443/path', true],
   ['https://sub.trusted.test:65535/path', true], ['https://trusted.test.:8443/path', true],
-  ['http://sub.trusted.test:8443/path', false], ['https://trusted.test.evil:8443/path', false],
+  ['http://sub.trusted.test:8443/path', true], ['https://trusted.test.evil:8443/path', false],
   ['https://evil.test:65535/', false], ['https://evil.test:8443/', false, false, true], ['https://sub.trusted.test:8443/path', false, true],
 ];
 for (const [address, allowed, subframe, poison] of cases) {
@@ -24,4 +24,4 @@ for (const [address, allowed, subframe, poison] of cases) {
   vm.runInNewContext(source, context);
   assert.equal(page.hits || 0, allowed ? 1 : 0, 'every document script runs at most once');
 }
-console.log('PASS: compiled production early-script wrapper, ' + (pageMode ? 'initial HTTP origin and default port' : 'HTTPS suffix arbitrary ports') + ', lookalike/scheme/subframe rejection');
+console.log('PASS: compiled production early-script wrapper, ' + (pageMode ? 'initial HTTP origin and default port' : 'HTTP(S) suffix arbitrary ports') + ', lookalike/scheme/subframe rejection');

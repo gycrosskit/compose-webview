@@ -27,6 +27,60 @@ class GYWebViewStopTest {
         settings = WebViewSettings(javaScriptEnabled = true),
         security = WebViewSecurity(WebViewTrustPolicy(listOf("https://safe.test")), fileChooserEnabled = true, mediaCaptureEnabled = true),
     )
+    @Test fun systemPickerPauseKeepsPendingRequestButPageLeaveCancelsIt() {
+        for (leave in listOf(false, true)) {
+            val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+            val activity = controller.get()
+            val native = GYWebViewNative(activity)
+            activity.setContentView(native)
+            native.setProp("request", WebViewWire.encodeRequest(request))
+            val owner = native.getChildAt(0) as WebView
+            var replies = 0
+            shadowOf(owner).webChromeClient.onShowFileChooser(owner, { result -> assertNull(result); replies++ }, StopFileParams())
+            val launch = shadowOf(activity).nextStartedActivityForResult
+            assertNotNull(launch)
+            native.setProp("visible", false)
+            if (!leave) controller.pause()
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(if (leave) 1 else 0, replies)
+            if (!leave) {
+                controller.resume()
+                native.setProp("visible", true)
+            }
+            activity.activityResultRegistry.dispatchResult(launch.requestCode, Activity.RESULT_CANCELED, null)
+            assertEquals(1, replies)
+            native.onDestroy()
+        }
+    }
+    @Test fun independentNavigationKeepsTrustedFileAndMediaCapabilities() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        val native = GYWebViewNative(activity)
+        val independent = request.copy(navigationPolicy = WebViewNavigationPolicy(
+            navigationOrigins = WebViewNavigationOrigins(exactOrigins = setOf("https://safe.test", "https://other.test"))))
+        native.setProp("request", WebViewWire.encodeRequest(independent))
+        val owner = native.getChildAt(0) as WebView
+        val chrome = shadowOf(owner).webChromeClient
+        var results = 0
+        chrome.onShowFileChooser(owner, { result -> assertNull(result); results++ }, StopFileParams())
+        val launch = shadowOf(activity).nextStartedActivityForResult
+        assertNotNull(launch)
+        assertEquals(0, results)
+        val trusted = StopPermission(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE, PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+        chrome.onPermissionRequest(trusted)
+        assertEquals(1, trusted.grants)
+        native.call("stopLoading", null, null)
+        assertEquals(1, results)
+        activity.activityResultRegistry.dispatchResult(launch.requestCode, Activity.RESULT_CANCELED, null)
+        owner.loadUrl("https://other.test/page")
+        var denied = 0
+        chrome.onShowFileChooser(owner, { result -> assertNull(result); denied++ }, StopFileParams())
+        val untrusted = StopPermission()
+        chrome.onPermissionRequest(untrusted)
+        assertEquals(1, denied)
+        assertEquals(1, untrusted.denials)
+        native.onDestroy()
+    }
     @Test fun stopDiscardsOldJavascriptButKeepsTheOwnerUsable() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val native = GYWebViewNative(activity)
@@ -115,10 +169,10 @@ class StopWebViewShadow : ShadowWebView() {
     @Implementation override fun evaluateJavascript(script: String, callback: ValueCallback<String>?) { if (callback != null) callbacks += callback }
     @Implementation fun stopLoading() { stops++ }
 }
-private class StopPermission : PermissionRequest() {
+private class StopPermission(private val resources: Array<String> = arrayOf(RESOURCE_VIDEO_CAPTURE)) : PermissionRequest() {
     var grants = 0; var denials = 0
     override fun getOrigin() = Uri.parse("https://safe.test")
-    override fun getResources() = arrayOf(RESOURCE_VIDEO_CAPTURE)
+    override fun getResources() = resources
     override fun grant(resources: Array<out String>) { grants++ }
     override fun deny() { denials++ }
 }
