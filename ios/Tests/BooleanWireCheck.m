@@ -123,6 +123,43 @@ static void CheckPictureInPictureMediaVisibility(void) {
 - (NSURL *)URL { return [NSURL URLWithString:@"https://safe.example/page"]; }
 @end
 
+@interface PermissionPresenter : UIViewController
+@property(nonatomic, strong) UIViewController *lastPresented;
+@end
+@implementation PermissionPresenter
+- (void)presentViewController:(UIViewController *)controller animated:(BOOL)animated completion:(void (^)(void))completion {
+    self.lastPresented = controller;
+    if (completion) completion();
+}
+@end
+@interface PermissionPage : GYWebView
+@property(nonatomic, strong) PermissionPresenter *permissionPresenter;
+@end
+@implementation PermissionPage
+- (UIViewController *)filePresenter {
+    if (!self.permissionPresenter) self.permissionPresenter = [PermissionPresenter new];
+    return self.permissionPresenter;
+}
+@end
+@interface PermissionOrigin : WKSecurityOrigin
+@end
+@implementation PermissionOrigin
+- (NSString *)protocol { return @"https"; }
+- (NSString *)host { return @"safe.example"; }
+- (NSInteger)port { return 443; }
+@end
+@interface PermissionFrame : WKFrameInfo
+@property(nonatomic, strong) WKWebView *probeWebView;
+@property(nonatomic, copy) NSString *probeURL;
+@property(nonatomic) BOOL childFrame;
+@end
+@implementation PermissionFrame
+- (BOOL)isMainFrame { return !self.childFrame; }
+- (WKWebView *)webView { return self.probeWebView; }
+- (NSURLRequest *)request { return [NSURLRequest requestWithURL:[NSURL URLWithString:self.probeURL ?: @"https://safe.example/page"]]; }
+- (WKSecurityOrigin *)securityOrigin { return [PermissionOrigin new]; }
+@end
+
 @interface StopProbeWebView : UploadWebView
 @property(nonatomic) NSUInteger stops;
 @property(nonatomic, strong) NSMutableArray *evaluations;
@@ -205,6 +242,65 @@ static id Evaluate(WKWebView *owner, NSString *source) {
 static NSString *RequestJSON(NSDictionary *request) {
     return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:request options:0 error:nil] encoding:NSUTF8StringEncoding];
 }
+static NSArray<NSString *> *permissionLanguages;
+static NSArray<NSString *> *PermissionLanguages(id target, SEL selector) { return permissionLanguages; }
+static UIAlertController *delayedPermissionAlert;
+static UIViewController *delayedPermissionPresenter;
+static void (^permissionDismissalCompletion)(void);
+static IMP originalPermissionPresenter, originalPermissionDismiss;
+static UIViewController *PermissionPresentingController(id target, SEL selector) {
+    if (target == delayedPermissionAlert) return delayedPermissionPresenter;
+    return ((UIViewController *(*)(id, SEL))originalPermissionPresenter)(target, selector);
+}
+static void PermissionDismiss(id target, SEL selector, BOOL animated, void (^completion)(void)) {
+    if (target == delayedPermissionAlert) { permissionDismissalCompletion = [completion copy]; return; }
+    ((void (*)(id, SEL, BOOL, void (^)(void)))originalPermissionDismiss)(target, selector, animated, completion);
+}
+static void CheckPermissionExplanationPresentation(void) {
+    Method languages = class_getClassMethod(NSLocale.class, @selector(preferredLanguages));
+    IMP originalLanguages = method_setImplementation(languages, (IMP)PermissionLanguages);
+    for (NSArray<NSString *> *preferred in @[@[@"zh-Hans"], @[@"en-US"], @[@"fr-FR"], @[]]) {
+        permissionLanguages = preferred;
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        __block NSUInteger replies = 0;
+        [page explainMediaPermissions:@[AVMediaTypeVideo, AVMediaTypeAudio] fileCapture:NO completion:^(BOOL accepted) { Require(!accepted, @"Explanation cancellation granted permission"); replies++; }];
+        UIAlertController *alert = page.permissionExplanation;
+        BOOL chinese = [preferred.firstObject hasPrefix:@"zh"];
+        Require([alert.title isEqual:chinese ? @"权限使用说明" : @"Permission usage"] &&
+            [alert.actions.firstObject.title isEqual:chinese ? @"取消" : @"Cancel"] &&
+            [alert.actions.lastObject.title isEqual:chinese ? @"我已了解，继续" : @"Continue"] &&
+            [alert.message containsString:chinese ? @"相机和麦克风" : @"Camera and microphone"], @"Permission explanation must follow system Chinese or English fallback");
+        [page finishPermissionExplanation:alert accepted:NO];
+        Require(replies == 1, @"A dismissed explanation must cancel once");
+        [page hrv_removeFromSuperview];
+    }
+    method_setImplementation(languages, originalLanguages);
+    permissionLanguages = nil;
+
+    Method presenter = class_getInstanceMethod(UIViewController.class, @selector(presentingViewController));
+    Method dismiss = class_getInstanceMethod(UIViewController.class, @selector(dismissViewControllerAnimated:completion:));
+    originalPermissionPresenter = method_setImplementation(presenter, (IMP)PermissionPresentingController);
+    originalPermissionDismiss = method_setImplementation(dismiss, (IMP)PermissionDismiss);
+    for (NSNumber *accepted in @[@NO, @YES]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        __block NSUInteger replies = 0;
+        [page explainMediaPermissions:@[AVMediaTypeVideo] fileCapture:NO completion:^(BOOL value) { Require(value == accepted.boolValue, @"Dismissal changed explanation result"); replies++; }];
+        delayedPermissionAlert = page.permissionExplanation;
+        delayedPermissionPresenter = page.permissionPresenter;
+        [page finishPermissionExplanation:delayedPermissionAlert accepted:accepted.boolValue];
+        Require(page.permissionExplanation == nil && replies == 0 && permissionDismissalCompletion, @"Explanation must detach old state but await real dismissal before completing");
+        [page explainMediaPermissions:@[AVMediaTypeAudio] fileCapture:NO completion:^(BOOL value) {}];
+        UIAlertController *fresh = page.permissionExplanation;
+        permissionDismissalCompletion(); permissionDismissalCompletion = nil;
+        [page finishPermissionExplanation:delayedPermissionAlert accepted:YES];
+        Require(replies == 1 && page.permissionExplanation == fresh, @"Late dismissal must settle once and preserve the new explanation");
+        delayedPermissionAlert = nil; delayedPermissionPresenter = nil;
+        [page hrv_removeFromSuperview];
+    }
+    method_setImplementation(presenter, originalPermissionPresenter);
+    method_setImplementation(dismiss, originalPermissionDismiss);
+    puts("PASS: Native permission explanation Chinese/English fallback and delayed dismissal ordering/reentry (UIKit presentation fixtures)");
+}
 // 仅替换系统授权入口，真实 captureFile、owner/代次门禁和 wire 事件继续运行。
 static NSMutableArray *capturePermissionReplies;
 static AVAuthorizationStatus capturePermissionStatus;
@@ -236,8 +332,8 @@ static void CheckCapturePermissionSettings(void) {
     originalCaptureStatus = method_setImplementation(status, (IMP)CapturePermissionStatus);
     originalCameraAvailable = method_setImplementation(available, (IMP)CaptureCameraAvailable);
     originalUsageDescription = method_setImplementation(usage, (IMP)CaptureUsageDescription);
-    for (NSString *mode in @[@"camera", @"microphone", @"restricted", @"hidden", @"stale", @"generation", @"source", @"reentrant"]) {
-        GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectZero];
+    for (NSString *mode in @[@"camera", @"microphone", @"restricted", @"hidden", @"stale", @"generation", @"source", @"reentrant", @"alreadyDenied", @"alreadyRestricted"]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
         page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
         page.request = @{@"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
         page.fileOrigin = @"https://safe.example";
@@ -257,9 +353,15 @@ static void CheckCapturePermissionSettings(void) {
             }
         };
         capturePermissionReplies = [NSMutableArray array];
-        capturePermissionStatus = [mode isEqual:@"restricted"] ? AVAuthorizationStatusRestricted : AVAuthorizationStatusDenied;
+        BOOL alreadyBlocked = [mode hasPrefix:@"already"];
+        capturePermissionStatus = alreadyBlocked ? ([mode isEqual:@"alreadyDenied"] ? AVAuthorizationStatusDenied : AVAuthorizationStatusRestricted) : AVAuthorizationStatusNotDetermined;
         [page captureFile:page.webView];
+        if (!alreadyBlocked) {
+            Require(page.permissionExplanation != nil && capturePermissionReplies.count == 0, @"Capture must explain before the first system prompt");
+            [page finishPermissionExplanation:page.permissionExplanation accepted:YES];
+        } else Require(page.permissionExplanation == nil && capturePermissionReplies.count == 0, @"Denied/restricted capture must not explain or ask the system again");
         if ([mode isEqual:@"microphone"]) DeliverCapturePermission(YES);
+        capturePermissionStatus = [mode isEqual:@"restricted"] ? AVAuthorizationStatusRestricted : AVAuthorizationStatusDenied;
         if ([mode isEqual:@"hidden"]) { page.pageOwnerActive = @YES; page.pageVisible = NO; }
         if ([mode isEqual:@"generation"]) page.callbackGeneration++;
         if ([mode isEqual:@"source"]) page.fileOrigin = @"https://other.example";
@@ -268,8 +370,8 @@ static void CheckCapturePermissionSettings(void) {
             page.filePickerRevision++;
             page.filePickerCompletion = ^(NSArray<NSURL *> *files) { freshSettled++; };
         }
-        DeliverCapturePermission(NO);
-        BOOL settingsExpected = [@[@"camera", @"microphone", @"reentrant"] containsObject:mode];
+        if (!alreadyBlocked) DeliverCapturePermission(NO);
+        BOOL settingsExpected = [@[@"camera", @"microphone", @"reentrant", @"alreadyDenied"] containsObject:mode];
         Require((event != nil) == settingsExpected, @"Only a current visible denied capture may ask the host for settings");
         if (settingsExpected) Require([event[@"type"] isEqual:@"permissionSettingsRequired"] &&
             [event[@"permissions"] isEqual:@[[mode isEqual:@"microphone"] ? @"MICROPHONE" : @"CAMERA"]], @"Capture settings wire capability is incorrect");
@@ -278,12 +380,106 @@ static void CheckCapturePermissionSettings(void) {
         page.webView = nil; // Probe 未注册 createWebView 的 KVO。
         [page hrv_removeFromSuperview];
     }
+    for (NSString *mode in @[@"cancel", @"hide", @"navigate", @"leave", @"reentrant"]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
+        page.request = @{@"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+        page.fileOrigin = @"https://safe.example"; page.fileTypes = @[UTTypeImage];
+        page.pageOwnerActive = @YES; page.filePickerGeneration = page.callbackGeneration;
+        capturePermissionStatus = AVAuthorizationStatusNotDetermined;
+        capturePermissionReplies = [NSMutableArray array];
+        __block NSUInteger replies = 0, freshReplies = 0;
+        __weak PermissionPage *weakPage = page;
+        page.filePickerCompletion = ^(NSArray<NSURL *> *files) {
+            Require(files == nil, @"Cancelled explanation must not disclose capture files"); replies++;
+            if ([mode isEqual:@"reentrant"]) {
+                weakPage.filePickerGeneration = weakPage.callbackGeneration;
+                weakPage.filePickerCompletion = ^(NSArray<NSURL *> *value) { freshReplies++; };
+                [weakPage captureFile:weakPage.webView];
+            }
+        };
+        [page captureFile:page.webView];
+        UIAlertController *old = page.permissionExplanation;
+        Require(old && capturePermissionReplies.count == 0, @"Capture explanation must precede system authorization");
+        if ([mode isEqual:@"hide"]) [page hrv_setPropWithKey:@"visible" propValue:@NO];
+        else if ([mode isEqual:@"navigate"]) [page webView:page.webView didStartProvisionalNavigation:nil];
+        else if ([mode isEqual:@"leave"]) [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
+        else [page finishPermissionExplanation:old accepted:NO];
+        [page finishPermissionExplanation:old accepted:YES];
+        Require(replies == 1 && capturePermissionReplies.count == 0 && freshReplies == 0, @"Explanation cancellation must settle capture once without a system prompt or stale reply");
+        if ([mode isEqual:@"reentrant"]) Require(page.permissionExplanation && page.permissionExplanation != old, @"Old explanation cleanup revoked a reentrant capture");
+        page.webView = nil;
+        [page hrv_removeFromSuperview];
+    }
     method_setImplementation(request, originalCaptureRequest);
     method_setImplementation(status, originalCaptureStatus);
     method_setImplementation(available, originalCameraAvailable);
     method_setImplementation(usage, originalUsageDescription);
     capturePermissionReplies = nil;
     puts("PASS: Native capture settings wire: camera/microphone denial, restricted, hidden, stale revision, generation, source and event reentry (system authorization fixtures)");
+}
+static void CheckWebRTCPermissionSettings(void) {
+    Method status = class_getClassMethod(AVCaptureDevice.class, @selector(authorizationStatusForMediaType:));
+    IMP original = method_setImplementation(status, (IMP)CapturePermissionStatus);
+    for (NSString *mode in @[@"camera", @"microphone", @"both", @"restricted", @"authorized", @"undetermined", @"cancel", @"hidden", @"inactive", @"oldFrame", @"oldOwner", @"childFrame", @"reentrant", @"hideExplanation", @"navigateExplanation", @"cancelReentrant", @"changedDenied"]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        WKWebView *owner = [[UploadWebView alloc] initWithFrame:CGRectZero]; page.webView = owner;
+        page.request = @{@"security": @{@"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+        PermissionFrame *frame = [PermissionFrame new]; frame.probeWebView = owner;
+        if ([mode isEqual:@"oldFrame"]) frame.probeURL = @"https://safe.example/old";
+        if ([mode isEqual:@"oldOwner"]) page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
+        if ([mode isEqual:@"childFrame"]) frame.childFrame = YES;
+        if ([mode isEqual:@"hidden"]) page.pageVisible = NO;
+        if ([mode isEqual:@"inactive"]) page.pageOwnerActive = @NO;
+        capturePermissionStatus = [mode isEqual:@"restricted"] ? AVAuthorizationStatusRestricted : [mode isEqual:@"authorized"] ? AVAuthorizationStatusAuthorized : ([@[@"undetermined", @"cancel", @"hideExplanation", @"navigateExplanation", @"cancelReentrant", @"changedDenied"] containsObject:mode] ? AVAuthorizationStatusNotDetermined : AVAuthorizationStatusDenied);
+        __block NSUInteger events = 0, replies = 0, freshReplies = 0;
+        __block NSDictionary *event;
+        __block WKPermissionDecision result = WKPermissionDecisionGrant;
+        __weak PermissionPage *weakPage = page;
+        page.onEvent = ^(id value) {
+            if (![value[@"type"] isEqual:@"permissionSettingsRequired"]) return;
+            events++; event = value;
+            if ([mode isEqual:@"reentrant"]) {
+                weakPage.callbackGeneration++;
+                weakPage.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
+                capturePermissionStatus = AVAuthorizationStatusNotDetermined;
+                [weakPage explainMediaPermissions:@[AVMediaTypeVideo] fileCapture:NO completion:^(BOOL accepted) { freshReplies++; }];
+            }
+        };
+        WKMediaCaptureType type = [mode isEqual:@"microphone"] ? WKMediaCaptureTypeMicrophone : [mode isEqual:@"both"] ? WKMediaCaptureTypeCameraAndMicrophone : WKMediaCaptureTypeCamera;
+        [page webView:owner requestMediaCapturePermissionForOrigin:[PermissionOrigin new] initiatedByFrame:frame type:type decisionHandler:^(WKPermissionDecision value) {
+            replies++; result = value;
+            if ([mode isEqual:@"cancelReentrant"]) [weakPage explainMediaPermissions:@[AVMediaTypeAudio] fileCapture:NO completion:^(BOOL accepted) { freshReplies++; }];
+        }];
+        UIAlertController *alert = page.permissionExplanation;
+        if ([@[@"undetermined", @"cancel", @"hideExplanation", @"navigateExplanation", @"cancelReentrant", @"changedDenied"] containsObject:mode]) {
+            Require(alert && replies == 0 && alert.actions.count == 2 && [alert.message containsString:[NSLocale.preferredLanguages.firstObject.lowercaseString hasPrefix:@"zh"] ? @"相机" : @"Camera"], @"WebRTC must explain the requested capability before WebKit Prompt");
+            if ([mode isEqual:@"hideExplanation"]) [page hrv_setPropWithKey:@"visible" propValue:@NO];
+            else if ([mode isEqual:@"navigateExplanation"]) [page webView:owner didStartProvisionalNavigation:nil];
+            else {
+                if ([mode isEqual:@"changedDenied"]) capturePermissionStatus = AVAuthorizationStatusDenied;
+                [page finishPermissionExplanation:alert accepted:[@[@"undetermined", @"changedDenied"] containsObject:mode]];
+            }
+            [page finishPermissionExplanation:alert accepted:YES];
+            if ([mode isEqual:@"cancel"]) {
+                [page explainMediaPermissions:@[AVMediaTypeVideo] fileCapture:NO completion:^(BOOL accepted) { freshReplies++; }];
+                Require(page.permissionExplanation != nil, @"Cancelling explanation must allow a later user request to explain again");
+            }
+        }
+        BOOL settingsExpected = [@[@"camera", @"microphone", @"both", @"reentrant", @"changedDenied"] containsObject:mode];
+        Require(events == (settingsExpected ? 1 : 0) && replies == 1, @"Only current visible OS denial may emit settings, and WebKit must settle once");
+        if (settingsExpected) {
+            NSArray *expected = [mode isEqual:@"both"] ? @[@"CAMERA", @"MICROPHONE"] : @[[mode isEqual:@"microphone"] ? @"MICROPHONE" : @"CAMERA"];
+            Require([event[@"type"] isEqual:@"permissionSettingsRequired"] && [event[@"permissions"] isEqual:expected], @"WebRTC settings capabilities must match the native request");
+        }
+        Require(result == ([@[@"authorized", @"undetermined"] containsObject:mode] ? WKPermissionDecisionPrompt : WKPermissionDecisionDeny), @"WebKit must retain site consent; OS denial/restriction or cancelled explanations must deny");
+        if ([@[@"reentrant", @"cancelReentrant"] containsObject:mode]) Require(page.permissionExplanation && freshReplies == 0, @"Old request cleanup cancelled a reentrant explanation");
+        page.onEvent = nil;
+        page.webView = nil;
+        [page hrv_removeFromSuperview];
+    }
+    method_setImplementation(status, original);
+    puts("PASS: Native WebRTC permission wire: OS denial/restriction, WebKit Prompt, explanation confirmation/cancellation/retry, owner/frame/visibility gates and reentry (system authorization fixtures)");
 }
 static void CheckPictureInPictureScriptWire(void) {
     GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
@@ -495,7 +691,9 @@ static void CheckNavigationErrors(void) {
 
 static void Check(void) {
     CheckNavigationErrors();
+    CheckPermissionExplanationPresentation();
     CheckCapturePermissionSettings();
+    CheckWebRTCPermissionSettings();
     puts("PHASE: System WebKit readiness");
     NSString *startupURL = [NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"] stringByReplacingOccurrencesOfString:@"/page" withString:@"/other"];
     Require(startupURL.length, @"Missing WebKit readiness fixture");

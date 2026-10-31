@@ -70,8 +70,13 @@ const applicationContext = {
   on(name, callback) { const id = ++nextEnvironmentId; environmentCallbacks.set(id, callback); return id; },
   async off(name, id) { environmentCallbacks.delete(id); },
 };
+let permissionStatus = 2;
+let permissionCalls = 0;
+const permissionDialogs = [];
+let dialogClosing = null;
+const flushNativeCallbacks = () => new Promise(resolve => setImmediate(resolve));
 class BaseView {
-  getUIContext() { return { getHostContext: () => ({ cacheDir: "/cache", config: { fontSizeScale: 1, colorMode: 1 }, getApplicationContext: () => applicationContext }), postFrameCallback: callback => contexts.push(callback) }; }
+  getUIContext() { return { getPromptAction: () => ({ openCustomDialog: async content => { permissionDialogs.push(content); }, closeCustomDialog: async content => { if (dialogClosing) await dialogClosing.promise; content.closed = true; } }), getHostContext: () => ({ cacheDir: "/cache", config: { fontSizeScale: 1, colorMode: 1, language: 'zh' }, getApplicationContext: () => applicationContext }), postFrameCallback: callback => contexts.push(callback) }; }
   setProp() { return false; } onDestroy() {} call() {}
 }
 const windowObject = { Orientation: { UNSPECIFIED: 0, AUTO_ROTATION_LANDSCAPE: 1 }, getLastWindow: async () => ({}) };
@@ -113,13 +118,14 @@ const mocks = {
   '@kit.CameraKit': { camera: { CameraPosition: { CAMERA_POSITION_BACK: 1 } }, cameraPicker: { PickerMediaType: { PHOTO: 'photo', VIDEO: 'video' }, pick: (context, types, profile) => { capture.profile = profile; capture.types = types; return capture.promise; } } },
   '@kit.ArkTS': { url: { URL }, util: { generateRandomUUID: secure => secure ? crypto.randomUUID() : 'test-capture', TextEncoder: class { encodeInto(value) { return new TextEncoder().encode(value); } } } },
   '@kuikly-open/render': { KuiklyRenderBaseView: BaseView },
-  '@ohos.arkui.node': { ComponentContent: class {} },
+  '@ohos.arkui.node': { ComponentContent: class { constructor(ui, builder, options) { this.options = options; } dispose() { this.disposed = true; } } },
+  './WebPermissionDialog': { createWebPermissionDialog() {} },
   '@kit.ArkWeb': { WebNetErrorList: nativeErrorCodes, webview: { WebviewController: Controller,
     WebCookieManager: { clearAllCookies: () => { dataCleaningCalls.push(['cookies']); return cookieDeletion.promise; } },
     WebStorage: { deleteAllData: () => { dataCleaningCalls.push(['storage']); if (dataCleaningFailure === 'storage') throw new Error('storage failed'); } },
   } },
   '@kit.ArkUI': { window: windowObject, FrameCallback: class {} },
-  '@kit.AbilityKit': { ConfigurationConstant: { ColorMode: { COLOR_MODE_DARK: 0, COLOR_MODE_LIGHT: 1 } }, abilityAccessCtrl: { createAtManager: () => ({ requestPermissionsFromUser: () => permission.promise }) } },
+  '@kit.AbilityKit': { ConfigurationConstant: { ColorMode: { COLOR_MODE_DARK: 0, COLOR_MODE_LIGHT: 1 } }, abilityAccessCtrl: { PermissionStatus: { GRANTED: 0, NOT_DETERMINED: 1, DENIED: 2, RESTRICTED: 3 }, createAtManager: () => ({ getSelfPermissionStatus: () => permissionStatus, requestPermissionsFromUser: () => { permissionCalls++; return permission.promise; } }) } },
   '@kit.CoreFileKit': { fileIo: { OpenMode: { CREATE: 1, READ_WRITE: 2, READ_ONLY: 0 }, openSync: path => { fileOpens++; return { fd: path }; }, closeSync() {}, statSync: () => ({ size: fileSize }), readSync: (fd, buffer) => { const bytes = new Uint8Array(buffer); if (captureHeaderValid) { if (String(fd).endsWith('.mp4')) { bytes.set([0x66, 0x74, 0x79, 0x70], 4); } else bytes.set([0xff, 0xd8, 0xff]); } return 12; }, unlinkSync: path => deletedFiles.push(path) }, fileUri: { FileUri: class { constructor(uri) { this.name = uri.split('/').at(-1); } }, getUriFromPath: path => 'file://' + path }, picker: { DocumentSelectOptions: class {}, DocumentViewPicker: class { select() { return selectedFile.promise; } } } },
   './WebViewComponent': { createGYWebView() {} },
 };
@@ -138,7 +144,7 @@ function load(file) {
   const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, experimentalDecorators: true } }).outputText;
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: name => name === './WebViewWire' ? load('WebViewWire.ts') : mocks[name],
-    Observed: value => value, ProtectedResourceType: { VIDEO_CAPTURE: 'video', AUDIO_CAPTURE: 'audio' },
+    Observed: value => value, wrapBuilder: value => value, ProtectedResourceType: { VIDEO_CAPTURE: 'video', AUDIO_CAPTURE: 'audio' },
     FileSelectorMode: { FileOpenMultipleMode: 1 }, console, Set, Map, Promise,
     WebResourceResponse: class { setResponseCode() {} setReasonMessage() {} setResponseData() {} },
   }, { filename: file });
@@ -284,7 +290,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     const replies = []; const delivered = [];
     document.page.earlyChannel.onmessage = event => delivered.push(event.data);
     view.call('replyPageMessage', encoded({replyId: messages(events)[0].replyId, data: 'normalized reply'}), value => replies.push(value.result));
-    await Promise.resolve(); await Promise.resolve();
+    await flushNativeCallbacks();
     assert.deepEqual(replies, [true]); assert.deepEqual(delivered, ['normalized reply']);
     for (const other of [actual + '/other', actual + '?extra', actual + '#next', 'https://user@trusted.test/']) {
       view.controller.url = other; document.page.earlyChannel.postMessage('different document');
@@ -322,7 +328,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     const invalid = []; first.view.call('replyPageMessage', params, value => invalid.push(value.result)); assert.deepEqual(invalid, [false]);
   }
   const received = []; first.page.earlyChannel.onmessage = event => received.push(event.data); const replyId = messages(first.events)[0].replyId; const replies = [];
-  first.view.call('replyPageMessage', encoded({replyId, data: 'reply'}), value => replies.push(value.result)); await Promise.resolve(); await Promise.resolve();
+  first.view.call('replyPageMessage', encoded({replyId, data: 'reply'}), value => replies.push(value.result)); await flushNativeCallbacks();
   assert.deepEqual(received, ['reply']); assert.deepEqual(replies, [true]);
   first.view.call('replyPageMessage', encoded({replyId, data: 'duplicate'}), value => replies.push(value.result)); assert.deepEqual(replies, [true, false]);
   first.page.earlyChannel.postMessage('界'.repeat(21846)); assert.equal(messages(first.events).length, 3, '64KiB UTF-8 bound');
@@ -336,7 +342,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   for (const handler of [null, () => { throw new Error('page handler failure'); }]) {
     const owner = channelOwner(); owner.page.earlyChannel.onmessage = handler; const accepted = [];
     owner.view.call('replyPageMessage', encoded({replyId: messages(owner.events)[0].replyId, data: 'queued'}), value => accepted.push(value.result));
-    await Promise.resolve(); await Promise.resolve(); assert.deepEqual(accepted, [true], 'native accepted does not depend on H5 handler/delivery'); owner.view.onDestroy();
+    await flushNativeCallbacks(); assert.deepEqual(accepted, [true], 'native accepted does not depend on H5 handler/delivery'); owner.view.onDestroy();
   }
   for (const action of ['hide', 'stopLoading', 'navigation', 'destroy', 'request']) {
     const owner = channelOwner(); const oldId = messages(owner.events)[0].replyId;
@@ -351,7 +357,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.deepEqual(accepted, [true], 'submission accepted synchronously');
   const previous = queued.view.controller; queued.view.call('reload', '{}', null); queued.view.onControllerAttached(); const next = channelPage(queued.view);
   next.page.earlyChannel.onmessage = () => assert.fail('old queued reply cannot enter new document'); previous.scriptContext = next.context;
-  task.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); assert.deepEqual(accepted, [true]); queued.view.onDestroy();
+  task.resolve(); await flushNativeCallbacks(); await Promise.resolve(); assert.deepEqual(accepted, [true]); queued.view.onDestroy();
   const failedQueue = channelOwner(); failedQueue.view.controller.runJavaScript = () => { throw new Error('native queue failed'); };
   const rejected = []; failedQueue.view.call('replyPageMessage', encoded({replyId: messages(failedQueue.events)[0].replyId, data: 'queue'}), value => rejected.push(value.result));
   assert.deepEqual(rejected, [false]); failedQueue.view.onDestroy();
@@ -548,23 +554,23 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(page.ready, 1); assert.equal(page.finished, 1, 'repeated native phases execute named scripts once per document');
   assert.equal(hidden.controller.deliveries.length, 0, 'hidden initialization cannot open a business channel');
   const initializedController = hidden.controller; const beforeShowScripts = initializedController.scripts.length;
-  hidden.setProp('visible', true); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  hidden.setProp('visible', true); await flushNativeCallbacks(); await Promise.resolve();
   assert.equal(hidden.controller, initializedController); assert.equal(initializedController.refreshes, 0);
   assert.equal(initializedController.deliveries.length, 1); assert.equal(page.ready, 1); assert.equal(page.finished, 1);
   assert.equal(initializedController.scripts.length, beforeShowScripts + 2, 'show synchronizes visibility before bridge bootstrap');
   const delayedHide = deferred(); delayedHide.deferExecution = true; nextJavascript = delayedHide;
   hidden.setProp('visible', false); hidden.setProp('visible', true);
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  await flushNativeCallbacks(); await Promise.resolve();
   const currentVisibilityRevision = page.__GY_WEBVIEW_VISIBILITY_REVISION__;
   assert.equal(page.__GY_WEBVIEW_VISIBLE__, true);
-  delayedHide.resolve('null'); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  delayedHide.resolve('null'); await flushNativeCallbacks(); await Promise.resolve();
   assert.equal(page.__GY_WEBVIEW_VISIBLE__, true, 'late-executing hide cannot overwrite newer show');
   assert.equal(page.__GY_WEBVIEW_VISIBILITY_REVISION__, currentVisibilityRevision);
   hidden.setProp('visible', false);
   const lateScript = deferred(); nextJavascript = lateScript;
   hidden.onPageVisible('https://trusted.test/page');
   hidden.call('stopLoading', null, () => {}); const beforeCancelledFailure = hiddenEvents.length;
-  lateScript.reject(new Error('late script failure')); await Promise.resolve(); await Promise.resolve();
+  lateScript.reject(new Error('late script failure')); await flushNativeCallbacks();
   assert.equal(hiddenEvents.length, beforeCancelledFailure, 'cancelled script completion cannot emit a late failure');
   const oldToken = hidden.renderToken; const oldController = hidden.controller;
   hidden.setProp('request', encoded(scriptRequest));
@@ -727,7 +733,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(view.isRenderActive(view.renderToken - 1), false, 'old same-origin document cannot authorize new request');
   view.onControllerAttached();
   view.onPageBegin('https://trusted.test/page'); view.onPageVisible('https://trusted.test/page');
-  await Promise.resolve(); await Promise.resolve();
+  await flushNativeCallbacks();
   assert.equal(view.controller.deliveries.length, 1);
   assert.equal(view.controller.deliveries[0].origin, 'https://trusted.test');
   const oldPorts = view.controller.ports[0];
@@ -738,7 +744,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   assert.equal(oldPorts[0].closed, true); assert.equal(oldPorts[1].closed, true);
   oldPorts[0].message(encoded({ handlerName: 'stale', data: '{}' }));
   assert.equal(events.filter(event => event.type === 'bridgeMessage').length, beforeHide);
-  view.setProp('visible', true); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  view.setProp('visible', true); await flushNativeCallbacks(); await Promise.resolve();
   assert.equal(view.controller.deliveries.length, 2, 'visible resumes same-document handshake');
   oldPorts[0].message(encoded({ handlerName: 'still-stale', data: '{}' }));
   assert.equal(events.filter(event => event.type === 'bridgeMessage').length, beforeHide);
@@ -746,18 +752,18 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   independentView.setProp('onEvent', event => independentEvents.push(event));
   independentView.setProp('visible', true); independentView.setProp('request', encoded(independent));
   independentView.onControllerAttached(); independentView.onPageBegin('https://trusted.test/page'); independentView.onPageVisible('https://trusted.test/page');
-  await Promise.resolve(); await Promise.resolve();
+  await flushNativeCallbacks();
   const independentOld = independentView.controller.ports[0][0];
   independentView.controller.url = 'https://shop.test:8443/item';
   independentView.onPageBegin(independentView.controller.url); independentView.onPageVisible(independentView.controller.url);
-  await Promise.resolve(); await Promise.resolve();
+  await flushNativeCallbacks();
   assert.equal(independentOld.closed, true);
   independentOld.message(encoded({ handlerName: 'stale', data: '{}' }));
   assert.equal(independentView.controller.deliveries.length, 1, 'navigation-only origin cannot receive Bridge port');
   assert.equal(independentEvents.filter(event => event.type === 'bridgeMessage').length, 0);
   independentView.controller.url = 'https://trusted.test/next';
   independentView.onPageBegin(independentView.controller.url); independentView.onPageVisible(independentView.controller.url);
-  await Promise.resolve(); await Promise.resolve();
+  await flushNativeCallbacks();
   assert.equal(independentView.controller.deliveries.length, 2, 'new trusted document receives a fresh port');
   independentView.controller.ports[1][0].message(encoded({ handlerName: 'fresh', data: '{}' }));
   assert.equal(independentEvents.filter(event => event.type === 'bridgeMessage').length, 1);
@@ -767,28 +773,28 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   visibilityRace.onPageEnd('https://trusted.test/page');
   const showSync = deferred(); nextJavascript = showSync;
   visibilityRace.setProp('visible', true); visibilityRace.onPageEnd('https://trusted.test/page');
-  await Promise.resolve(); await Promise.resolve();
+  await flushNativeCallbacks();
   assert.equal(visibilityRace.controller.deliveries.length, 0, 'page-end cannot handshake before visibility synchronization');
-  showSync.resolve('null'); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  showSync.resolve('null'); await flushNativeCallbacks(); await Promise.resolve();
   assert.equal(visibilityRace.controller.deliveries.length, 1, 'current visibility synchronization opens one channel');
   visibilityRace.setProp('visible', false);
   const staleShowSync = deferred(); nextJavascript = staleShowSync;
   visibilityRace.setProp('visible', true); visibilityRace.setProp('visible', false); visibilityRace.setProp('visible', true);
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  await flushNativeCallbacks(); await Promise.resolve();
   assert.equal(visibilityRace.controller.deliveries.length, 2);
-  staleShowSync.resolve('null'); await Promise.resolve(); await Promise.resolve();
+  staleShowSync.resolve('null'); await flushNativeCallbacks();
   assert.equal(visibilityRace.controller.deliveries.length, 2, 'stale hide/show generation never opens another channel');
   visibilityRace.setProp('visible', false); const replacedShow = deferred(); nextJavascript = replacedShow;
   visibilityRace.setProp('visible', true); const replacedController = visibilityRace.controller;
   visibilityRace.setProp('request', encoded(bridgeRequest)); replacedShow.resolve('null');
-  await Promise.resolve(); await Promise.resolve();
+  await flushNativeCallbacks();
   assert.equal(replacedController.deliveries.length, 2, 'replaced controller completion never flushes old messages'); visibilityRace.onDestroy();
   const navigationDuringSync = new GYWebView(); navigationDuringSync.setProp('visible', false);
   navigationDuringSync.setProp('request', encoded(bridgeRequest)); navigationDuringSync.onControllerAttached();
   const navigationSync = deferred(); nextJavascript = navigationSync;
   navigationDuringSync.setProp('visible', true); navigationDuringSync.onPageBegin('https://trusted.test/next');
-  navigationSync.resolve('null'); await Promise.resolve(); await Promise.resolve();
-  navigationDuringSync.onPageEnd('https://trusted.test/next'); await Promise.resolve(); await Promise.resolve();
+  navigationSync.resolve('null'); await flushNativeCallbacks();
+  navigationDuringSync.onPageEnd('https://trusted.test/next'); await flushNativeCallbacks();
   assert.equal(navigationDuringSync.controller.deliveries.length, 1, 'new document resets cancelled visibility wait and handshakes');
   navigationDuringSync.onDestroy();
   const evalTask = deferred(); nextJavascript = evalTask; let late = 0;
@@ -809,7 +815,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   mediaView.selectFile({ fileSelector: { isCapture: () => false, getAcceptType: () => [], getMode: () => 0 }, result: { handleFileList: files => acceptedFiles.push(Array.from(files)) } });
   mediaView.setProp('visible', true);
   assert.equal(acceptedFiles.length, 0, 'repeated visible state keeps pending file selection');
-  selectedFile.resolve(['file://picked/document.pdf']); await Promise.resolve(); await Promise.resolve();
+  selectedFile.resolve(['file://picked/document.pdf']); await flushNativeCallbacks();
   assert.deepEqual(acceptedFiles, [['file://picked/document.pdf']], 'trusted document retains file selection with independent navigation');
   for (const outcome of ['resume', 'leave', 'navigate', 'originChange', 'destroy']) {
     const suspended = new GYWebView(); const replies = [];
@@ -823,7 +829,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     if (outcome === 'navigate') suspended.onPageBegin('https://trusted.test/next');
     if (outcome === 'originChange') suspended.controller.url = 'https://foreign.test/page';
     if (outcome === 'destroy') suspended.onDestroy();
-    selectedFile.resolve(['file://picked/document.pdf']); await Promise.resolve(); await Promise.resolve();
+    selectedFile.resolve(['file://picked/document.pdf']); await flushNativeCallbacks();
     if (outcome === 'resume') {
       assert.deepEqual(replies, [], 'successful result waits until visible');
       suspended.setProp('visible', true);
@@ -836,7 +842,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     suspended.setProp('pageOwnerActive', true); suspended.setProp('request', encoded(mediaPolicy));
     suspended.onControllerAttached(); suspended.onPageVisible('https://trusted.test/page'); selectedFile = deferred();
     suspended.selectFile({ fileSelector: { isCapture: () => false, getAcceptType: () => [], getMode: () => 0 }, result: { handleFileList: files => replies.push(Array.from(files)) } });
-    suspended.setProp('visible', false); selectedFile.resolve(['file://picked/document.pdf']); await Promise.resolve(); await Promise.resolve();
+    suspended.setProp('visible', false); selectedFile.resolve(['file://picked/document.pdf']); await flushNativeCallbacks();
     assert.deepEqual(replies, []);
     if (reason === 'leave') suspended.setProp('pageOwnerActive', false);
     if (reason === 'navigate') suspended.onPageBegin('https://trusted.test/next');
@@ -851,19 +857,42 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     suspended.onControllerAttached(); suspended.onPageVisible('https://trusted.test/page');
     permission = deferred(); capture = deferred();
     suspended.selectFile({ fileSelector: { isCapture: () => true, getAcceptType: () => ['image/jpeg'] }, result: { handleFileList: files => replies.push(Array.from(files)) } });
-    suspended.setProp('visible', false); permission.resolve({ authResults: [0] }); await Promise.resolve(); await Promise.resolve();
+    suspended.setProp('visible', false); permission.resolve({ authResults: [0] }); await flushNativeCallbacks();
     assert.equal(capture.profile, undefined, 'camera opens only after foreground resumes');
-    suspended.setProp('visible', true); await Promise.resolve(); await Promise.resolve();
+    suspended.setProp('visible', true); await flushNativeCallbacks();
     suspended.setProp('visible', false);
-    capture.resolve({ resultCode: 0, resultUri: capture.profile.saveUri, mediaType: 'photo' }); await Promise.resolve(); await Promise.resolve();
+    capture.resolve({ resultCode: 0, resultUri: capture.profile.saveUri, mediaType: 'photo' }); await flushNativeCallbacks();
     assert.deepEqual(replies, [], 'captured file waits while hidden');
-    suspended.setProp('visible', true); await Promise.resolve(); await Promise.resolve();
+    suspended.setProp('visible', true); await flushNativeCallbacks();
     assert.deepEqual(replies, [[capture.profile.saveUri]]);
     suspended.onDestroy();
   }
+  // 真实权限说明控制路径：确认前、退出转场中及 owner 撤销后均不能申请系统权限。
+  {
+    const explained = new GYWebView(); const events = [];
+    explained.setProp('request', encoded(mediaPolicy)); explained.onControllerAttached(); explained.onPageVisible('https://trusted.test/page');
+    explained.setProp('onEvent', event => events.push(event));
+    permissionStatus = 1; permission = deferred(); const calls = permissionCalls;
+    let denied = 0, granted = 0;
+    const request = () => explained.permissionRequest({ getAccessibleResource: () => ['video'], getOrigin: () => 'https://trusted.test', grant: () => granted++, deny: () => denied++ });
+    request(); await flushNativeCallbacks();
+    assert.equal(permissionCalls, calls); const cancelled = permissionDialogs.at(-1);
+    cancelled.options.complete(false); await flushNativeCallbacks(); assert.equal(denied, 1); assert.equal(permissionCalls, calls);
+    request(); await flushNativeCallbacks(); const accepted = permissionDialogs.at(-1); assert.notEqual(accepted, cancelled);
+    dialogClosing = deferred(); accepted.options.complete(true); await flushNativeCallbacks(); assert.equal(permissionCalls, calls);
+    dialogClosing.resolve(); dialogClosing = null; await flushNativeCallbacks(); assert.equal(permissionCalls, calls + 1);
+    permission.resolve({ authResults: [0] }); await flushNativeCallbacks(); assert.equal(granted, 1);
+    request(); await flushNativeCallbacks(); const hidden = permissionDialogs.at(-1);
+    explained.setProp('visible', false); await flushNativeCallbacks(); hidden.options.complete(true); await flushNativeCallbacks();
+    assert.equal(permissionCalls, calls + 1); assert.equal(denied, 2); assert.equal(hidden.closed, true); assert.equal(hidden.disposed, true);
+    explained.setProp('visible', true); permissionStatus = 3; request(); await flushNativeCallbacks();
+    assert.equal(permissionCalls, calls + 1); assert.equal(events.some(event => event.type === 'permissionSettingsRequired'), false);
+    permissionStatus = 0; request(); await flushNativeCallbacks(); assert.equal(granted, 2); assert.equal(permissionCalls, calls + 1);
+    explained.onDestroy(); permissionStatus = 2;
+  }
   permission = deferred(); let acceptedMedia = 0;
   mediaView.permissionRequest({ getAccessibleResource: () => ['video', 'audio'], getOrigin: () => 'https://trusted.test', grant: () => acceptedMedia++, deny: () => assert.fail('trusted media denied') });
-  permission.resolve({ authResults: [0, 0] }); await Promise.resolve(); await Promise.resolve();
+  permission.resolve({ authResults: [0, 0] }); await flushNativeCallbacks();
   assert.equal(acceptedMedia, 1, 'trusted document retains camera and microphone with independent navigation');
   const captureEvents = []; mediaView.setProp('onEvent', event => captureEvents.push(event));
   let captureCompletions = 0;
@@ -874,10 +903,10 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   const captureGeneration = mediaView.lifetime.generation;
   mediaView.setProp('request', encoded({ ...mediaPolicy, navigationPolicy: { ...mediaPolicy.navigationPolicy, blockedRules: [strictMallRule] } }));
   assert.equal(mediaView.controller, captureController); assert.equal(mediaView.lifetime.generation, captureGeneration);
-  permission.resolve({ authResults: [0] }); await Promise.resolve(); await Promise.resolve();
+  permission.resolve({ authResults: [0] }); await flushNativeCallbacks();
   assert.equal(capture.types[0], 'photo');
   capture.resolve({ resultCode: 0, resultUri: capture.profile.saveUri, mediaType: 'photo' });
-  await Promise.resolve(); await Promise.resolve();
+  await flushNativeCallbacks();
   assert.equal(captureCompletions, 1); assert.deepEqual(captureResponses, [[capture.profile.saveUri]]);
   assert.equal(captureEvents.some(event => event.type === 'capabilityUnsupported'), false);
   const capturedPath = capture.profile.saveUri.replace('file://', '');
@@ -886,13 +915,13 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     const captured = new GYWebView(); captured.setProp('request', encoded(mediaPolicy)); captured.onControllerAttached(); captured.onPageVisible('https://trusted.test/page');
     permission = deferred(); capture = deferred(); const replies = [];
     captured.selectFile({ fileSelector: { isCapture: () => true, getAcceptType: () => ['image/jpeg'] }, result: { handleFileList: files => replies.push(Array.from(files)) } });
-    permission.resolve({ authResults: [0] }); await Promise.resolve(); await Promise.resolve();
+    permission.resolve({ authResults: [0] }); await flushNativeCallbacks();
     const savedUri = capture.profile.saveUri;
     if (revoke === 'navigate') captured.onPageBegin('https://trusted.test/next');
     else if (revoke === 'request') captured.setProp('request', encoded(mediaPolicy));
     else if (revoke === 'hide') captured.setProp('visible', false);
     else captured.onDestroy();
-    capture.resolve({ resultCode: 0, resultUri: savedUri, mediaType: 'photo' }); await Promise.resolve(); await Promise.resolve();
+    capture.resolve({ resultCode: 0, resultUri: savedUri, mediaType: 'photo' }); await flushNativeCallbacks();
     assert.deepEqual(replies, [[]], `${revoke} discards late capture exactly once`);
     assert.ok(deletedFiles.includes(savedUri.replace('file://', '')), `${revoke} cleans output`); captured.onDestroy();
   }
@@ -902,11 +931,11 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     permission = deferred(); capture = deferred(); const replies = [];
     captured.selectFile({ fileSelector: { isCapture: () => true, getAcceptType: () => ['image/jpeg'] }, result: { handleFileList: files => replies.push(Array.from(files)) } });
     permission.resolve(reason === 'denied' ? { authResults: [-1], dialogShownResults: [false] } : { authResults: [0] });
-    await Promise.resolve(); await Promise.resolve();
+    await flushNativeCallbacks();
     if (reason !== 'denied') {
       captureHeaderValid = reason !== 'badHeader'; fileSize = reason === 'empty' ? 0 : reason === 'oversize' ? 50 * 1024 * 1024 + 1 : 16;
       capture.resolve({ resultCode: reason === 'cancel' ? -1 : 0, resultUri: reason === 'wrongUri' ? 'file://foreign' : capture.profile.saveUri, mediaType: reason === 'wrongType' ? 'video' : 'photo' });
-      await Promise.resolve(); await Promise.resolve();
+      await flushNativeCallbacks();
     }
     assert.deepEqual(replies, [[]], `${reason} capture must not report success`);
     assert.equal(capturedEvents.some(event => event.type === 'permissionSettingsRequired'), reason === 'denied');
@@ -934,7 +963,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     else if (revoke === 'request') pickerView.setProp('request', encoded(mediaPolicy));
     else pickerView.setProp('visible', false);
     const beforeLateOpens = fileOpens;
-    selectedFile.resolve(['file://picked/document']); await Promise.resolve(); await Promise.resolve();
+    selectedFile.resolve(['file://picked/document']); await flushNativeCallbacks();
     assert.equal(fileOpens, beforeLateOpens, `${revoke} late picker cannot read URI`);
     assert.equal(responses.length, 1, `${revoke} completes FileSelectorResult once`);
     assert.equal(responses[0].length, 0, `${revoke} discards late file URI`); pickerView.onDestroy();
@@ -954,7 +983,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     if (reason === 'originChanged') permissionView.controller.url = 'https://foreign.test/page';
     permission.resolve(reason === 'partialGrant' ? { authResults: [0] } : reason === 'settingsDenied' ?
       { authResults: [-1, 0], dialogShownResults: [false, false] } : { authResults: [0, 0] });
-    await Promise.resolve(); await Promise.resolve();
+    await flushNativeCallbacks();
     assert.equal(settledGrants, 0, `${reason} never grants capture`);
     assert.equal(settledDenials, 1, `${reason} settles once`);
     const settingsEvents = permissionEvents.filter(event => event.type === 'permissionSettingsRequired');
@@ -969,7 +998,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   changedPicker.selectFile({ fileSelector: { isCapture: () => false, getAcceptType: () => [], getMode: () => 0 },
     result: { handleFileList: files => changedFiles.push(Array.from(files)) } });
   changedPicker.controller.url = 'https://foreign.test/page';
-  selectedFile.resolve(['file://picked/secret']); await Promise.resolve(); await Promise.resolve();
+  selectedFile.resolve(['file://picked/secret']); await flushNativeCallbacks();
   assert.deepEqual(changedFiles, [[]]); changedPicker.onDestroy(); assert.equal(changedFiles.length, 1);
 
   const fullscreenView = new GYWebView(); fullscreenView.setProp('request', encoded(standard)); fullscreenView.onControllerAttached();
@@ -1069,7 +1098,7 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   }
   class ScopedPolicyView extends GYWebView {
     windowPolicyController() { return this.selectedPolicy; }
-    getUIContext() { return { getHostContext: () => this.windowContext }; }
+    getUIContext() { return { getPromptAction: () => ({ openCustomDialog: async content => { permissionDialogs.push(content); }, closeCustomDialog: async content => { if (dialogClosing) await dialogClosing.promise; content.closed = true; } }), getHostContext: () => this.windowContext }; }
   }
   const mainWindow = scopedWindow(); const audienceWindow = scopedWindow();
   windowObject.getLastWindow = async context => context.window;

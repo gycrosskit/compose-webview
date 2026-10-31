@@ -6,6 +6,20 @@ import androidx.activity.ComponentActivity
 
 fun main() {
     val camera = Manifest.permission.CAMERA
+    val explanationActivity = ComponentActivity()
+    val explanationResults = mutableListOf<Boolean>()
+    val explanationController = AndroidWebPermissionController(explanationActivity) { error("Explanation cancellation has no settings hint") }
+    fun requestExplanation() = explanationController.request(permissions = listOf(camera),
+        purpose = WebPermissionPurpose.MEDIA_CAPTURE, stillAllowed = { true }, onResult = explanationResults::add)
+    requestExplanation()
+    val firstExplanation = AlertDialog.latest!!
+    firstExplanation.cancelByUser()
+    requestExplanation()
+    check(AlertDialog.latest !== firstExplanation && explanationResults == listOf(false))
+    AlertDialog.latest!!.cancelByUser()
+    check(explanationResults == listOf(false, false) && explanationActivity.activityResultRegistry.launchers.single().launches == 0)
+    explanationController.destroy()
+
     val activity = ComponentActivity()
     val settings = mutableListOf<Set<WebViewPermission>>()
     val results = mutableListOf<Boolean>()
@@ -18,22 +32,29 @@ fun main() {
 
     request()
     check(launcher.launches == 0 && settings.isEmpty()) // First use still shows the native explanation.
+    request() // Both requests arrived before either had actually requested platform permission.
     AlertDialog.latest!!.acknowledge()
     check(launcher.launches == 1)
-    deliver(emptyMap())
-    check(results == listOf(false) && settings.isEmpty())
-    request()
-    check(launcher.launches == 2) // Empty cancellation must not become a pre-request settings block.
-    activity.rationale += camera
     deliver(mapOf(camera to false))
-    check(results == listOf(false, false) && settings.isEmpty())
+    check(results == listOf(false) && settings.isEmpty() && launcher.launches == 2)
+    deliver(mapOf(camera to false))
+    check(results == listOf(false, false) && settings.isEmpty()) // Queue progress cannot upgrade a first request.
     request()
     check(launcher.launches == 3)
-    activity.rationale -= camera
     deliver(mapOf(camera to false))
     check(results.last() == false && settings == listOf(setOf(WebViewPermission.CAMERA)))
     request()
-    check(launcher.launches == 4) // Even a previous settings hint cannot replace a new platform request.
+    check(launcher.launches == 4)
+    deliver(emptyMap())
+    check(results == listOf(false, false, false, false) && settings.size == 1)
+    request()
+    check(launcher.launches == 5) // Empty cancellation must not become a pre-request settings block.
+    activity.rationale += camera
+    deliver(mapOf(camera to false))
+    check(results == listOf(false, false, false, false, false) && settings.size == 1)
+    activity.rationale -= camera
+    request()
+    check(launcher.launches == 6) // Even a previous settings hint cannot replace a new platform request.
     activity.grants += camera
     deliver(mapOf(camera to false))
     check(results.last() && settings.size == 1) // Current permission state wins over a stale false entry.
@@ -52,7 +73,7 @@ fun main() {
     val before = results.size
     request()
     check(launcher.launches == launches) // Old ActivityResult keeps the in-flight barrier.
-    deliver(emptyMap())
+    deliver(mapOf(camera to false))
     check(results.size == before && settings.size == 1 && launcher.launches == launches + 1)
     activity.grants += camera
     deliver(mapOf(camera to true))
@@ -81,6 +102,26 @@ fun main() {
     check(results.size == count && settings.size == 1) // Explicit cancellation never delivers a late grant.
     controller.destroy()
 
+    val microphone = Manifest.permission.RECORD_AUDIO
+    val grantActivity = ComponentActivity()
+    val grantSettings = mutableListOf<Set<WebViewPermission>>()
+    val grantResults = mutableListOf<Boolean>()
+    val grantController = AndroidWebPermissionController(grantActivity) { grantSettings += it }
+    fun requestMicrophone() = grantController.request(permissions = listOf(microphone),
+        purpose = WebPermissionPurpose.MEDIA_CAPTURE, stillAllowed = { true }, onResult = grantResults::add)
+    requestMicrophone()
+    AlertDialog.latest!!.acknowledge()
+    val grantLauncher = grantActivity.activityResultRegistry.launchers.single()
+    grantActivity.grants += microphone
+    grantLauncher.deliver(mapOf(microphone to true))
+    check(grantResults == listOf(true) && grantSettings.isEmpty())
+    grantActivity.grants.clear()
+    requestMicrophone()
+    check(grantLauncher.launches == 2) // Revocation after a real grant still reaches the platform.
+    grantLauncher.deliver(mapOf(microphone to false))
+    check(grantResults == listOf(true, false) && grantSettings == listOf(setOf(WebViewPermission.MICROPHONE)))
+    grantController.destroy()
+
     val reentrantActivity = ComponentActivity()
     var oldAllowed = true
     val reentrantResults = mutableListOf<Pair<String, Boolean>>()
@@ -99,5 +140,5 @@ fun main() {
     reentrantLauncher.deliver(mapOf(camera to true))
     check(reentrantResults == listOf("old" to false, "new" to true))
     reentrant.destroy()
-    println("PASS: production Android permission controller: explanation, empty/cancel retry, first/repeated denial, platform/policy recheck, queue barrier and late-owner rejection")
+    println("PASS: production Android permission controller: explanation cancellation/retry, empty/cancel retry, first/repeated denial, grant revocation, platform/policy recheck, queue barrier and late-owner rejection")
 }

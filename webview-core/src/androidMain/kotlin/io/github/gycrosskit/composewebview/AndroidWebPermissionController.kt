@@ -23,13 +23,14 @@ internal class AndroidWebPermissionController(
         val onResult: (Boolean) -> Unit,
     ) {
         var cancelled = false
+        // 入队后才发生的申请不能把同时到达的首次请求升级为永久拒绝。
+        var previouslyRequested = permissions.filter(WebPermissionSessionHistory::wasRequested).toSet()
     }
 
     private val queue = ArrayDeque<PendingPermission>()
     private var active: PendingPermission? = null
     private var explanation: AlertDialog? = null
     private var systemRequestInFlight = false
-    private val declinedExplanations = mutableSetOf<String>()
     private var destroyed = false
     private val launcher = activity.activityResultRegistry.register(
         "cmp_web_permission_${UUID.randomUUID()}",
@@ -42,9 +43,9 @@ internal class AndroidWebPermissionController(
             launchNext()
             return@register
         }
-        // 空回执表示取消；申请历史不能证明系统已禁止再次询问。
+        // 首次拒绝和空回执不能认定永久拒绝；历史只作为本次真实拒绝的前置条件。
         val blocked = pending.permissions.filter { permission ->
-            results[permission] == false && !isGranted(permission) &&
+            permission in pending.previouslyRequested && results[permission] == false && !isGranted(permission) &&
                 !activity.packageManager.isPermissionRevokedByPolicy(permission, activity.packageName) &&
                 !activity.shouldShowRequestPermissionRationale(permission)
         }
@@ -132,11 +133,6 @@ internal class AndroidWebPermissionController(
             launchNext()
             return
         }
-        if (missing.any(declinedExplanations::contains)) {
-            next.onResult(false)
-            launchNext()
-            return
-        }
         active = next
         if (missing.all(WebPermissionSessionHistory::wasRequested)) {
             launchSystemPermission(next, missing)
@@ -157,7 +153,6 @@ internal class AndroidWebPermissionController(
                 }
                 .setOnCancelListener {
                     if (destroyed || active !== next || next.cancelled) return@setOnCancelListener
-                    declinedExplanations += missing
                     completeExplanation(next, granted = false)
                 }
                 .setOnDismissListener {
@@ -186,6 +181,7 @@ internal class AndroidWebPermissionController(
             completeExplanation(next, granted = false)
             return
         }
+        next.previouslyRequested = next.previouslyRequested.intersect(missing.toSet())
         systemRequestInFlight = true
         runCatching { launcher.launch(missing.toTypedArray()) }
             .onSuccess { WebPermissionSessionHistory.markRequested(missing) }
@@ -266,7 +262,7 @@ private fun Context.webPermissionExplanation(
     )
 }
 
-/** 进程内申请历史只用于避免重复用途说明，不用于判断权限是否被系统阻止。 */
+/** 进程内历史避免重复用途说明；只有历史加本次系统拒绝才能交付设置提示。 */
 private object WebPermissionSessionHistory {
     private val requestedPermissions = mutableSetOf<String>()
 

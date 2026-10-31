@@ -12,6 +12,7 @@ import { camera, cameraPicker } from '@kit.CameraKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
 import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings } from './WebViewWire';
 import { createGYWebView } from './WebViewComponent';
+import { createWebPermissionDialog, WebPermissionDialogOptions } from './WebPermissionDialog';
 
 interface EvalParams { script: string; }
 interface PageReplyParams { replyId: string; data: string; }
@@ -109,6 +110,8 @@ export class GYWebView extends KuiklyRenderBaseView {
   private loadSubmitted: boolean = false;
   private ports: webview.WebMessagePort[] = [];
   private permissionRequests: Set<PermissionRequest> = new Set();
+  private cancelPermissionExplanation: (() => void) | null = null;
+  private permissionExplanationForFile: boolean = false;
   private fileResults: Set<FileSelectorResult> = new Set();
   private pageOwnerActive: boolean | null = null;
   private fileGeneration: number = 0;
@@ -164,7 +167,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     if (key === 'onEvent') { this.eventCallback = value as KuiklyRenderCallback; return true; }
     if (key === 'pageOwnerActive') {
       this.pageOwnerActive = value === true;
-      if (!this.pageOwnerActive) this.revokeFilePickers();
+      if (!this.pageOwnerActive) { this.cancelPermissionExplanation?.(); this.revokeFilePickers(); }
       return true;
     }
     if (key === 'visible') {
@@ -538,13 +541,76 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     }).catch(() => { if (this.lifetime.current(generation)) this.fail('LOAD_EXCEPTION', 'Bridge bootstrap failed'); });
   }
 
+  private async authorizeCapture(context: common.UIAbilityContext, permissions: Permissions[],
+    valid: () => boolean, fileCapture: boolean): Promise<boolean> {
+    if (!valid()) return false;
+    const access = abilityAccessCtrl.createAtManager();
+    const states = permissions.map(permission => access.getSelfPermissionStatus(permission));
+    if (states.some(status => status === abilityAccessCtrl.PermissionStatus.RESTRICTED)) return false;
+    if (states.every(status => status === abilityAccessCtrl.PermissionStatus.GRANTED)) return true;
+    if (states.some(status => status === abilityAccessCtrl.PermissionStatus.NOT_DETERMINED) &&
+      !await this.explainCapture(context, permissions.filter((_permission, index) => states[index] === abilityAccessCtrl.PermissionStatus.NOT_DETERMINED), valid, fileCapture)) return false;
+    if (!valid()) return false;
+    const result = await access.requestPermissionsFromUser(context, permissions);
+    if (!valid()) return false;
+    if (result.authResults.length === permissions.length && result.authResults.every(state => state === 0)) return true;
+    const denied = permissions.filter((_permission, index) => result.authResults[index] === -1 && result.dialogShownResults?.[index] === false);
+    if (denied.length > 0) this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
+    return false;
+  }
+
+  private explainCapture(context: common.UIAbilityContext, permissions: Permissions[], valid: () => boolean,
+    fileCapture: boolean): Promise<boolean> {
+    if (this.cancelPermissionExplanation || !this.visible || !valid()) return Promise.resolve(false);
+    const chinese = context.config.language?.startsWith('zh') === true;
+    const camera = permissions.indexOf('ohos.permission.CAMERA') >= 0;
+    const microphone = permissions.indexOf('ohos.permission.MICROPHONE') >= 0;
+    const name = camera && microphone ? (chinese ? '相机和麦克风' : 'camera and microphone') :
+      microphone ? (chinese ? '麦克风' : 'microphone') : (chinese ? '相机' : 'camera');
+    const scenario = fileCapture ? (chinese ? '用于拍摄并上传照片或视频。' : 'Used to capture and upload photos or videos.') :
+      (chinese ? '用于当前网页的音视频采集或通话。' : 'Used for audio/video capture or calls on the current page.');
+    const prompt = this.getUIContext().getPromptAction();
+    return new Promise<boolean>(resolve => {
+      let completed = false;
+      let opened = false;
+      let disposed = false;
+      const dispose = (): void => { if (!disposed) { disposed = true; content.dispose(); } };
+      const close = (): Promise<boolean> => prompt.closeCustomDialog(content).then(() => { dispose(); return true; }).catch(() => { dispose(); return false; });
+      const finish = (accepted: boolean): void => {
+        if (completed) return;
+        completed = true;
+        if (this.cancelPermissionExplanation === cancel) {
+          this.cancelPermissionExplanation = null; this.permissionExplanationForFile = false;
+        }
+        // 确认须等说明退出；取消发生在异步打开期间时，也不能留下失去 owner 的弹窗。
+        if (opened) close().then(closed => resolve(accepted && closed && this.visible && valid()));
+        else resolve(false);
+      };
+      const cancel = (): void => finish(false);
+      const options: WebPermissionDialogOptions = {
+        title: chinese ? '权限使用说明' : 'Permission usage',
+        message: chinese ? `需要${name}权限。\n\n${scenario}拒绝后将无法使用对应功能，其他浏览功能不受影响。` :
+          `${name} access is required.\n\n${scenario} If declined, this feature is unavailable; other browsing is unaffected.`,
+        cancel: chinese ? '取消' : 'Cancel', confirm: chinese ? '我已了解，继续' : 'Continue', complete: finish
+      };
+      const content = new ComponentContent<WebPermissionDialogOptions>(this.getUIContext(),
+        wrapBuilder<[WebPermissionDialogOptions]>(createWebPermissionDialog), options);
+      this.cancelPermissionExplanation = cancel; this.permissionExplanationForFile = fileCapture;
+      prompt.openCustomDialog(content, { autoCancel: false, onWillDismiss: action => { action.dismiss(); finish(false); } }).then(() => {
+        opened = true;
+        if (completed) close();
+        else if (!this.visible || !valid()) cancel();
+      }).catch(() => { finish(false); dispose(); });
+    });
+  }
+
   /** 主文档来源授权通过后申请系统权限；取消/异源/部分授权均 deny，结果只结算一次。 */
   permissionRequest(request: PermissionRequest): void {
     try {
       const current = this.request;
       const resources = request.getAccessibleResource();
       const value = request.getOrigin();
-      if (!current || !this.visible || !current.security.mediaCaptureEnabled || !trusted(value, current.security) ||
+      if (!current || !this.visible || this.pageOwnerActive === false || !current.security.mediaCaptureEnabled || !trusted(value, current.security) ||
         origin(value) !== origin(this.currentUrl()) || resources.length === 0 ||
         resources.some(resource => resource !== ProtectedResourceType.VIDEO_CAPTURE && resource !== ProtectedResourceType.AUDIO_CAPTURE)) {
         request.deny(); return;
@@ -553,16 +619,15 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
       const context = (this.getUIContext() as UIContext).getHostContext() as common.UIAbilityContext;
       const generation = this.lifetime.generation;
       this.permissionRequests.add(request);
-      abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, permissions).then(result => {
+      const valid = (): boolean => this.lifetime.current(generation) && this.visible && this.pageOwnerActive !== false &&
+        this.request === current && this.permissionRequests.has(request) && trusted(this.currentUrl(), current.security) &&
+        origin(value) === origin(this.currentUrl());
+      this.authorizeCapture(context, permissions, valid, false).then(granted => {
         if (!this.permissionRequests.delete(request)) return;
-        if (!this.lifetime.current(generation) || !this.visible || this.request !== current ||
-          !trusted(this.currentUrl(), current.security) || origin(value) !== origin(this.currentUrl())) { request.deny(); return; }
-        if (result.authResults.length === permissions.length && result.authResults.every(state => state === 0)) request.grant(resources);
-        else {
-          request.deny();
-          const denied = permissions.filter((_permission, index) => result.authResults[index] === -1 && result.dialogShownResults?.[index] === false);
-          if (denied.length > 0) this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
-        }
+        if (granted && this.lifetime.current(generation) && this.visible && this.pageOwnerActive !== false &&
+          this.request === current && trusted(this.currentUrl(), current.security) && origin(value) === origin(this.currentUrl())) {
+          request.grant(resources);
+        } else request.deny();
       }).catch(() => { if (this.permissionRequests.delete(request)) request.deny(); });
     } catch (_) {
       this.permissionRequests.delete(request);
@@ -604,13 +669,8 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
           complete([]); return true;
         }
         const permissions: Permissions[] = video ? ['ohos.permission.CAMERA', 'ohos.permission.MICROPHONE'] : ['ohos.permission.CAMERA'];
-        abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, permissions).then(async result => {
-          if (!valid()) { complete([]); return; }
-          if (result.authResults.length !== permissions.length || result.authResults.some(state => state !== 0)) {
-            const denied = permissions.filter((_permission, index) => result.authResults[index] === -1 && result.dialogShownResults?.[index] === false);
-            if (denied.length > 0) this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
-            complete([]); return;
-          }
+        this.authorizeCapture(context, permissions, valid, true).then(async granted => {
+          if (!valid() || !granted) { complete([]); return; }
           if (!this.visible) await new Promise<void>(resolve => this.fileVisibilityWaiters.add(resolve));
           if (!valid() || !this.visible) { complete([]); return; }
           const path = `${context.cacheDir}/gy-webview-${util.generateRandomUUID()}${video ? '.mp4' : '.jpg'}`;
@@ -812,6 +872,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     waiters.forEach(waiter => waiter());
   }
   private revokeFilePickers(): void {
+    if (this.permissionExplanationForFile) this.cancelPermissionExplanation?.();
     this.fileGeneration++;
     const results = Array.from(this.fileResults); this.fileResults.clear();
     const files = Array.from(this.captureFiles); this.captureFiles.clear();
@@ -820,6 +881,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     results.forEach(result => { try { result.handleFileList([]); } catch (_) {} });
   }
   private revokePending(revokePageChannels: boolean = true, preserveFilePickers: boolean = false): void {
+    this.cancelPermissionExplanation?.();
     if (revokePageChannels) {
       this.pageMessageActive = false; this.pageMessageSecret = ''; this.pageMessageNonce = '';
       this.pageMessageReplies.clear();

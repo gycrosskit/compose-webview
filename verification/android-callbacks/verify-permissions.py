@@ -29,6 +29,7 @@ class AlertDialog {
  fun setOnDismissListener(value:(()->Unit)?) { dismiss=value }
  fun setCanceledOnTouchOutside(value:Boolean) {};fun show() { latest=this };fun dismiss() { dismiss?.invoke() }
  fun acknowledge() { positive?.invoke();dismiss() }
+ fun cancelByUser() { cancel?.invoke();dismiss() }
  class Builder(val activity:androidx.activity.ComponentActivity) {
   private val dialog=AlertDialog()
   fun setTitle(value:String)=this;fun setMessage(value:String)=this
