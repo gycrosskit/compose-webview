@@ -3,6 +3,27 @@ package io.github.gycrosskit.composewebview
 import kotlin.test.*
 
 class WebViewWireTest {
+    @Test fun permissionPresentationAndExplanationEventsRoundTrip() {
+        val native = WebViewRequest(WebViewContent.Url("https://safe.example"))
+        assertFalse(WebViewWire.encodeRequest(native).contains("permissionPresentation"))
+        assertEquals(WebViewPermissionPresentation.NATIVE, WebViewWire.decodeRequest(WebViewWire.encodeRequest(native)).permissionPresentation)
+        val host = native.copy(permissionPresentation = WebViewPermissionPresentation.HOST)
+        assertEquals(host, WebViewWire.decodeRequest(WebViewWire.encodeRequest(host)))
+        for (event in listOf(
+            WebViewEvent.PermissionExplanationRequested("owner-1", setOf(WebViewPermission.CAMERA, WebViewPermission.MICROPHONE)),
+            WebViewEvent.PermissionExplanationCancelled("owner-1"),
+        )) {
+            val values = WebViewWire.eventValues(event)
+            val raw = if (event is WebViewEvent.PermissionExplanationRequested)
+                """{"type":"permissionExplanationRequested","requestId":"owner-1","permissions":["CAMERA","MICROPHONE"]}"""
+            else """{"type":"permissionExplanationCancelled","requestId":"owner-1"}"""
+            assertEquals("owner-1", values["requestId"])
+            assertEquals(event, WebViewWire.decodeEvent(raw))
+        }
+        assertFails { WebViewWire.decodeRequest(WebViewWire.encodeRequest(host).replace("HOST", "UNKNOWN")) }
+        assertFails { WebViewWire.decodeEvent("""{"type":"permissionExplanationRequested","requestId":"","permissions":[]}""") }
+    }
+
     @Test fun httpTrustRoundTrips() {
         val trust = WebViewTrustPolicy(listOf("http://shop.example:8080"), setOf("jd.com"))
         val request = WebViewRequest(WebViewContent.Url("http://shop.example:8080"), security = WebViewSecurity(trust, appBridgeEnabled = true))

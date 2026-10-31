@@ -1,6 +1,13 @@
 # 更新记录
 
-## 1.1.0（待发布）
+## 1.2.0（待发布）
+
+- 新增可选 `WebViewPermissionPresentation.HOST`、权限说明请求/撤销事件与 `completePermissionExplanation` 单次回执；默认 NATIVE 保留原生说明。
+- 修复三端权限取消/拒绝后的重试与设置恢复提示，隔离隐藏、离页、导航、销毁和跨实例的旧回执；系统申请与来源、frame、owner 复核仍由原生执行。
+- Maven、Git Pod、HAR/OHPM 同步准备 1.2.0，沿用 Renderer 2.29.1 与 SystemActions Native 1.0.1；保留既有导航、PiP、文件选择及 HTTP/来源边界。
+- 升级时 exhaustive `when (WebViewEvent)` 需处理新增说明事件；源码、制品、公开消费及真机验收分别记录。
+
+## 1.1.0（历史版本，实际发行以不可变标签为准）
 
 - KuiklyCompose 统一入口新增有类型的页面归属、PiP 保留与宿主扩展配置，保留旧参数调用兼容。
 - 商城导航与能力来源独立，支持显式 HTTP(S) 域后缀及任意有效端口；修复跨域早期 Bridge 和文件选择返回的生命周期处理。

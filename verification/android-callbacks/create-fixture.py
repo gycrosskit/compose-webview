@@ -77,14 +77,16 @@ class Security(var fileChooserEnabled:Boolean=true,var mediaCaptureEnabled:Boole
 class Trust { fun isTrusted(value:String?)=value?.startsWith("https://safe.test/")==true || value=="https://safe.test" || value=="https://trusted-frame.test" }
 enum class WebPermissionPurpose { FILE_CAPTURE, MEDIA_CAPTURE }
 class AndroidWebPermissionController {
- var callback:((Boolean)->Unit)?=null;var granted=false;var pendingKey:Any?=null
+ var callback:((Boolean)->Unit)?=null;var granted=false;var pendingKey:Any?=null;var systemRequestInFlight=true;var onCancel:(()->Unit)?=null
+ fun isSystemRequestInFlight(key:Any?)=key!=null && pendingKey===key && systemRequestInFlight
  fun isGranted(value:String)=granted
  fun request(key:Any,permissions:Collection<String>,purpose:WebPermissionPurpose,stillAllowed:()->Boolean,onResult:(Boolean)->Unit) { pendingKey=key;callback=onResult }
- fun cancel(key:Any) { if(pendingKey===key) callback=null }
+ fun cancel(key:Any) { if(pendingKey===key) { callback=null;onCancel?.invoke() } }
 }
 fun logWebWarning(message:String,error:Throwable?=null){};fun logWebError(message:String,error:Throwable?=null){}
 ''',
 }
-root=Path(__file__).resolve().parents[2]/'build/remote-library-review/android-fixture'
-root.mkdir(parents=True,exist_ok=True)
-for name,source in files.items(): (root/name).write_text(source)
+if __name__ == '__main__':
+    root=Path(__file__).resolve().parents[2]/'build/remote-library-review/android-fixture'
+    root.mkdir(parents=True,exist_ok=True)
+    for name,source in files.items(): (root/name).write_text(source)

@@ -136,6 +136,7 @@ export interface WebViewRequest {
   content: WebViewContent; settings: WebViewSettings; security: WebViewSecurity;
   scripts: WebViewScript[]; blockedResourceRules: WebViewUrlRule[]; navigationPolicy: NavigationPolicy;
   pageMessageChannels?: string[];
+  permissionPresentation?: string;
 }
 
 /** 规范化 HTTP/HTTPS origin 为显式有效端口；凭据、无效 URL 或端口返回空字符串。 */
@@ -237,6 +238,7 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
     !Array.isArray(request.navigationPolicy.blockedRules) || !Array.isArray(request.scripts) || !Array.isArray(request.blockedResourceRules)) {
     throw new Error('Invalid WebViewRequest');
   }
+  if (request.permissionPresentation !== undefined && request.permissionPresentation !== 'NATIVE' && request.permissionPresentation !== 'HOST') throw new Error('Invalid permission presentation');
   if (request.pageMessageChannels !== undefined) {
     if (!Array.isArray(request.pageMessageChannels) || request.pageMessageChannels.some(item => typeof item !== 'string')) {
       throw new Error('Invalid page message channels');

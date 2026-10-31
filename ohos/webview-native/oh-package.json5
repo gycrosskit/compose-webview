@@ -1,6 +1,6 @@
 {
   "name": "@gycrosskit/webview",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Kuikly 系统 ArkWeb 组件与同步安全策略",
   "main": "Index.ets",
   "author": {

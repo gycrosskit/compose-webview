@@ -16,6 +16,7 @@ object WebViewWire {
                 put("mimeType", content.mimeType); put("encoding", content.encoding); put("historyUrl", content.historyUrl)
             }
         })
+        if (request.permissionPresentation != WebViewPermissionPresentation.NATIVE) put("permissionPresentation", request.permissionPresentation.name)
         put("settings", settings(request.settings))
         put("security", buildJsonObject {
             val security = request.security
@@ -80,6 +81,7 @@ object WebViewWire {
                 },
             ),
             pageMessageChannels = value.strings("pageMessageChannels").toSet(),
+            permissionPresentation = value.enum("permissionPresentation", WebViewPermissionPresentation.NATIVE),
         )
     }
 
@@ -95,6 +97,8 @@ object WebViewWire {
         is WebViewEvent.FullscreenChanged -> mapOf("type" to "fullscreenChanged", "isFullscreen" to event.isFullscreen)
         is WebViewEvent.LoadFailed -> with(event.error) { mapOf("type" to "loadFailed", "kind" to kind.name, "message" to message, "url" to url, "errorCode" to errorCode, "httpStatus" to httpStatus, "isMainFrame" to isMainFrame) }
         is WebViewEvent.CapabilityUnsupported -> mapOf("type" to "capabilityUnsupported", "capability" to event.capability.name)
+        is WebViewEvent.PermissionExplanationRequested -> mapOf("type" to "permissionExplanationRequested", "requestId" to event.requestId, "permissions" to event.permissions.map { it.name })
+        is WebViewEvent.PermissionExplanationCancelled -> mapOf("type" to "permissionExplanationCancelled", "requestId" to event.requestId)
         is WebViewEvent.PermissionSettingsRequired -> mapOf("type" to "permissionSettingsRequired", "permissions" to event.permissions.map { it.name })
         is WebViewEvent.PerformanceMetric -> mapOf("type" to "performanceMetric", "name" to event.name.name, "navigationDurationMillis" to event.navigationDurationMillis)
         is WebViewEvent.Navigation -> with(event.request) { mapOf("type" to "navigation", "url" to url, "isMainFrame" to isMainFrame, "hasUserGesture" to hasUserGesture, "target" to target.name, "blocked" to event.blocked) }
@@ -115,6 +119,8 @@ object WebViewWire {
             "fullscreenChanged" -> WebViewEvent.FullscreenChanged(value.boolean("isFullscreen", false))
             "loadFailed" -> WebViewEvent.LoadFailed(WebViewLoadError(value.enum("kind", WebViewErrorKind.UNKNOWN), value.string("message", ""), value.stringOrNull("url"), value["errorCode"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.int, value["httpStatus"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.int, value.boolean("isMainFrame", true)))
             "capabilityUnsupported" -> WebViewEvent.CapabilityUnsupported(enumValueOf(value.requiredString("capability")))
+            "permissionExplanationRequested" -> WebViewEvent.PermissionExplanationRequested(value.requiredString("requestId"), value.strings("permissions").map { enumValueOf<WebViewPermission>(it) }.toSet())
+            "permissionExplanationCancelled" -> WebViewEvent.PermissionExplanationCancelled(value.requiredString("requestId"))
             "permissionSettingsRequired" -> WebViewEvent.PermissionSettingsRequired(value.strings("permissions").map { enumValueOf<WebViewPermission>(it) }.toSet())
             "performanceMetric" -> WebViewEvent.PerformanceMetric(enumValueOf(value.requiredString("name")), value.getValue("navigationDurationMillis").jsonPrimitive.long)
             "navigation" -> WebViewEvent.Navigation(WebViewNavigationRequest(value.requiredString("url"), value.boolean("isMainFrame", true), value.boolean("hasUserGesture", false), value.enum("target", WebViewNavigationTarget.CURRENT_WINDOW)), value.boolean("blocked", true))

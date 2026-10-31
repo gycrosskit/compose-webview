@@ -137,7 +137,7 @@ internal class AndroidWebFileChooserController(
 
     /** 系统选择器导致 Activity 暂停时，等原页面恢复再交付结果。 */
     fun suspendForExternal(owner: WebView): Boolean {
-        if ((!externalResultInFlight && permissionKey == null) || callbackOwner !== owner) return false
+        if ((!externalResultInFlight && !permissions.isSystemRequestInFlight(permissionKey)) || callbackOwner !== owner) return false
         suspendedOwner = owner
         return true
     }
@@ -340,10 +340,10 @@ internal class AndroidWebFileChooserController(
         requestId++
         val key = permissionKey
         permissionKey = null
-        if (key != null) permissions.cancel(key)
         pendingIntent = null
         launchAfterResume = false
         complete(null)
+        if (key != null) permissions.cancel(key)
     }
 }
 
