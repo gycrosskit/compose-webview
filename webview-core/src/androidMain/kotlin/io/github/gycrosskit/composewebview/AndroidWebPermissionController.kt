@@ -10,7 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import java.util.UUID
 
-/** 串行管理 WebView 的原生权限说明、系统申请与当前进程拒绝历史。 */
+/** 串行管理 WebView 的原生权限说明与系统申请。 */
 internal class AndroidWebPermissionController(
     private val activity: ComponentActivity,
     private val onPermissionSettingsRequired: (Set<WebViewPermission>) -> Unit,
@@ -34,7 +34,7 @@ internal class AndroidWebPermissionController(
     private val launcher = activity.activityResultRegistry.register(
         "cmp_web_permission_${UUID.randomUUID()}",
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) {
+    ) { results ->
         val pending = active ?: return@register
         active = null
         systemRequestInFlight = false
@@ -42,9 +42,17 @@ internal class AndroidWebPermissionController(
             launchNext()
             return@register
         }
-        val granted = pending.permissions.all(::isGranted)
-        val stillAllowed = pending.stillAllowed()
-        pending.onResult(granted && stillAllowed)
+        // 空回执表示取消；申请历史不能证明系统已禁止再次询问。
+        val blocked = pending.permissions.filter { permission ->
+            results[permission] == false && !isGranted(permission) &&
+                !activity.packageManager.isPermissionRevokedByPolicy(permission, activity.packageName) &&
+                !activity.shouldShowRequestPermissionRationale(permission)
+        }
+        if (blocked.isNotEmpty() && pending.stillAllowed()) {
+            onPermissionSettingsRequired(blocked.toWebViewPermissions())
+        }
+        val granted = results.isNotEmpty() && pending.permissions.all(::isGranted)
+        pending.onResult(granted && !destroyed && pending.stillAllowed())
         launchNext()
     }
 
@@ -121,19 +129,6 @@ internal class AndroidWebPermissionController(
         val missing = next.permissions.filterNot(::isGranted)
         if (missing.isEmpty()) {
             next.onResult(true)
-            launchNext()
-            return
-        }
-        val blocked = missing.filter { permission ->
-            resolveWebPermissionRequestAction(
-                requestedBefore = WebPermissionSessionHistory.wasRequested(permission),
-                shouldShowRationale = activity.shouldShowRequestPermissionRationale(permission),
-            ) == WebPermissionRequestAction.SHOW_SETTINGS
-        }
-        if (blocked.isNotEmpty()) {
-            logWebWarning("WebView 媒体权限已被系统阻止，本次引导用户前往设置")
-            next.onResult(false)
-            onPermissionSettingsRequired(blocked.toWebViewPermissions())
             launchNext()
             return
         }
@@ -271,7 +266,7 @@ private fun Context.webPermissionExplanation(
     )
 }
 
-/** WebView 权限历史只保留在当前进程，重启后重新根据系统事实判断。 */
+/** 进程内申请历史只用于避免重复用途说明，不用于判断权限是否被系统阻止。 */
 private object WebPermissionSessionHistory {
     private val requestedPermissions = mutableSetOf<String>()
 
@@ -280,21 +275,6 @@ private object WebPermissionSessionHistory {
     fun markRequested(permissions: Collection<String>) {
         requestedPermissions += permissions
     }
-}
-
-internal enum class WebPermissionRequestAction {
-    REQUEST_PERMISSION,
-    SHOW_SETTINGS,
-}
-
-/** Android 只有在当前进程已经请求且系统不再允许弹窗时，才能确认需要设置页恢复。 */
-internal fun resolveWebPermissionRequestAction(
-    requestedBefore: Boolean,
-    shouldShowRationale: Boolean,
-): WebPermissionRequestAction = if (requestedBefore && !shouldShowRationale) {
-    WebPermissionRequestAction.SHOW_SETTINGS
-} else {
-    WebPermissionRequestAction.REQUEST_PERMISSION
 }
 
 internal fun Collection<String>.toWebViewPermissions(): Set<WebViewPermission> = mapNotNullTo(

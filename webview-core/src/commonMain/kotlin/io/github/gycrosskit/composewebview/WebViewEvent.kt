@@ -87,7 +87,7 @@ sealed interface WebViewEvent {
     data class CapabilityUnsupported(val capability: WebViewCapability) : WebViewEvent
 
     /**
-     * 系统已禁止再次询问所需权限，宿主可提供应用设置入口。
+     * 原生权限拒绝后的应用设置提示，由宿主决定是否展示入口。
      * @property permissions 非空权限集合；不代表本次仍有未完成系统授权请求。
      */
     data class PermissionSettingsRequired(

@@ -14,7 +14,7 @@ import androidx.activity.ComponentActivity
  * @param activity 提供权限与 ActivityResult 生命周期的 Activity，不能传 Application。
  * @param request 获取当前最新声明式请求。
  * @param isAttached 确認原生实例仍属于可见页面；异步结果交付前再次检查。
- * @param onPermissionSettingsRequired 系统已禁止再次询问时交付所需设置权限；不得自动打开设置页。
+ * @param onPermissionSettingsRequired 系统拒绝且不提供重试说明时交付设置提示；不得自动打开设置页。
  */
 class AndroidWebCapabilities(
     activity: ComponentActivity,

@@ -85,6 +85,7 @@ class AndroidWebPermissionController {
 fun logWebWarning(message:String,error:Throwable?=null){};fun logWebError(message:String,error:Throwable?=null){}
 ''',
 }
-root=Path(__file__).resolve().parents[2]/'build/remote-library-review/android-fixture'
-root.mkdir(parents=True,exist_ok=True)
-for name,source in files.items(): (root/name).write_text(source)
+if __name__ == '__main__':
+    root=Path(__file__).resolve().parents[2]/'build/remote-library-review/android-fixture'
+    root.mkdir(parents=True,exist_ok=True)
+    for name,source in files.items(): (root/name).write_text(source)

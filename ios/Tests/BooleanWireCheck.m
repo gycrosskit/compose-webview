@@ -205,6 +205,86 @@ static id Evaluate(WKWebView *owner, NSString *source) {
 static NSString *RequestJSON(NSDictionary *request) {
     return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:request options:0 error:nil] encoding:NSUTF8StringEncoding];
 }
+// 仅替换系统授权入口，真实 captureFile、owner/代次门禁和 wire 事件继续运行。
+static NSMutableArray *capturePermissionReplies;
+static AVAuthorizationStatus capturePermissionStatus;
+static IMP originalCaptureRequest, originalCaptureStatus, originalCameraAvailable, originalUsageDescription;
+static void CapturePermissionRequest(id target, SEL selector, AVMediaType mediaType, void (^completion)(BOOL)) {
+    [capturePermissionReplies addObject:[completion copy]];
+}
+static AVAuthorizationStatus CapturePermissionStatus(id target, SEL selector, AVMediaType mediaType) { return capturePermissionStatus; }
+static BOOL CaptureCameraAvailable(id target, SEL selector, UIImagePickerControllerSourceType source) { return YES; }
+static id CaptureUsageDescription(id target, SEL selector, NSString *key) {
+    if ([key isEqual:@"NSCameraUsageDescription"] || [key isEqual:@"NSMicrophoneUsageDescription"]) return @"Capture permission fixture";
+    return ((id (*)(id, SEL, NSString *))originalUsageDescription)(target, selector, key);
+}
+static void DeliverCapturePermission(BOOL granted) {
+    void (^reply)(BOOL) = capturePermissionReplies.firstObject;
+    Require(reply != nil, @"Capture never requested a native permission");
+    [capturePermissionReplies removeObjectAtIndex:0];
+    reply(granted);
+    __block BOOL drained = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{ drained = YES; });
+    WaitUntil(^BOOL { return drained; }, @"Capture permission callback did not reach the main queue");
+}
+static void CheckCapturePermissionSettings(void) {
+    Method request = class_getClassMethod(AVCaptureDevice.class, @selector(requestAccessForMediaType:completionHandler:));
+    Method status = class_getClassMethod(AVCaptureDevice.class, @selector(authorizationStatusForMediaType:));
+    Method available = class_getClassMethod(UIImagePickerController.class, @selector(isSourceTypeAvailable:));
+    Method usage = class_getInstanceMethod(NSBundle.class, @selector(objectForInfoDictionaryKey:));
+    originalCaptureRequest = method_setImplementation(request, (IMP)CapturePermissionRequest);
+    originalCaptureStatus = method_setImplementation(status, (IMP)CapturePermissionStatus);
+    originalCameraAvailable = method_setImplementation(available, (IMP)CaptureCameraAvailable);
+    originalUsageDescription = method_setImplementation(usage, (IMP)CaptureUsageDescription);
+    for (NSString *mode in @[@"camera", @"microphone", @"restricted", @"hidden", @"stale", @"generation", @"source", @"reentrant"]) {
+        GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectZero];
+        page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
+        page.request = @{@"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+        page.fileOrigin = @"https://safe.example";
+        page.fileTypes = [mode isEqual:@"microphone"] ? @[UTTypeMovie] : @[UTTypeImage];
+        page.filePickerGeneration = page.callbackGeneration;
+        __block NSUInteger settled = 0, freshSettled = 0;
+        __block NSDictionary *event;
+        page.filePickerCompletion = ^(NSArray<NSURL *> *files) { Require(files == nil, @"Denied capture disclosed files"); settled++; };
+        __weak GYWebView *weakPage = page;
+        page.onEvent = ^(id value) {
+            event = value;
+            if ([mode isEqual:@"reentrant"]) {
+                [weakPage cancelFilePicker];
+                weakPage.filePickerRevision++;
+                weakPage.filePickerGeneration = weakPage.callbackGeneration;
+                weakPage.filePickerCompletion = ^(NSArray<NSURL *> *files) { freshSettled++; };
+            }
+        };
+        capturePermissionReplies = [NSMutableArray array];
+        capturePermissionStatus = [mode isEqual:@"restricted"] ? AVAuthorizationStatusRestricted : AVAuthorizationStatusDenied;
+        [page captureFile:page.webView];
+        if ([mode isEqual:@"microphone"]) DeliverCapturePermission(YES);
+        if ([mode isEqual:@"hidden"]) { page.pageOwnerActive = @YES; page.pageVisible = NO; }
+        if ([mode isEqual:@"generation"]) page.callbackGeneration++;
+        if ([mode isEqual:@"source"]) page.fileOrigin = @"https://other.example";
+        if ([mode isEqual:@"stale"]) {
+            [page cancelFilePicker];
+            page.filePickerRevision++;
+            page.filePickerCompletion = ^(NSArray<NSURL *> *files) { freshSettled++; };
+        }
+        DeliverCapturePermission(NO);
+        BOOL settingsExpected = [@[@"camera", @"microphone", @"reentrant"] containsObject:mode];
+        Require((event != nil) == settingsExpected, @"Only a current visible denied capture may ask the host for settings");
+        if (settingsExpected) Require([event[@"type"] isEqual:@"permissionSettingsRequired"] &&
+            [event[@"permissions"] isEqual:@[[mode isEqual:@"microphone"] ? @"MICROPHONE" : @"CAMERA"]], @"Capture settings wire capability is incorrect");
+        Require(settled == 1 && freshSettled == 0, @"Old permission callback cancelled a new picker or failed to settle");
+        page.onEvent = nil;
+        page.webView = nil; // Probe 未注册 createWebView 的 KVO。
+        [page hrv_removeFromSuperview];
+    }
+    method_setImplementation(request, originalCaptureRequest);
+    method_setImplementation(status, originalCaptureStatus);
+    method_setImplementation(available, originalCameraAvailable);
+    method_setImplementation(usage, originalUsageDescription);
+    capturePermissionReplies = nil;
+    puts("PASS: Native capture settings wire: camera/microphone denial, restricted, hidden, stale revision, generation, source and event reentry (system authorization fixtures)");
+}
 static void CheckPictureInPictureScriptWire(void) {
     GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
     [page hrv_setPropWithKey:@"pictureInPicturePageActive" propValue:@YES];
@@ -415,6 +495,7 @@ static void CheckNavigationErrors(void) {
 
 static void Check(void) {
     CheckNavigationErrors();
+    CheckCapturePermissionSettings();
     puts("PHASE: System WebKit readiness");
     NSString *startupURL = [NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"] stringByReplacingOccurrencesOfString:@"/page" withString:@"/other"];
     Require(startupURL.length, @"Missing WebKit readiness fixture");

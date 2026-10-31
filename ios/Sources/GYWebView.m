@@ -822,12 +822,20 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         picker.mediaTypes = @[image ? UTTypeImage.identifier : UTTypeMovie.identifier]; picker.videoMaximumDuration = 60; picker.delegate = self;
         self.capturePicker = picker; [presenter presentViewController:picker animated:YES completion:nil];
     };
+    void (^denyPermission)(AVMediaType) = ^(AVMediaType mediaType) {
+        if (revision != self.filePickerRevision) return;
+        if (self.pageVisible && [self filePickerAllowed:owner] && [AVCaptureDevice authorizationStatusForMediaType:mediaType] == AVAuthorizationStatusDenied) {
+            [self emit:@{@"type": @"permissionSettingsRequired", @"permissions": @[[mediaType isEqual:AVMediaTypeAudio] ? @"MICROPHONE" : @"CAMERA"]}];
+        }
+        // 宿主事件可能重入创建新选择器，旧拒绝不能取消新请求。
+        if (revision == self.filePickerRevision) [self cancelFilePicker];
+    };
     void (^authorizeAudio)(void) = ^{
         if (!self.pageVisible) { __weak GYWebView *weakSelf = self; self.pendingFilePickerAction = ^{ [weakSelf captureFile:owner]; }; return; }
         if (!video) { present(); return; }
-        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) { dispatch_async(dispatch_get_main_queue(), ^{ if (revision != self.filePickerRevision) return; if (granted) present(); else [self cancelFilePicker]; }); }];
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) { dispatch_async(dispatch_get_main_queue(), ^{ if (revision != self.filePickerRevision) return; if (granted) present(); else denyPermission(AVMediaTypeAudio); }); }];
     };
-    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) { dispatch_async(dispatch_get_main_queue(), ^{ if (revision != self.filePickerRevision) return; if ([self filePickerAllowed:owner] && granted) authorizeAudio(); else [self cancelFilePicker]; }); }];
+    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) { dispatch_async(dispatch_get_main_queue(), ^{ if (revision != self.filePickerRevision) return; if (![self filePickerAllowed:owner]) { [self cancelFilePicker]; return; } if (granted) authorizeAudio(); else denyPermission(AVMediaTypeVideo); }); }];
 }
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey,id> *)info {
     if (picker != self.capturePicker) return;

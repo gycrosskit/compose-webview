@@ -75,35 +75,6 @@ class AndroidWebCapabilitiesTest {
     }
 
     @Test
-    fun `requests web permission on first use or when system still allows retry`() {
-        assertEquals(
-            WebPermissionRequestAction.REQUEST_PERMISSION,
-            resolveWebPermissionRequestAction(
-                requestedBefore = false,
-                shouldShowRationale = false,
-            ),
-        )
-        assertEquals(
-            WebPermissionRequestAction.REQUEST_PERMISSION,
-            resolveWebPermissionRequestAction(
-                requestedBefore = true,
-                shouldShowRationale = true,
-            ),
-        )
-    }
-
-    @Test
-    fun `offers settings only after system blocks a previous web permission request`() {
-        assertEquals(
-            WebPermissionRequestAction.SHOW_SETTINGS,
-            resolveWebPermissionRequestAction(
-                requestedBefore = true,
-                shouldShowRationale = false,
-            ),
-        )
-    }
-
-    @Test
     fun `maps denied android permissions to shared settings prompt capabilities`() {
         assertEquals(
             setOf(WebViewPermission.CAMERA, WebViewPermission.MICROPHONE),
