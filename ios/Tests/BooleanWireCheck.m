@@ -141,7 +141,8 @@ static void CheckPictureInPictureMediaVisibility(void) {
     return self.permissionPresenter;
 }
 @end
-@interface PermissionOrigin : WKSecurityOrigin
+// WKSecurityOrigin 禁止直接初始化；fixture 只提供生产门禁读取的 origin 属性。
+@interface PermissionOrigin : NSObject
 @end
 @implementation PermissionOrigin
 - (NSString *)protocol { return @"https"; }
@@ -157,7 +158,7 @@ static void CheckPictureInPictureMediaVisibility(void) {
 - (BOOL)isMainFrame { return !self.childFrame; }
 - (WKWebView *)webView { return self.probeWebView; }
 - (NSURLRequest *)request { return [NSURLRequest requestWithURL:[NSURL URLWithString:self.probeURL ?: @"https://safe.example/page"]]; }
-- (WKSecurityOrigin *)securityOrigin { return [PermissionOrigin new]; }
+- (WKSecurityOrigin *)securityOrigin { return (WKSecurityOrigin *)[PermissionOrigin new]; }
 @end
 
 @interface StopProbeWebView : UploadWebView
@@ -447,7 +448,7 @@ static void CheckWebRTCPermissionSettings(void) {
             }
         };
         WKMediaCaptureType type = [mode isEqual:@"microphone"] ? WKMediaCaptureTypeMicrophone : [mode isEqual:@"both"] ? WKMediaCaptureTypeCameraAndMicrophone : WKMediaCaptureTypeCamera;
-        [page webView:owner requestMediaCapturePermissionForOrigin:[PermissionOrigin new] initiatedByFrame:frame type:type decisionHandler:^(WKPermissionDecision value) {
+        [page webView:owner requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)[PermissionOrigin new] initiatedByFrame:frame type:type decisionHandler:^(WKPermissionDecision value) {
             replies++; result = value;
             if ([mode isEqual:@"cancelReentrant"]) [weakPage explainMediaPermissions:@[AVMediaTypeAudio] fileCapture:NO completion:^(BOOL accepted) { freshReplies++; }];
         }];
