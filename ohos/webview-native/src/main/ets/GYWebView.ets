@@ -569,7 +569,9 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
       microphone ? (chinese ? '麦克风' : 'microphone') : (chinese ? '相机' : 'camera');
     const scenario = fileCapture ? (chinese ? '用于拍摄并上传照片或视频。' : 'Used to capture and upload photos or videos.') :
       (chinese ? '用于当前网页的音视频采集或通话。' : 'Used for audio/video capture or calls on the current page.');
-    const prompt = this.getUIContext().getPromptAction();
+    const uiContext = this.getUIContext();
+    if (!uiContext) return Promise.resolve(false);
+    const prompt = uiContext.getPromptAction();
     return new Promise<boolean>(resolve => {
       let completed = false;
       let opened = false;
@@ -596,7 +598,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
           `${name} access is required.\n\n${scenario} If declined, this feature is unavailable; other browsing is unaffected.`,
         cancel: chinese ? '取消' : 'Cancel', confirm: chinese ? '我已了解，继续' : 'Continue', complete: finish
       };
-      const content = new ComponentContent<WebPermissionDialogOptions>(this.getUIContext(),
+      const content = new ComponentContent<WebPermissionDialogOptions>(uiContext,
         wrapBuilder<[WebPermissionDialogOptions]>(createWebPermissionDialog), options);
       this.cancelPermissionExplanation = cancel; this.permissionExplanationForFile = fileCapture;
       Promise.resolve().then(() => prompt.openCustomDialog(content, { autoCancel: false, onWillDismiss: action => { action.dismiss(); finish(false); } })).then(() => {

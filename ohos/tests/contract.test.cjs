@@ -899,6 +899,13 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
       assert.equal(permissionCalls, calls + 1, `${failure} failure must not request system permission`);
       dialogFailure = null;
     }
+    const uiContext = explained.getUIContext;
+    explained.getUIContext = () => null;
+    const deniedBefore = denied; request(); await flushNativeCallbacks();
+    assert.equal(denied, deniedBefore + 1, 'missing UI context denies without opening a system request');
+    assert.equal(permissionCalls, calls + 1);
+    assert.equal(explained.cancelPermissionExplanation, null);
+    explained.getUIContext = uiContext;
     explained.onDestroy(); permissionStatus = 2;
   }
   permission = deferred(); let acceptedMedia = 0;
