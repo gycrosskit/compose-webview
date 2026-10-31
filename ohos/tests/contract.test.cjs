@@ -75,7 +75,38 @@ class BaseView {
   setProp() { return false; } onDestroy() {} call() {}
 }
 const windowObject = { Orientation: { UNSPECIFIED: 0, AUTO_ROTATION_LANDSCAPE: 1 }, getLastWindow: async () => ({}) };
-const nativeErrorCodes = Object.fromEntries([...fs.readFileSync(path.join(devEco, 'sdk/default/openharmony/ets/api/@ohos.web.netErrorList.d.ts'), 'utf8').matchAll(/\b(ERR_[A-Z_]+)\s*=\s*(-?\d+)/g)].map(([,name, code]) => [name, Number(code)]));
+// 固定 API 12 枚举值，已与受控 CLT 26.0.0.851 核对；纯合同测试不读取本机 SDK 头文件。
+const nativeErrorCodes = {
+  ERR_TIMED_OUT: -7,
+  ERR_CONNECTION_TIMED_OUT: -118,
+  ERR_DNS_TIMED_OUT: -803,
+  ERR_SSL_PROTOCOL_ERROR: -107,
+  ERR_SSL_CLIENT_AUTH_CERT_NEEDED: -110,
+  ERR_NO_SSL_VERSIONS_ENABLED: -112,
+  ERR_SSL_VERSION_OR_CIPHER_MISMATCH: -113,
+  ERR_SSL_RENEGOTIATION_REQUESTED: -114,
+  ERR_BAD_SSL_CLIENT_AUTH_CERT: -117,
+  ERR_SSL_NO_RENEGOTIATION: -123,
+  ERR_SSL_DECOMPRESSION_FAILURE_ALERT: -125,
+  ERR_SSL_BAD_RECORD_MAC_ALERT: -126,
+  ERR_SSL_CLIENT_AUTH_PRIVATE_KEY_ACCESS_DENIED: -134,
+  ERR_SSL_CLIENT_AUTH_CERT_NO_PRIVATE_KEY: -135,
+  ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED: -141,
+  ERR_SSL_HANDSHAKE_NOT_COMPLETED: -148,
+  ERR_SSL_BAD_PEER_PUBLIC_KEY: -149,
+  ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN: -150,
+  ERR_CLIENT_AUTH_CERT_TYPE_UNSUPPORTED: -151,
+  ERR_SSL_DECRYPT_ERROR_ALERT: -153,
+  ERR_SSL_SERVER_CERT_CHANGED: -156,
+  ERR_SSL_UNRECOGNIZED_NAME_ALERT: -159,
+  ERR_SSL_CLIENT_AUTH_CERT_BAD_FORMAT: -164,
+  ERR_SSL_SERVER_CERT_BAD_FORMAT: -167,
+  ERR_SSL_OBSOLETE_CIPHER: -172,
+  ERR_SSL_CLIENT_AUTH_NO_COMMON_ALGORITHMS: -177,
+  ERR_SSL_KEY_USAGE_INCOMPATIBLE: -181,
+  ERR_CERT_COMMON_NAME_INVALID: -200,
+  ERR_CERT_END: -219,
+};
 const mocks = {
   '@kit.CryptoArchitectureKit': { cryptoFramework: { createRandom: () => ({ generateRandomSync: size => ({ data: crypto.randomBytes(size) }) }) } },
   '@kit.ArkData': { uniformTypeDescriptor: { getUniformDataTypeByFilenameExtension: value => value, getTypeDescriptor: value => ({ mimeTypes: value === '.pdf' ? ['application/pdf'] : value === '.jpg' ? ['image/jpeg'] : [] }) } },
