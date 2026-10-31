@@ -21,7 +21,7 @@ if (harArgument >= 0) {
   const manifest = JSON.parse(fs.readFileSync(path.join(extracted, 'package/oh-package.json5'), 'utf8'));
   assert.equal(manifest.dependencies['@gycrosskit/system-actions-native'],
     systemActionsVersion, 'actual HAR must retain the exact Registry dependency');
-  assert.equal(manifest.version, '1.0.2', 'actual HAR must use the new immutable patch version');
+  assert.equal(manifest.version, '1.1.0', 'actual HAR must use the new immutable patch version');
   assert.equal(manifest.overrides, undefined, 'actual HAR must not retain task overrides');
   root = path.join(extracted, 'package/src/main/ets');
 }

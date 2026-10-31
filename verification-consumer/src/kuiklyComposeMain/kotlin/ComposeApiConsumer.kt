@@ -5,4 +5,10 @@ import io.github.gycrosskit.composewebview.WebViewRequest
 import io.github.gycrosskit.composewebview.kuikly.AppWebView
 @Composable fun WebViewApi(request: WebViewRequest, visible: Boolean) {
  AppWebView(request, visible, Modifier, onEvent = {}, onController = { it?.stopLoading() })
+ AppWebView(
+  request, visible, Modifier,
+  pageOwnerActive = true,
+  pictureInPicturePageActive = true,
+  onViewUpdate = { it.getViewAttr().size(320f, 480f) },
+ )
 }
