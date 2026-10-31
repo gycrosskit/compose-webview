@@ -42,11 +42,12 @@ class GYWebViewNativeTest {
             security = request.security.copy(mediaCaptureEnabled = true),
             permissionPresentation = WebViewPermissionPresentation.HOST,
         )
-        val events = mutableListOf<Map<String, Any?>>()
+        val events = mutableListOf<Map<*, *>>()
         var replaceOnCancel = false
         var hideOnRequest = false
         var replacement: WebView? = null
-        val onEvent: KuiklyRenderCallback = { event ->
+        val onEvent: KuiklyRenderCallback = { raw ->
+            val event = raw as? Map<*, *> ?: error("Native event must be a map")
             events += event
             if (event["type"] == "permissionExplanationRequested" && hideOnRequest) {
                 hideOnRequest = false
@@ -69,7 +70,7 @@ class GYWebViewNativeTest {
         fun id(): String = events.last { it["type"] == "permissionExplanationRequested" }["requestId"] as String
         fun complete(requestId: String, accepted: String): Boolean? {
             var result: Boolean? = null
-            native.call("completePermissionExplanation", "{\"requestId\":\"$requestId\",\"accepted\":$accepted}") { result = it["result"] as? Boolean }
+            native.call("completePermissionExplanation", "{\"requestId\":\"$requestId\",\"accepted\":$accepted}") { result = (it as? Map<*, *>)?.get("result") as? Boolean }
             return result
         }
         val declined = ask()
