@@ -9,7 +9,7 @@ public final class ExportScript {
                 WebViewMixedContentPolicy.NEVER_ALLOW, WebViewCachePolicy.DEFAULT,
                 false, false, false, true, true, false, true, false, true, true, true, true, 100, 200, true, null);
             WebViewRequest request = new WebViewRequest(new WebViewContent.Url("http://legacy.test/captcha", Map.of()),
-                settings, new WebViewSecurity(), List.of(), List.of(), new WebViewNavigationPolicy(), Set.of("earlyChannel"));
+                settings, new WebViewSecurity(), List.of(), List.of(), new WebViewNavigationPolicy(), Set.of("earlyChannel"), WebViewPermissionPresentation.NATIVE);
             System.out.print(WebViewPageMessagesKt.pageMessageScript(request, "document-A"));
             return;
         }
@@ -23,7 +23,7 @@ public final class ExportScript {
         WebViewRequest request = new WebViewRequest(new WebViewContent.Url(page ? "http://legacy.test/captcha" : "https://trusted.test", Map.of()),
             settings, new WebViewSecurity(trust, false, page, false, false),
             List.of(new WebViewScript("port-guard", "window.hits = (window.hits || 0) + 1;", WebViewScriptInjectionTime.DOCUMENT_START, true)),
-            List.of(), new WebViewNavigationPolicy(), Set.of());
+            List.of(), new WebViewNavigationPolicy(), Set.of(), WebViewPermissionPresentation.NATIVE);
         Set<String> expected = page ? Set.of("http://legacy.test:80", "http://legacy.test.:80") : Set.of("*");
         if (!WebViewEarlyScriptsKt.earlyScriptOriginRules(request).equals(expected))
             throw new AssertionError("AndroidX source registration changed");
