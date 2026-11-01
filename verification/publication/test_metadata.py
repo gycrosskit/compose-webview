@@ -36,7 +36,7 @@ class PublicationContracts(unittest.TestCase):
     def variants(self, path):
         return json.loads(path.read_text())["variants"]
 
-    def test_current_release_version_matches_maven_pod_har_and_consumers(self):
+    def test_release_versions_follow_explicit_channel_matrix(self):
         root = Path(__file__).resolve().parents[2]
         def version(path, expression):
             values = re.findall(expression, (root / path).read_text())
@@ -51,8 +51,14 @@ class PublicationContracts(unittest.TestCase):
             'verify-consumer': version('scripts/verify.sh', r'-PwebViewVersion=([^\s]+)'),
             'har': har['version'],
         }
-        self.assertEqual(versions, {name: '1.2.0' for name in versions})
-        self.assertEqual(har['dependencies']['@gycrosskit/system-actions-native'], '1.0.1')
+        self.assertEqual(versions, {
+            'maven': '1.2.0', 'maven-package': '1.2.0', 'pod': '1.2.1',
+            'maven-consumer': '1.2.0', 'verify-consumer': '1.2.0', 'har': '1.2.1',
+        })
+        self.assertIn(':tag => "native-#{s.version}"', (root / 'GYWebView.podspec').read_text())
+        consumer = json.loads((root / 'ohos/verification-consumer/consumer/oh-package.json5').read_text())
+        for manifest in (har, consumer):
+            self.assertEqual(manifest['dependencies']['@gycrosskit/system-actions-native'], '1.0.2')
 
     def test_empty_resource_and_forwarding_removed_api_preserved(self):
         self.assertEqual(metadata.normalize([self.native, self.shared]), 2)
