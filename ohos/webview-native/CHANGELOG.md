@@ -1,3 +1,10 @@
+## Native/HAR 1.2.1
+
+- iOS Git Pod 使用 `native-1.2.1`，HAR/OHPM 使用 `har-1.2.1`；Maven 保留 `1.2.0`，不重发未修改的 KMP 产物。
+- Renderer 版本由宿主选择：Pod 声明 `>= 2.29.1, < 3.0`，HAR 声明 `^2.29.1`；范围不代替实际消费验证。
+- WebView 与独立 HAR 消费者均精确依赖 SystemActions Native `1.0.2`；导航、PiP、文件 chooser 与权限实现保持不变。
+- 旧 Tag/归档/摘要保持不变；发布与精确公开消费状态见对应 Release，设备验收单独记录。
+
 # 1.2.0（待发布）
 
 - 新增可选 HOST 权限说明与请求/撤销事件、单次说明回执；默认 NATIVE 保留原生交互，系统权限和来源/owner 复核仍由 HAR 执行。
