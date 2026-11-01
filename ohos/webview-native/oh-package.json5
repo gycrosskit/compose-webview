@@ -10,7 +10,7 @@
   "repository": "https://github.com/gycrosskit/compose-webview",
   "license": "Apache-2.0",
   "dependencies": {
-    "@kuikly-open/render": "2.29.1",
+    "@kuikly-open/render": "^2.29.1",
     "@gycrosskit/system-actions-native": "1.0.1"
   }
 }

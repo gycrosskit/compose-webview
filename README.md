@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-当前开发分支的 Kuikly 与宿主统一：KMP 使用 `2.29.1-2.0.21-ohos`，iOS/OHOS Renderer 使用 `2.29.1`。以后随宿主同步升级；本轮权限回执调整尚未发布，既有 `1.1.0` 的接入与验收记录以对应 tag 为准。
+Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。 本轮权限回执调整尚未发布，既有 `1.1.0` 的接入与验收记录以对应 tag 为准。
 
 本轮 `1.2.0` 为基于已发布 `1.1.0` 的未发布候选；旧 `1.1.0` 不包含本轮权限回执修复，须完成新源码验证、重新打包与精确产物消费后再发布。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；既有版本已删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
 
