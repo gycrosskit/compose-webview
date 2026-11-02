@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="web_capture_photo">Take photo</string>
+    <string name="web_capture_video">Record video</string>
     <string name="web_permission_explanation_title">Permission use</string>
     <string name="web_permission_acknowledge">Got it</string>
     <string name="web_permission_name_camera">Camera permission</string>

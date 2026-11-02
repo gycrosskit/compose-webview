@@ -3,6 +3,14 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// 宿主注入文件能力；实现须在 Main 回调，并先关闭其系统呈现。
+/// status: selected/cancelled/denied/blocked/restricted/failed；仅 blocked 可建议设置。
+/// release 归原文件 owner，组件在结果拒绝、迟到或文档撤销时调用。
+@protocol GYWebFileSelectionProvider <NSObject>
+- (void)selectFiles:(NSArray<NSString *> *)acceptTypes multiple:(BOOL)multiple capture:(BOOL)capture presenter:(UIViewController *)presenter completion:(void (^)(NSArray<NSURL *> * _Nullable urls, NSString *status, NSArray<NSString *> *permissions, dispatch_block_t _Nullable release))completion;
+- (void)cancelFileSelection;
+@end
+
 /**
  * Kuikly 通过同名 Objective-C 类发现组件，底层由系统 WKWebView 渲染。
  *
@@ -15,6 +23,8 @@ NS_ASSUME_NONNULL_BEGIN
  * onEvent 和脚本结果可能包含完整 URL、文件 URI 与业务正文；宿主不得直接记录敏感数据。
  */
 @interface GYWebView : UIView <KuiklyRenderViewExportProtocol>
+/// Renderer 创建前注册无 owner 捕获的工厂；每个 View 持有自己的 provider。
++ (void)configureFileSelectionFactory:(id<GYWebFileSelectionProvider> _Nullable (^)(void))factory;
 @end
 
 NS_ASSUME_NONNULL_END

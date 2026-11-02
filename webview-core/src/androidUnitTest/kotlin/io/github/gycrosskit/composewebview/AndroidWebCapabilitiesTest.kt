@@ -1,12 +1,15 @@
 package io.github.gycrosskit.composewebview
 
 import android.Manifest
-import android.content.Intent
-import android.provider.MediaStore
 import android.webkit.PermissionRequest
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class AndroidWebCapabilitiesTest {
     @Test
     fun `normalizes comma separated mime types`() {
@@ -16,7 +19,8 @@ class AndroidWebCapabilitiesTest {
                 arrayOf(" image/*,video/mp4 ", "APPLICATION/PDF", "image/*"),
             ),
         )
-        assertEquals(listOf("*/*"), normalizeWebViewMimeTypes(arrayOf(".jpg", "invalid", "*/*")))
+        assertEquals(listOf("image/jpeg", "*/*"), normalizeWebViewMimeTypes(arrayOf(".jpg", "invalid", "*/*")))
+        assertEquals(listOf("image/jpeg", "video/quicktime", "*/*"), normalizeWebViewMimeTypes(arrayOf("image/jpg,video/mov,*")))
     }
 
     @Test
@@ -42,12 +46,12 @@ class AndroidWebCapabilitiesTest {
 
     @Test
     fun `requests runtime permissions only for direct capture`() {
-        assertEquals(listOf(Manifest.permission.CAMERA), capturePermissions(MediaStore.ACTION_IMAGE_CAPTURE))
+        assertEquals(listOf(Manifest.permission.CAMERA), capturePermissions(capture = true, video = false))
         assertEquals(
             listOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO),
-            capturePermissions(MediaStore.ACTION_VIDEO_CAPTURE),
+            capturePermissions(capture = true, video = true),
         )
-        assertEquals(emptyList<String>(), capturePermissions(Intent.ACTION_GET_CONTENT))
+        assertEquals(emptyList<String>(), capturePermissions(capture = false, video = false))
     }
 
     @Test

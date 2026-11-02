@@ -1,6 +1,11 @@
 #import "../Sources/GYWebView.m"
 #import <objc/runtime.h>
 #import <unistd.h>
+#if WEBVIEW_HOST_MEDIA
+#import <PhotosUI/PhotosUI.h>
+extern void GYRegisterHostFileProvider(void);
+extern void GYCompleteHostMediaSelection(void *picker, void *sources);
+#endif
 
 static void Require(BOOL condition, NSString *message) {
     if (!condition) { fprintf(stderr, "FAIL: %s\n", message.UTF8String); exit(1); }
@@ -123,6 +128,22 @@ static void CheckPictureInPictureMediaVisibility(void) {
 - (NSURL *)URL { return [NSURL URLWithString:@"https://safe.example/page"]; }
 @end
 
+@interface FileInputWebView : UploadWebView
+@property(nonatomic, copy) void (^metadataReply)(id, NSError *);
+@end
+@implementation FileInputWebView
+- (void)evaluateJavaScript:(NSString *)script completionHandler:(void (^)(id, NSError *))completion {
+    if ([script isEqual:IOS_FILE_INPUT_SCRIPT]) self.metadataReply = completion;
+    else if (completion) completion(nil, nil);
+}
+@end
+@interface FileInputParameters : NSObject
+@property(nonatomic) BOOL multiple;
+@end
+@implementation FileInputParameters
+- (BOOL)allowsDirectories { return NO; }
+- (BOOL)allowsMultipleSelection { return self.multiple; }
+@end
 @interface PermissionPresenter : UIViewController
 @property(nonatomic, strong) UIViewController *lastPresented;
 @end
@@ -195,11 +216,11 @@ static void CheckStopLoadingCancellation(void) {
         NSURL *newFile = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString]];
         [@"old" writeToURL:oldFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
         [@"new" writeToURL:newFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        page.temporaryFiles = [NSMutableArray arrayWithObject:oldFile];
+        page.acceptedFileReleases = [NSMutableArray arrayWithObject:[^{ [NSFileManager.defaultManager removeItemAtURL:oldFile error:nil]; } copy]];
         page.filePickerCompletion = ^(NSArray<NSURL *> *urls) {
             Require(urls == nil, @"stop must cancel pending files"); files++;
             if (replaceOwner.boolValue) page.webView = next;
-            page.temporaryFiles = [NSMutableArray arrayWithObject:newFile];
+            page.acceptedFileReleases = [NSMutableArray arrayWithObject:[^{ [NSFileManager.defaultManager removeItemAtURL:newFile error:nil]; } copy]];
             page.filePickerCompletion = ^(NSArray<NSURL *> *value) { newFiles++; };
         };
         [page hrv_callWithMethod:@"stopLoading" params:nil callback:nil];
@@ -248,6 +269,80 @@ static id Evaluate(WKWebView *owner, NSString *source) {
     Require(!failure, [NSString stringWithFormat:@"Real WebKit evaluation failed: %@", failure]);
     return result;
 }
+static void CheckFileInputDOM(WKWebView *owner) {
+    Evaluate(owner, IOS_FILE_CHOOSER_GATE_SCRIPT);
+    // 只阻止系统 UI 默认动作；真实 DOM click、prototype 包装和 metadata script 继续执行。
+    Require([Evaluate(owner, @"window.__COMPOSE_WEBVIEW_FILE_CHOOSER_ALLOWED__=true;window.captureInput=document.createElement('input');captureInput.type='file';captureInput.accept='.png,image/png';captureInput.setAttribute('capture','environment');captureInput.style.display='none';captureInput.addEventListener('click',function(event){event.preventDefault()});document.body.appendChild(captureInput);captureInput.click();document.activeElement!==captureInput") boolValue], @"Hidden programmatic input unexpectedly became focused");
+    NSDictionary *(^metadata)(void) = ^{ return [NSJSONSerialization JSONObjectWithData:[Evaluate(owner, IOS_FILE_INPUT_SCRIPT) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]; };
+    Require([metadata() isEqual:@{@"accept": @".png,image/png", @"capture": @YES}], @"Real WebKit lost hidden input capture metadata");
+    Require(metadata().count == 0, @"Real WebKit replayed consumed file metadata");
+    Evaluate(owner, @"captureInput.accept='.mp4,video/mp4';captureInput.click();true");
+    Require([metadata() isEqual:@{@"accept": @".mp4,video/mp4", @"capture": @YES}], @"Real WebKit lost video capture metadata");
+    Evaluate(owner, @"captureInput.style.display='block';captureInput.focus();captureInput.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,detail:0}));true");
+    Require([metadata() isEqual:@{@"accept": @".mp4,video/mp4", @"capture": @YES}] && metadata().count == 0, @"Keyboard-style click must record focused input once without a focus fallback");
+    if ([Evaluate(owner, @"typeof captureInput.showPicker==='function'") boolValue]) {
+        BOOL opened = [Evaluate(owner, @"(function(){try{captureInput.showPicker();return true}catch(error){return false}})()") boolValue];
+        Require(opened ? metadata().count == 2 : metadata().count == 0, @"Real WebKit showPicker lost activation metadata or retained a failed request");
+    }
+    puts("PASS: Real WKWebView file metadata: hidden programmatic PNG/video, keyboard-style DOM click, showPicker and focused input consume once (no physical keyboard/system picker UI)");
+}
+#if WEBVIEW_HOST_MEDIA
+static void CheckHostMediaIntegration(void) {
+    GYRegisterHostFileProvider();
+    UIViewController *root = UIApplication.sharedApplication.keyWindow.rootViewController;
+    NSArray *cases = @[@[@"image/*", @"image"], @[@"video/*", @"video"], @[@"image", @"image"], @[@"video", @"video"], @[@".jpg,.png", @"image"], @[@".mp4,.mov", @"video"], @[@"image/future-format", @"image"], @[@"video/future-format", @"video"], @[@".future-format", @"document"], @[@"image/gif,image/jpeg,image/jpg,image/png,image/bmp,image/webp,video/mov,video/mp4", @"mixed"], @[@"", @"document"], @[@"*", @"document"]];
+    for (NSArray<NSString *> *item in cases) {
+        GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+        UploadWebView *owner = [[UploadWebView alloc] initWithFrame:page.bounds]; page.webView = owner;
+        page.pageOwnerActive = @YES;
+        page.request = @{@"security": @{@"fileChooserEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+        [root.view addSubview:page];
+        [owner loadHTMLString:@"<input id='upload' type='file' hidden>" baseURL:[NSURL URLWithString:@"https://safe.example/page"]];
+        WaitUntil(^BOOL { return !owner.loading && [Evaluate(owner, @"!!document.getElementById('upload')") boolValue]; }, @"Integration WK DOM did not load");
+        Evaluate(owner, IOS_FILE_CHOOSER_GATE_SCRIPT);
+        Evaluate(owner, [NSString stringWithFormat:@"window.__COMPOSE_WEBVIEW_FILE_CHOOSER_ALLOWED__=true;var input=document.getElementById('upload');input.accept=%@;input.addEventListener('click',function(event){event.preventDefault()});input.click();true", GYQuote(item[0])]);
+        PermissionFrame *frame = [PermissionFrame new]; frame.probeWebView = owner;
+        FileInputParameters *parameters = [FileInputParameters new];
+        parameters.multiple = [item[0] isEqual:@"image/*"] || [item[1] isEqual:@"mixed"];
+        BOOL select = [@[@"image/*", @"video/*"] containsObject:item[0]] || [item[1] isEqual:@"mixed"];
+        __block NSUInteger replies = 0; __block NSArray<NSURL *> *received;
+        [page webView:owner runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:^(NSArray<NSURL *> *files) { Require((files != nil) == select, @"Integration selected/cancelled result differs"); received = files; replies++; }];
+        WaitUntil(^BOOL { return root.presentedViewController != nil && !root.presentedViewController.isBeingPresented; }, @"Actual App provider did not present media picker");
+        if ([item[1] isEqual:@"document"]) Require([root.presentedViewController isKindOfClass:UIDocumentPickerViewController.class], @"Generic accept did not keep document selection");
+        else {
+            Require([root.presentedViewController isKindOfClass:PHPickerViewController.class], @"Real WK accept through actual App provider incorrectly opened DocumentPicker");
+            PHPickerViewController *picker = (PHPickerViewController *)root.presentedViewController;
+            PHPickerFilter *expected = [item[1] isEqual:@"image"] ? PHPickerFilter.imagesFilter : [item[1] isEqual:@"video"] ? PHPickerFilter.videosFilter : [PHPickerFilter anyFilterMatchingSubfilters:@[PHPickerFilter.imagesFilter, PHPickerFilter.videosFilter]];
+            Require([picker.configuration.filter isEqual:expected] && picker.configuration.selectionLimit == (parameters.multiple ? 10 : 1), @"Actual App media filter/count differs from WK accept category");
+        }
+        if (select) {
+            NSURL *image = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"host-integration.png"]];
+            UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(2, 2)];
+            [UIImagePNGRepresentation([renderer imageWithActions:^(UIGraphicsImageRendererContext *context) { [UIColor.redColor setFill]; UIRectFill(CGRectMake(0, 0, 2, 2)); }]) writeToURL:image atomically:YES];
+            NSURL *movie = [NSBundle.mainBundle URLForResource:@"capture" withExtension:@"mov"];
+            NSArray<NSURL *> *sources = [item[1] isEqual:@"mixed"] ? @[image, movie] : [item[1] isEqual:@"image"] ? @[image] : @[movie];
+            [page hrv_setPropWithKey:@"visible" propValue:@NO];
+            GYCompleteHostMediaSelection((__bridge void *)root.presentedViewController, (__bridge void *)sources);
+            WaitUntil(^BOOL { return root.presentedViewController == nil; }, @"Selected integration picker did not dismiss");
+            [page hrv_setPropWithKey:@"visible" propValue:@YES];
+            WaitUntil(^BOOL { return replies == 1; }, @"Actual App provider did not deliver selected media to WebKit");
+            Require(received.count == sources.count, @"Actual host result lost media items");
+            [page cancelFilePicker]; [page hrv_setPropWithKey:@"visible" propValue:@NO];
+            for (NSURL *file in received) Require([NSData dataWithContentsOfURL:file].length > 0, @"Accepted lease was released by later cancellation or temporary hiding");
+            [page hrv_setPropWithKey:@"visible" propValue:@YES];
+            [page revokeFilePicker];
+            for (NSURL *file in received) Require(![NSFileManager.defaultManager fileExistsAtPath:file.path], @"Actual media lease was not released on document revocation");
+            Require([NSFileManager.defaultManager fileExistsAtPath:image.path] && [NSFileManager.defaultManager fileExistsAtPath:movie.path], @"Integration removed provider original");
+            [NSFileManager.defaultManager removeItemAtURL:image error:nil];
+        } else [page cancelFilePicker];
+        WaitUntil(^BOOL { return root.presentedViewController == nil; }, @"Integration picker did not dismiss");
+        Require(replies == 1, @"Integration result did not settle once");
+        page.webView = nil; [page removeFromSuperview];
+    }
+    [GYWebView configureFileSelectionFactory:^id<GYWebFileSelectionProvider> { return nil; }];
+    puts("PASS: Actual WK DOM accept -> actual App Swift provider -> real MediaClient PhotosUI image/video/mixed or DocumentPicker: standard and production alias list, real provider output to WebKit, hidden/cancel lease preservation and document release (system result-container boundary)");
+}
+#endif
 static NSString *RequestJSON(NSDictionary *request) {
     return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:request options:0 error:nil] encoding:NSUTF8StringEncoding];
 }
@@ -310,28 +405,9 @@ static void CheckPermissionExplanationPresentation(void) {
     method_setImplementation(dismiss, originalPermissionDismiss);
     puts("PASS: Native permission explanation Chinese/English fallback and delayed dismissal ordering/reentry (UIKit presentation fixtures)");
 }
-// 仅替换系统授权入口，真实 captureFile、owner/代次门禁和 wire 事件继续运行。
-static NSMutableArray *capturePermissionReplies;
 static AVAuthorizationStatus capturePermissionStatus;
-static IMP originalCaptureRequest, originalCaptureStatus, originalCameraAvailable, originalUsageDescription;
-static void CapturePermissionRequest(id target, SEL selector, AVMediaType mediaType, void (^completion)(BOOL)) {
-    [capturePermissionReplies addObject:[completion copy]];
-}
-static AVAuthorizationStatus CapturePermissionStatus(id target, SEL selector, AVMediaType mediaType) { return capturePermissionStatus; }
-static BOOL CaptureCameraAvailable(id target, SEL selector, UIImagePickerControllerSourceType source) { return YES; }
-static id CaptureUsageDescription(id target, SEL selector, NSString *key) {
-    if ([key isEqual:@"NSCameraUsageDescription"] || [key isEqual:@"NSMicrophoneUsageDescription"]) return @"Capture permission fixture";
-    return ((id (*)(id, SEL, NSString *))originalUsageDescription)(target, selector, key);
-}
-static void DeliverCapturePermission(BOOL granted) {
-    void (^reply)(BOOL) = capturePermissionReplies.firstObject;
-    Require(reply != nil, @"Capture never requested a native permission");
-    [capturePermissionReplies removeObjectAtIndex:0];
-    reply(granted);
-    __block BOOL drained = NO;
-    dispatch_async(dispatch_get_main_queue(), ^{ drained = YES; });
-    WaitUntil(^BOOL { return drained; }, @"Capture permission callback did not reach the main queue");
-}
+static BOOL microphoneDenied;
+static AVAuthorizationStatus CapturePermissionStatus(id target, SEL selector, AVMediaType mediaType) { return microphoneDenied && [mediaType isEqual:AVMediaTypeAudio] ? AVAuthorizationStatusDenied : capturePermissionStatus; }
 static BOOL CompleteHostExplanation(GYWebView *page, NSString *requestId, id accepted) {
     __block BOOL received = NO, result = NO;
     NSDictionary *value = @{@"requestId": requestId ?: @"", @"accepted": accepted ?: NSNull.null};
@@ -341,6 +417,67 @@ static BOOL CompleteHostExplanation(GYWebView *page, NSString *requestId, id acc
     }];
     Require(received, @"Host explanation command must always return a receipt");
     return result;
+}
+@interface HostFileProvider : NSObject <GYWebFileSelectionProvider>
+@property(nonatomic, copy) void (^reply)(NSArray<NSURL *> *, NSString *, NSArray<NSString *> *, dispatch_block_t);
+@property(nonatomic) NSUInteger selections;
+@property(nonatomic) BOOL capture;
+@end
+@implementation HostFileProvider
+- (void)selectFiles:(NSArray<NSString *> *)types multiple:(BOOL)multiple capture:(BOOL)capture presenter:(UIViewController *)presenter completion:(void (^)(NSArray<NSURL *> *, NSString *, NSArray<NSString *> *, dispatch_block_t))completion { self.selections++; self.capture = capture; self.reply = completion; }
+- (void)cancelFileSelection { self.reply = nil; }
+@end
+static void CheckHostFileSelection(void) {
+    Method statusMethod = class_getClassMethod(AVCaptureDevice.class, @selector(authorizationStatusForMediaType:));
+    IMP oldStatus = method_setImplementation(statusMethod, (IMP)CapturePermissionStatus);
+    for (NSString *mode in @[@"selected", @"hidden", @"cancel", @"late", @"wrongType", @"oversize", @"denied", @"blocked", @"restricted", @"explanation"]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero]; page.pageOwnerActive = @YES;
+        HostFileProvider *provider = [HostFileProvider new]; page.fileSelectionProvider = provider;
+        page.request = @{@"permissionPresentation": @"HOST", @"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+        page.fileOrigin = @"https://safe.example"; page.fileTypes = @[UTTypePNG]; page.filePickerGeneration = page.callbackGeneration;
+        __block NSUInteger replies = 0, releases = 0, settings = 0; __block NSDictionary *explanation;
+        page.filePickerCompletion = ^(NSArray<NSURL *> *files) { replies++; Require((files != nil) == [@[@"selected", @"hidden"] containsObject:mode], @"Host result selection state was changed"); };
+        page.onEvent = ^(id value) { if ([value[@"type"] isEqual:@"permissionSettingsRequired"]) settings++; if ([value[@"type"] isEqual:@"permissionExplanationRequested"]) explanation = value; };
+        capturePermissionStatus = [mode isEqual:@"explanation"] ? AVAuthorizationStatusNotDetermined : AVAuthorizationStatusAuthorized;
+        [page captureFile:page.webView];
+        if ([mode isEqual:@"explanation"]) {
+            Require(provider.selections == 0 && explanation, @"HOST explanation must precede native media selection");
+            Require(CompleteHostExplanation(page, explanation[@"requestId"], @YES), @"HOST file explanation did not resume provider");
+        }
+        Require(provider.selections == 1 && provider.capture, @"Capture did not reach its per-view host provider");
+        void (^reply)(NSArray *, NSString *, NSArray *, dispatch_block_t) = provider.reply;
+        NSURL *file = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[@"host-file-fixture" stringByAppendingPathExtension:[mode isEqual:@"wrongType"] ? @"txt" : @"png"]]];
+        [@"fixture" writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        if ([mode isEqual:@"oversize"]) { NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:file.path]; [handle truncateFileAtOffset:50 * 1024 * 1024 + 1]; [handle closeFile]; }
+        dispatch_block_t release = ^{ releases++; [NSFileManager.defaultManager removeItemAtURL:file error:nil]; };
+        if ([mode isEqual:@"hidden"]) [page hrv_setPropWithKey:@"visible" propValue:@NO];
+        if ([mode isEqual:@"cancel"] || [mode isEqual:@"late"]) [page cancelFilePicker];
+        if ([mode isEqual:@"late"]) { page.filePickerRevision++; page.filePickerGeneration = page.callbackGeneration; page.filePickerCompletion = ^(NSArray *files) { Require(!files, @"Old URL reached a new request"); replies++; }; }
+        NSString *result = [@[@"denied", @"blocked", @"restricted"] containsObject:mode] ? mode : [mode isEqual:@"explanation"] ? @"cancelled" : @"selected";
+        reply(@[file], result, @[@"CAMERA"], release);
+        if ([mode isEqual:@"hidden"]) { Require(replies == 0 && releases == 0, @"Hidden result was delivered before host visibility"); [page hrv_setPropWithKey:@"visible" propValue:@YES]; }
+        Require(replies == 1 && settings == ([mode isEqual:@"blocked"] ? 1 : 0), @"First denial/cancel/settings or once contract failed");
+        if ([@[@"selected", @"hidden"] containsObject:mode]) { Require(releases == 0 && [NSFileManager.defaultManager fileExistsAtPath:file.path], @"Delivered media lease was released before document revocation"); [page cancelFilePicker]; Require(releases == 0, @"A later cancellation deleted accepted media"); }
+        if ([mode isEqual:@"selected"]) { [page hrv_setPropWithKey:@"visible" propValue:@NO]; Require(releases == 0 && [NSFileManager.defaultManager fileExistsAtPath:file.path], @"Temporary owner-preserving hide deleted an accepted upload"); [page hrv_setPropWithKey:@"visible" propValue:@YES]; }
+        if ([mode isEqual:@"late"]) [page cancelFilePicker];
+        [page revokeFilePicker]; [page revokeFilePicker];
+        Require(releases == 1 && ![NSFileManager.defaultManager fileExistsAtPath:file.path], @"Media owner release was lost or repeated");
+        page.webView = nil;
+    }
+    PermissionPage *mixed = [[PermissionPage alloc] initWithFrame:CGRectZero];
+    mixed.webView = [[UploadWebView alloc] initWithFrame:CGRectZero]; mixed.fileOrigin = @"https://safe.example"; mixed.fileTypes = @[UTTypeImage, UTTypeMovie]; mixed.filePickerGeneration = mixed.callbackGeneration;
+    mixed.request = @{@"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+    HostFileProvider *provider = [HostFileProvider new]; mixed.fileSelectionProvider = provider;
+    mixed.filePickerCompletion = ^(NSArray *files) {};
+    capturePermissionStatus = AVAuthorizationStatusAuthorized; microphoneDenied = YES;
+    [mixed captureFile:mixed.webView];
+    Require(mixed.captureChoice && provider.selections == 0, @"Mixed capture must choose photo/video before permissions");
+    [mixed finishCaptureChoice:mixed.captureChoice video:NO owner:mixed.webView revision:mixed.filePickerRevision];
+    Require(provider.selections == 1 && [mixed.fileTypes isEqual:@[UTTypeImage]] && !mixed.permissionExplanation, @"Mixed photo was blocked by denied microphone or requested video permissions");
+    [mixed cancelFilePicker]; mixed.webView = nil; microphoneDenied = NO;
+    method_setImplementation(statusMethod, oldStatus);
+    puts("PASS: Neutral host file selection: HOST before native, first denial vs blocked settings, hidden delivery, MIME/50MiB, once, stale owner revision and media-owned lease release");
 }
 static void CheckHostPermissionExplanation(void) {
     GYWebView *validation = [[GYWebView alloc] initWithFrame:CGRectZero];
@@ -482,149 +619,8 @@ static void CheckHostMediaPermissionContinuation(void) {
         Require(decision == ([@[@"accept", @"sync"] containsObject:mode] ? WKPermissionDecisionPrompt : WKPermissionDecisionDeny), @"HOST confirmation bypassed WebKit Prompt or current frame/source/owner/visibility checks");
         page.onEvent = nil; page.webView = nil; [page hrv_removeFromSuperview];
     }
-    Method request = class_getClassMethod(AVCaptureDevice.class, @selector(requestAccessForMediaType:completionHandler:));
-    Method available = class_getClassMethod(UIImagePickerController.class, @selector(isSourceTypeAvailable:));
-    Method usage = class_getInstanceMethod(NSBundle.class, @selector(objectForInfoDictionaryKey:));
-    originalCaptureRequest = method_setImplementation(request, (IMP)CapturePermissionRequest);
-    originalCameraAvailable = method_setImplementation(available, (IMP)CaptureCameraAvailable);
-    originalUsageDescription = method_setImplementation(usage, (IMP)CaptureUsageDescription);
-    for (NSString *mode in @[@"camera", @"microphone", @"decline", @"denied", @"leave", @"reentrant"]) {
-        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
-        page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
-        page.request = @{@"permissionPresentation": @"HOST", @"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
-        page.fileOrigin = @"https://safe.example"; page.fileTypes = [mode isEqual:@"microphone"] ? @[UTTypeMovie] : @[UTTypeImage];
-        page.filePickerGeneration = page.callbackGeneration;
-        capturePermissionStatus = AVAuthorizationStatusNotDetermined; capturePermissionReplies = [NSMutableArray array];
-        __block NSUInteger replies = 0, freshReplies = 0;
-        __block NSDictionary *explanation;
-        __weak PermissionPage *weakPage = page;
-        page.onEvent = ^(id event) { if ([event[@"type"] isEqual:@"permissionExplanationRequested"]) explanation = event; };
-        page.filePickerCompletion = ^(NSArray<NSURL *> *files) {
-            Require(files == nil, @"HOST capture denial disclosed files"); replies++;
-            if ([mode isEqual:@"reentrant"]) {
-                weakPage.filePickerGeneration = weakPage.callbackGeneration;
-                weakPage.filePickerCompletion = ^(NSArray<NSURL *> *value) { freshReplies++; };
-                [weakPage captureFile:weakPage.webView];
-            }
-        };
-        [page captureFile:page.webView];
-        NSString *old = page.permissionExplanationRequestId;
-        Require(old.length && capturePermissionReplies.count == 0 && [explanation[@"permissions"] isEqual:([mode isEqual:@"microphone"] ? @[@"CAMERA", @"MICROPHONE"] : @[@"CAMERA"])], @"File capture must ask HOST before system authorization");
-        if ([mode isEqual:@"denied"]) capturePermissionStatus = AVAuthorizationStatusDenied;
-        if ([mode isEqual:@"leave"]) [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
-        else Require(CompleteHostExplanation(page, old, [@[@"decline", @"reentrant"] containsObject:mode] ? @NO : @YES), @"File capture HOST receipt failed");
-        if ([@[@"camera", @"microphone"] containsObject:mode]) {
-            Require(capturePermissionReplies.count == 1, @"HOST confirmation must still request real camera access");
-            if ([mode isEqual:@"microphone"]) { DeliverCapturePermission(YES); Require(capturePermissionReplies.count == 1, @"Video capture skipped real microphone access"); }
-            capturePermissionStatus = AVAuthorizationStatusDenied;
-            DeliverCapturePermission(NO);
-        }
-        Require(replies == 1 && freshReplies == 0 && capturePermissionReplies.count == 0, @"File capture HOST cancellation failed to settle once or prompted unexpectedly");
-        Require(!CompleteHostExplanation(page, old, @YES), @"File capture accepted a stale HOST answer");
-        if ([mode isEqual:@"reentrant"]) Require(page.permissionExplanationRequestId && ![old isEqual:page.permissionExplanationRequestId], @"Old HOST answer cancelled reentrant capture");
-        page.onEvent = nil; page.webView = nil; [page hrv_removeFromSuperview];
-    }
     method_setImplementation(status, originalStatus);
-    method_setImplementation(request, originalCaptureRequest);
-    method_setImplementation(available, originalCameraAvailable);
-    method_setImplementation(usage, originalUsageDescription);
-    capturePermissionReplies = nil;
-    puts("PASS: HOST WebRTC/file capture continuations retain real frame/source/owner/AV authorization, WebKit Prompt, cancellation and reentry gates");
-}
-static void CheckCapturePermissionSettings(void) {
-    Method request = class_getClassMethod(AVCaptureDevice.class, @selector(requestAccessForMediaType:completionHandler:));
-    Method status = class_getClassMethod(AVCaptureDevice.class, @selector(authorizationStatusForMediaType:));
-    Method available = class_getClassMethod(UIImagePickerController.class, @selector(isSourceTypeAvailable:));
-    Method usage = class_getInstanceMethod(NSBundle.class, @selector(objectForInfoDictionaryKey:));
-    originalCaptureRequest = method_setImplementation(request, (IMP)CapturePermissionRequest);
-    originalCaptureStatus = method_setImplementation(status, (IMP)CapturePermissionStatus);
-    originalCameraAvailable = method_setImplementation(available, (IMP)CaptureCameraAvailable);
-    originalUsageDescription = method_setImplementation(usage, (IMP)CaptureUsageDescription);
-    for (NSString *mode in @[@"camera", @"microphone", @"restricted", @"hidden", @"stale", @"generation", @"source", @"reentrant", @"alreadyDenied", @"alreadyRestricted"]) {
-        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
-        page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
-        page.request = @{@"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
-        page.fileOrigin = @"https://safe.example";
-        page.fileTypes = [mode isEqual:@"microphone"] ? @[UTTypeMovie] : @[UTTypeImage];
-        page.filePickerGeneration = page.callbackGeneration;
-        __block NSUInteger settled = 0, freshSettled = 0;
-        __block NSDictionary *event;
-        page.filePickerCompletion = ^(NSArray<NSURL *> *files) { Require(files == nil, @"Denied capture disclosed files"); settled++; };
-        __weak GYWebView *weakPage = page;
-        page.onEvent = ^(id value) {
-            event = value;
-            if ([mode isEqual:@"reentrant"]) {
-                [weakPage cancelFilePicker];
-                weakPage.filePickerRevision++;
-                weakPage.filePickerGeneration = weakPage.callbackGeneration;
-                weakPage.filePickerCompletion = ^(NSArray<NSURL *> *files) { freshSettled++; };
-            }
-        };
-        capturePermissionReplies = [NSMutableArray array];
-        BOOL alreadyBlocked = [mode hasPrefix:@"already"];
-        capturePermissionStatus = alreadyBlocked ? ([mode isEqual:@"alreadyDenied"] ? AVAuthorizationStatusDenied : AVAuthorizationStatusRestricted) : AVAuthorizationStatusNotDetermined;
-        [page captureFile:page.webView];
-        if (!alreadyBlocked) {
-            Require(page.permissionExplanation != nil && capturePermissionReplies.count == 0, @"Capture must explain before the first system prompt");
-            [page finishPermissionExplanation:page.permissionExplanation accepted:YES];
-        } else Require(page.permissionExplanation == nil && capturePermissionReplies.count == 0, @"Denied/restricted capture must not explain or ask the system again");
-        if ([mode isEqual:@"microphone"]) DeliverCapturePermission(YES);
-        capturePermissionStatus = [mode isEqual:@"restricted"] ? AVAuthorizationStatusRestricted : AVAuthorizationStatusDenied;
-        if ([mode isEqual:@"hidden"]) { page.pageOwnerActive = @YES; page.pageVisible = NO; }
-        if ([mode isEqual:@"generation"]) page.callbackGeneration++;
-        if ([mode isEqual:@"source"]) page.fileOrigin = @"https://other.example";
-        if ([mode isEqual:@"stale"]) {
-            [page cancelFilePicker];
-            page.filePickerRevision++;
-            page.filePickerCompletion = ^(NSArray<NSURL *> *files) { freshSettled++; };
-        }
-        if (!alreadyBlocked) DeliverCapturePermission(NO);
-        BOOL settingsExpected = [@[@"camera", @"microphone", @"reentrant", @"alreadyDenied"] containsObject:mode];
-        Require((event != nil) == settingsExpected, @"Only a current visible denied capture may ask the host for settings");
-        if (settingsExpected) Require([event[@"type"] isEqual:@"permissionSettingsRequired"] &&
-            [event[@"permissions"] isEqual:@[[mode isEqual:@"microphone"] ? @"MICROPHONE" : @"CAMERA"]], @"Capture settings wire capability is incorrect");
-        Require(settled == 1 && freshSettled == 0, @"Old permission callback cancelled a new picker or failed to settle");
-        page.onEvent = nil;
-        page.webView = nil; // Probe 未注册 createWebView 的 KVO。
-        [page hrv_removeFromSuperview];
-    }
-    for (NSString *mode in @[@"cancel", @"hide", @"navigate", @"leave", @"reentrant"]) {
-        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
-        page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
-        page.request = @{@"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
-        page.fileOrigin = @"https://safe.example"; page.fileTypes = @[UTTypeImage];
-        page.pageOwnerActive = @YES; page.filePickerGeneration = page.callbackGeneration;
-        capturePermissionStatus = AVAuthorizationStatusNotDetermined;
-        capturePermissionReplies = [NSMutableArray array];
-        __block NSUInteger replies = 0, freshReplies = 0;
-        __weak PermissionPage *weakPage = page;
-        page.filePickerCompletion = ^(NSArray<NSURL *> *files) {
-            Require(files == nil, @"Cancelled explanation must not disclose capture files"); replies++;
-            if ([mode isEqual:@"reentrant"]) {
-                weakPage.filePickerGeneration = weakPage.callbackGeneration;
-                weakPage.filePickerCompletion = ^(NSArray<NSURL *> *value) { freshReplies++; };
-                [weakPage captureFile:weakPage.webView];
-            }
-        };
-        [page captureFile:page.webView];
-        UIAlertController *old = page.permissionExplanation;
-        Require(old && capturePermissionReplies.count == 0, @"Capture explanation must precede system authorization");
-        if ([mode isEqual:@"hide"]) [page hrv_setPropWithKey:@"visible" propValue:@NO];
-        else if ([mode isEqual:@"navigate"]) [page webView:page.webView didStartProvisionalNavigation:nil];
-        else if ([mode isEqual:@"leave"]) [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
-        else [page finishPermissionExplanation:old accepted:NO];
-        [page finishPermissionExplanation:old accepted:YES];
-        Require(replies == 1 && capturePermissionReplies.count == 0 && freshReplies == 0, @"Explanation cancellation must settle capture once without a system prompt or stale reply");
-        if ([mode isEqual:@"reentrant"]) Require(page.permissionExplanation && page.permissionExplanation != old, @"Old explanation cleanup revoked a reentrant capture");
-        page.webView = nil;
-        [page hrv_removeFromSuperview];
-    }
-    method_setImplementation(request, originalCaptureRequest);
-    method_setImplementation(status, originalCaptureStatus);
-    method_setImplementation(available, originalCameraAvailable);
-    method_setImplementation(usage, originalUsageDescription);
-    capturePermissionReplies = nil;
-    puts("PASS: Native capture settings wire: camera/microphone denial, restricted, hidden, stale revision, generation, source and event reentry (system authorization fixtures)");
+    puts("PASS: HOST WebRTC continuations retain real frame/source/owner/AV authorization, cancellation and reentry gates");
 }
 static void CheckWebRTCPermissionSettings(void) {
     Method status = class_getClassMethod(AVCaptureDevice.class, @selector(authorizationStatusForMediaType:));
@@ -902,7 +898,6 @@ static void Check(void) {
     CheckPermissionExplanationPresentation();
     CheckHostPermissionExplanation();
     CheckHostMediaPermissionContinuation();
-    CheckCapturePermissionSettings();
     CheckWebRTCPermissionSettings();
     puts("PHASE: System WebKit readiness");
     NSString *startupURL = [NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"] stringByReplacingOccurrencesOfString:@"/page" withString:@"/other"];
@@ -916,9 +911,13 @@ static void Check(void) {
         [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     Require(!startup.loading && [startup.URL.absoluteString isEqual:startupURL], @"System WebKit readiness failed");
     Require([Evaluate(startup, @"document.body.innerText") containsString:@"page message history fixture"], @"System WebKit readiness did not load fixture");
+    CheckFileInputDOM(startup);
     printf("PASS: System WebKit readiness %.3fs\n", 60 - startupDeadline.timeIntervalSinceNow);
     [startup removeFromSuperview];
     startup = nil;
+#if WEBVIEW_HOST_MEDIA
+    CheckHostMediaIntegration();
+#endif
     puts("PHASE: Picture in Picture media policy");
     CheckPictureInPictureMediaVisibility();
     CheckPictureInPictureScriptWire();
@@ -1303,114 +1302,7 @@ static void Check(void) {
     __block BOOL destroyedReply = NO;
     [page hrv_callWithMethod:@"replyPageMessage" params:hiddenReply callback:^(id value) { RequireBoolean(value[@"result"], NO, @"Destroyed owner reply"); destroyedReply = YES; }];
     Require(destroyedReply, @"Destroyed page reply did not reject");
-    // 上传回执在原生 owner/文档代次门禁之后交付；基础 Foundation/UTType 使用真实实现。
-    RuleProbe *upload = [[RuleProbe alloc] initWithFrame:CGRectZero];
-    upload.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
-    for (NSString *key in @[@"estimatedProgress", @"title", @"canGoBack", @"canGoForward"])
-        [upload.webView addObserver:upload forKeyPath:key options:0 context:nil];
-    upload.request = @{@"security": @{@"fileChooserEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
-    upload.fileTypes = @[UTTypePlainText]; upload.fileOrigin = @"https://safe.example";
-    NSURL *directory = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"upload-directory.jpg"]];
-    [NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil];
-    upload.fileTypes = @[UTTypeItem];
-    upload.filePickerGeneration = upload.callbackGeneration;
-    upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { Require(files == nil, @"Directory was treated as an upload file"); };
-    [upload finishFiles:@[directory]];
-    [NSFileManager.defaultManager removeItemAtURL:directory error:nil];
-    upload.fileTypes = @[UTTypePlainText];
-
-    NSURL *file = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"upload-check.txt"]];
-    [@"test" writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    __block NSUInteger settled = 0;
-    upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { settled++; Require(files.count == 1, @"Valid file was lost"); };
-    upload.filePickerGeneration = upload.callbackGeneration;
-    [upload finishFiles:@[file]]; Require(settled == 1, @"Upload did not settle once");
-    upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { settled++; Require(files == nil, @"Stale document disclosed file"); };
-    upload.filePickerGeneration = upload.callbackGeneration; upload.callbackGeneration++;
-    [upload finishFiles:@[file]]; Require(settled == 2, @"Stale upload did not settle once");
-    for (NSString *outcome in @[@"resume", @"leave", @"navigate"]) {
-        [upload hrv_setPropWithKey:@"pageOwnerActive" propValue:@YES];
-        upload.filePickerGeneration = upload.callbackGeneration;
-        __block NSUInteger replies = 0;
-        upload.filePickerCompletion = ^(NSArray<NSURL *> *files) {
-            replies++;
-            Require([outcome isEqual:@"resume"] ? files.count == 1 : files == nil, @"Picker returned an incorrect result after hiding");
-        };
-        [upload hrv_setPropWithKey:@"visible" propValue:@NO];
-        Require(replies == 0, @"System picker hide cancelled the current page");
-        if ([outcome isEqual:@"leave"]) [upload hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
-        if ([outcome isEqual:@"navigate"]) [upload prepareDocumentScripts];
-        [upload finishFiles:@[file]];
-        if ([outcome isEqual:@"resume"]) Require(replies == 0, @"Hidden picker result was delivered too early");
-        [upload hrv_setPropWithKey:@"visible" propValue:@YES];
-        Require(replies == 1, @"Picker was not settled exactly once");
-    }
-    [upload hrv_setPropWithKey:@"pageOwnerActive" propValue:@YES];
-    upload.filePickerGeneration = upload.callbackGeneration;
-    __block NSUInteger queuedReplies = 0;
-    upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { queuedReplies++; Require(files == nil, @"A departed page received its queued file"); };
-    [upload hrv_setPropWithKey:@"visible" propValue:@NO];
-    [upload finishFiles:@[file]];
-    Require(queuedReplies == 0, @"Hidden result was not deferred");
-    [upload hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
-    [upload hrv_setPropWithKey:@"visible" propValue:@YES];
-    Require(queuedReplies == 1, @"Queued file was not cancelled exactly once");
-    upload.pageOwnerActive = nil;
-    upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { settled++; Require(files == nil, @"Cancel disclosed file"); };
-    upload.temporaryFiles = [NSMutableArray arrayWithObject:file];
-    [upload cancelFilePicker]; [upload cancelFilePicker]; Require(settled == 3, @"Cancel settled repeatedly");
-    Require([NSFileManager.defaultManager fileExistsAtPath:file.path], @"Later chooser cancellation deleted accepted upload");
-    [upload revokeFilePicker];
-    Require(![NSFileManager.defaultManager fileExistsAtPath:file.path], @"Temporary upload file was retained");
-    upload.fileTypes = @[UTTypeImage]; upload.filePickerGeneration = upload.callbackGeneration;
-    UIImagePickerController *camera = [UIImagePickerController new]; upload.capturePicker = camera;
-    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(2, 2)];
-    UIImage *image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) { [UIColor.redColor setFill]; UIRectFill(CGRectMake(0, 0, 2, 2)); }];
-    __block NSURL *captured;
-    upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { captured = files.firstObject; Require(captured != nil, @"Actual JPEG encoding did not return readable file"); };
-    [upload imagePickerController:camera didFinishPickingMediaWithInfo:@{UIImagePickerControllerMediaType: UTTypeImage.identifier, UIImagePickerControllerOriginalImage: image}];
-    NSData *jpeg = [NSData dataWithContentsOfURL:captured]; const unsigned char *header = jpeg.bytes;
-    Require(jpeg.length > 3 && header[0] == 0xff && header[1] == 0xd8, @"Capture did not encode actual JPEG");
-    [upload cancelFilePicker]; Require([NSData dataWithContentsOfURL:captured].length > 0, @"Later cancel interrupted H5 capture read");
-    [upload prepareDocumentScripts]; Require(![NSFileManager.defaultManager fileExistsAtPath:captured.path], @"Navigation retained previous capture");
-    NSURL *foreignVideo = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"camera-check.mp4"]];
-    [@"foreign movie" writeToURL:foreignVideo atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    upload.fileTypes = @[UTTypeMovie]; upload.filePickerGeneration = upload.callbackGeneration;
-    camera = [UIImagePickerController new]; upload.capturePicker = camera;
-    upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { Require(files == nil, @"Non-MOV capture was renamed as QuickTime"); };
-    [upload imagePickerController:camera didFinishPickingMediaWithInfo:@{UIImagePickerControllerMediaType: UTTypeMovie.identifier, UIImagePickerControllerMediaURL: foreignVideo}];
-    Require([NSFileManager.defaultManager fileExistsAtPath:foreignVideo.path], @"Rejected capture deleted provider-owned source");
-    [NSFileManager.defaultManager removeItemAtURL:foreignVideo error:nil];
-    for (NSString *mode in @[@"complete", @"cancel", @"hide"]) {
-        NSURL *movie = [NSBundle.mainBundle URLForResource:@"capture" withExtension:@"mov"];
-        Require(movie != nil, @"Missing real MOV fixture");
-        upload.fileTypes = @[UTTypeMPEG4Movie]; upload.filePickerGeneration = upload.callbackGeneration;
-        camera = [UIImagePickerController new]; upload.capturePicker = camera;
-        __block NSUInteger movieResults = 0; __block NSURL *exported;
-        upload.filePickerCompletion = ^(NSArray<NSURL *> *files) { movieResults++; exported = files.firstObject; };
-        [upload imagePickerController:camera didFinishPickingMediaWithInfo:@{UIImagePickerControllerMediaType: UTTypeMovie.identifier, UIImagePickerControllerMediaURL: movie}];
-        NSArray<NSURL *> *working = upload.exportingFiles;
-        Require(working.count == 2, @"MP4-only capture did not start system export");
-        if ([mode isEqual:@"cancel"]) [upload cancelFilePicker];
-        if ([mode isEqual:@"hide"]) [upload hrv_setPropWithKey:@"visible" propValue:@NO];
-        WaitUntil(^BOOL { return movieResults == 1; }, @"MP4 export did not settle once");
-        if ([mode isEqual:@"complete"]) {
-            Require([exported.pathExtension isEqual:@"mp4"], @"MP4 accept did not receive MP4 output");
-            Require([[AVURLAsset URLAssetWithURL:exported options:nil] tracksWithMediaType:AVMediaTypeVideo].count > 0, @"Exported MP4 has no real video track");
-            Require(![NSFileManager.defaultManager fileExistsAtPath:working.firstObject.path], @"MOV conversion input was retained");
-            [upload revokeFilePicker];
-        } else {
-            Require(exported == nil, @"Revoked capture disclosed output");
-            // Let the cancelled AVFoundation completion run before checking late cleanup.
-            NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
-            while (deadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
-        }
-        for (NSURL *url in working) Require(![NSFileManager.defaultManager fileExistsAtPath:url.path], @"Export temporary file leaked");
-        Require(movieResults == 1, @"Late movie export completed twice");
-        Require([NSFileManager.defaultManager fileExistsAtPath:movie.path], @"Capture removed provider-owned fixture");
-        [upload hrv_setPropWithKey:@"visible" propValue:@YES];
-    }
-    [upload hrv_removeFromSuperview];
+    CheckHostFileSelection();
     [probe hrv_removeFromSuperview];
     [view hrv_removeFromSuperview];
     puts("PASS: Native Boolean wire, navigation, command results, early page channel document gates and real WebKit rules");
