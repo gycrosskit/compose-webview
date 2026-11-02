@@ -32,6 +32,9 @@ with TemporaryDirectory() as directory:
     scripts.mkdir(parents=True)
     for file in ('verify.sh', 'create-fixture.py', 'main.kt'):
         shutil.copy2(SOURCE / file, scripts / file)
+    stale = scripts.parents[1] / 'build/remote-library-review/android-fixture/RetiredPicker.kt'
+    stale.parent.mkdir(parents=True)
+    stale.write_text('Retired generated picker stubs must not be compiled')
     tools = root / 'tools'
     tools.mkdir()
     (tools / 'python3').symlink_to(sys.executable)
@@ -75,6 +78,8 @@ with Path(os.environ['MOCK_JAVA_CALLS']).open('a') as stream:
             assert all(Path(jar).is_relative_to(gradle) for jar in classpath)
             assert [Path(jar).name for jar in classpath[:3]] == [f'{name}-{VERSION}.jar' for name in COMPILER]
             assert 'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler' in invocations[0]
+            assert any(arg.endswith('/AndroidWebMediaPermissionController.kt') for arg in invocations[0])
+            assert not any(arg.endswith(('/AndroidWebFileChooserController.kt', '/RetiredPicker.kt')) for arg in invocations[0])
             assert invocations[1][-1] == 'io.github.gycrosskit.composewebview.MainKt'
             assert (scripts.parents[1] / 'build/remote-library-review/android-fixture/Manifest.kt').exists()
         else:
