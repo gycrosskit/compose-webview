@@ -1,3 +1,9 @@
+## 2.0.0
+
+- 不兼容行为变更：三端文件／媒体选择改由宿主注入；旧构造器仍可编译，但未接线时取消请求，不再提供内置选择器。
+- Android 注入 `AndroidWebFilePicker`，iOS 注册每 View 独立的 provider 工厂，鸿蒙覆盖 host selector/revoke；来源、权限说明、文档代次、MIME／大小和一次交付门禁仍由 WebView 保留。
+- Maven、Git Pod（`native-2.0.0`）与私有 OHPM/HAR（`har-2.0.0`）统一使用 `2.0.0`；Renderer 范围和 SystemActions Native `1.0.2` 保持。迁移见[接入指南](../../docs/接入指南.md#200-文件选择迁移)，各渠道与设备验收分别记录，旧 Tag/checksum 不变。
+
 ## Native/HAR 1.2.1
 
 - iOS Git Pod 使用 `native-1.2.1`，HAR/OHPM 使用 `har-1.2.1`；Maven 保留 `1.2.0`，不重发未修改的 KMP 产物。
@@ -23,7 +29,7 @@
 - SystemActions Native 精确依赖升级到 `1.0.1`，独立消费者使用相同版本，继续共用所属 WindowStage 的 `WindowPolicyController`。新 HAR 须重新编译、冻结及消费验证；不复用旧依赖候选或覆盖已有标签。
 - 仅 HAR / OHPM 使用 `1.0.2` 和新标签 `har-1.0.2`；Maven 与 iOS Git Pod 保留 `1.0.1`，Kotlin API 与原生实现不改。
 
-# 1.0.0（正式版准备，尚未发布）
+# 1.0.0
 
 ## 1.0.1 - 2026-10-25
 

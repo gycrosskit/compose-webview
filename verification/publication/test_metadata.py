@@ -52,8 +52,8 @@ class PublicationContracts(unittest.TestCase):
             'har': har['version'],
         }
         self.assertEqual(versions, {
-            'maven': '1.2.0', 'maven-package': '1.2.0', 'pod': '1.2.1',
-            'maven-consumer': '1.2.0', 'verify-consumer': '1.2.0', 'har': '1.2.1',
+            'maven': '2.0.0', 'maven-package': '2.0.0', 'pod': '2.0.0',
+            'maven-consumer': '2.0.0', 'verify-consumer': '2.0.0', 'har': '2.0.0',
         })
         self.assertIn(':tag => "native-#{s.version}"', (root / 'GYWebView.podspec').read_text())
         consumer = json.loads((root / 'ohos/verification-consumer/consumer/oh-package.json5').read_text())
