@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="web_capture_photo">拍照</string>
+    <string name="web_capture_video">录视频</string>
     <string name="web_permission_explanation_title">权限使用说明</string>
     <string name="web_permission_acknowledge">知道了</string>
     <string name="web_permission_name_camera">相机权限</string>

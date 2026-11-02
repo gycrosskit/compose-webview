@@ -3,6 +3,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <AVFoundation/AVFoundation.h>
 #import <arpa/inet.h>
+#import <os/log.h>
 #import "GYWebViewScripts.inc"
 
 static NSDictionary *GYObject(NSString *value) {
@@ -148,7 +149,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 @property(nonatomic, weak) GYWebView *owner;
 @end
 
-@interface GYWebView () <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UIDocumentPickerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
+@interface GYWebView () <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
 @property(nonatomic, strong) WKWebView *webView;
 @property(nonatomic, copy) NSDictionary *request;
 @property(nonatomic, copy) KuiklyRenderCallback onEvent;
@@ -166,23 +167,23 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *pageMessageReplies;
 @property(nonatomic, assign) BOOL pageMessageRevoked;
 @property(nonatomic, assign) BOOL pageMessageInitialNavigation;
-@property(nonatomic, strong) UIDocumentPickerViewController *filePicker;
+@property(nonatomic, strong) id<GYWebFileSelectionProvider> fileSelectionProvider;
+@property(nonatomic, copy) dispatch_block_t pendingFileRelease;
+@property(nonatomic, strong) NSMutableArray<dispatch_block_t> *acceptedFileReleases;
 @property(nonatomic, copy) void (^filePickerCompletion)(NSArray<NSURL *> *);
 @property(nonatomic, assign) NSUInteger filePickerGeneration;
 @property(nonatomic, assign) NSUInteger filePickerRevision;
 @property(nonatomic, strong) NSNumber *pageOwnerActive;
 @property(nonatomic, strong) UIAlertController *permissionExplanation;
+@property(nonatomic, strong) UIAlertController *captureChoice;
 @property(nonatomic, copy) NSString *permissionExplanationRequestId;
 @property(nonatomic, copy) void (^permissionExplanationCompletion)(BOOL);
 @property(nonatomic, assign) BOOL permissionExplanationForFilePicker;
 @property(nonatomic, copy) void (^pendingFilePickerAction)(void);
 @property(nonatomic, assign) NSUInteger maxFiles;
-@property(nonatomic, strong) UIImagePickerController *capturePicker;
 @property(nonatomic, copy) NSArray<UTType *> *fileTypes;
+@property(nonatomic, copy) NSArray<NSString *> *fileAcceptTypes;
 @property(nonatomic, copy) NSString *fileOrigin;
-@property(nonatomic, strong) NSMutableArray<NSURL *> *temporaryFiles;
-@property(nonatomic, strong) AVAssetExportSession *videoExport;
-@property(nonatomic, copy) NSArray<NSURL *> *exportingFiles;
 @end
 
 @implementation GYWebViewMessageHandler
@@ -191,11 +192,20 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 }
 @end
 
+static void GYTraceFileSelection(GYWebView *view, NSUInteger revision, NSString *event, NSString *status, BOOL ownerMatches) {
+#if DEBUG
+    NSString *safe = status && [@[@"selected", @"cancelled", @"denied", @"blocked", @"restricted", @"failed"] containsObject:status] ? status : @"none";
+    os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_INFO, "[WebFileSelection] page=%{public}p revision=%{public}lu event=%{public}s status=%{public}s ownerMatches=%{public}d", view, (unsigned long)revision, event.UTF8String, safe.UTF8String, ownerMatches);
+#endif
+}
+static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
+
 @implementation GYWebView
++ (void)configureFileSelectionFactory:(id<GYWebFileSelectionProvider> (^)(void))factory { GYFileSelectionFactory = [factory copy]; }
 @synthesize hr_rootView;
 
 - (instancetype)initWithFrame:(CGRect)frame {
-    if ((self = [super initWithFrame:frame])) self.pageVisible = YES;
+    if ((self = [super initWithFrame:frame])) { self.pageVisible = YES; self.fileSelectionProvider = GYFileSelectionFactory ? GYFileSelectionFactory() : nil; }
     return self;
 }
 - (void)layoutSubviews { [super layoutSubviews]; self.webView.frame = self.bounds; }
@@ -511,8 +521,9 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     NSUInteger generation = ++self.callbackGeneration;
     NSArray *cancellations = [self takeFullscreenCancellations];
     void (^cancelPermission)(void) = [self takePermissionExplanationResult:NO];
-    if (preserveFilePicker && self.filePickerCompletion) self.filePickerGeneration = generation;
-    else [self revokeFilePicker];
+    if (preserveFilePicker) {
+        if (self.filePickerCompletion) self.filePickerGeneration = generation;
+    } else [self revokeFilePicker];
     for (void (^cancel)(void) in cancellations) cancel();
     if (cancelPermission) cancelPermission();
     if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
@@ -845,16 +856,30 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
         NSArray *accepts = [accept componentsSeparatedByString:@","];
         if (accepts.count > 32) { [self cancelFilePicker]; return; }
         NSMutableArray<UTType *> *types = [NSMutableArray array];
+        NSMutableArray<NSString *> *rawTypes = [NSMutableArray array];
         for (NSString *part in accepts) {
             NSString *mime = [part stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet].lowercaseString;
             if (!mime.length) continue;
-            UTType *type = [mime isEqual:@"*/*"] ? UTTypeItem : [mime isEqual:@"image/*"] ? UTTypeImage : [mime isEqual:@"video/*"] ? UTTypeMovie : [mime hasPrefix:@"."] ? [UTType typeWithFilenameExtension:[mime substringFromIndex:1]] : [UTType typeWithMIMEType:mime];
-            if (!type) { [self cancelFilePicker]; return; }
-            [types addObject:type];
+            [rawTypes addObject:mime];
+            UTType *type = ([mime isEqual:@"*"] || [mime isEqual:@"*/*"]) ? UTTypeItem : ([mime isEqual:@"image/*"] || [mime isEqual:@"image"]) ? UTTypeImage : ([mime isEqual:@"video/*"] || [mime isEqual:@"video"]) ? UTTypeMovie : [mime isEqual:@"image/jpg"] ? UTTypeJPEG : [mime isEqual:@"video/mov"] ? UTTypeQuickTimeMovie : [mime hasPrefix:@"."] ? [UTType typeWithFilenameExtension:[mime substringFromIndex:1]] : [UTType typeWithMIMEType:mime];
+            if (!type && ([mime hasPrefix:@"image/"] || [mime hasPrefix:@"video/"])) { [self cancelFilePicker]; return; }
+            [types addObject:type ?: UTTypeItem];
         }
         self.fileTypes = types.count ? types : @[UTTypeItem];
+        self.fileAcceptTypes = rawTypes;
+#if DEBUG
+        NSUInteger images = 0, videos = 0, documents = 0, unknown = 0;
+        for (NSUInteger index = 0; index < types.count; index++) {
+            UTType *type = types[index]; NSString *mime = rawTypes[index];
+            if ([mime hasPrefix:@"image/"] || [type conformsToType:UTTypeImage]) images++;
+            else if ([mime hasPrefix:@"video/"] || [type conformsToType:UTTypeMovie]) videos++;
+            else if (!type.isDynamic) documents++;
+            if (type.isDynamic) unknown++;
+        }
+        os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_INFO, "[WebFileSelection] page=%{public}p revision=%{public}lu event=accept empty=%{public}d image=%{public}lu video=%{public}lu document=%{public}lu unknown=%{public}lu", self, (unsigned long)revision, types.count == 0, (unsigned long)images, (unsigned long)videos, (unsigned long)documents, (unsigned long)unknown);
+#endif
         if (GYBool(input, @"capture", NO)) { [self captureFile:view]; return; }
-        [self presentDocumentPicker:parameters.allowsMultipleSelection];
+        [self selectHostFiles:NO];
     }];
 }
 - (BOOL)filePickerAllowed:(WKWebView *)owner {
@@ -928,153 +953,129 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
     }]];
     [presenter presentViewController:alert animated:YES completion:nil];
 }
-- (void)presentDocumentPicker:(BOOL)multiple {
-    if (!self.pageVisible) { __weak GYWebView *weakSelf = self; self.pendingFilePickerAction = ^{ [weakSelf presentDocumentPicker:multiple]; }; return; }
-    if (![self filePickerAllowed:self.webView]) { [self cancelFilePicker]; return; }
-    UIViewController *presenter = [self filePresenter];
-    if (!presenter) { [self cancelFilePicker]; return; }
-    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:self.fileTypes asCopy:YES];
-    picker.allowsMultipleSelection = multiple;
-    picker.delegate = self;
-    self.filePicker = picker;
-    [presenter presentViewController:picker animated:YES completion:nil];
-}
 - (void)captureFile:(WKWebView *)owner {
-    if (![self filePickerAllowed:owner]) { [self cancelFilePicker]; return; }
-    BOOL image = [self.fileTypes containsObject:UTTypeItem] || [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeJPEG conformsToType:type]; }] != NSNotFound;
-    BOOL video = !image && [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeQuickTimeMovie conformsToType:type] || [UTTypeMPEG4Movie conformsToType:type]; }] != NSNotFound;
-    if ((!image && !video) || !GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO) || ![UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera] || ![NSBundle.mainBundle objectForInfoDictionaryKey:@"NSCameraUsageDescription"] || (video && ![NSBundle.mainBundle objectForInfoDictionaryKey:@"NSMicrophoneUsageDescription"])) { [self cancelFilePicker]; return; }
-    NSUInteger revision = self.filePickerRevision;
-    void (^present)(void) = ^{
-        if (revision != self.filePickerRevision) return;
-        if (![self filePickerAllowed:owner]) { [self cancelFilePicker]; return; }
-        if (!self.pageVisible) { __weak GYWebView *weakSelf = self; self.pendingFilePickerAction = ^{ [weakSelf captureFile:owner]; }; return; }
-        UIViewController *presenter = [self filePresenter];
-        if (!presenter) { [self cancelFilePicker]; return; }
-        UIImagePickerController *picker = [UIImagePickerController new]; picker.sourceType = UIImagePickerControllerSourceTypeCamera;
-        picker.mediaTypes = @[image ? UTTypeImage.identifier : UTTypeMovie.identifier]; picker.videoMaximumDuration = 60; picker.delegate = self;
-        self.capturePicker = picker; [presenter presentViewController:picker animated:YES completion:nil];
-    };
-    void (^denyPermission)(AVMediaType) = ^(AVMediaType mediaType) {
-        if (revision != self.filePickerRevision) return;
-        if (self.pageVisible && [self filePickerAllowed:owner] && [AVCaptureDevice authorizationStatusForMediaType:mediaType] == AVAuthorizationStatusDenied) {
-            [self emit:@{@"type": @"permissionSettingsRequired", @"permissions": @[[mediaType isEqual:AVMediaTypeAudio] ? @"MICROPHONE" : @"CAMERA"]}];
-        }
-        // 宿主事件可能重入创建新选择器，旧拒绝不能取消新请求。
-        if (revision == self.filePickerRevision) [self cancelFilePicker];
-    };
-    void (^authorizeAudio)(void) = ^{
-        if (!self.pageVisible) { __weak GYWebView *weakSelf = self; self.pendingFilePickerAction = ^{ [weakSelf captureFile:owner]; }; return; }
-        if (!video) { present(); return; }
-        AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
-        if (status == AVAuthorizationStatusAuthorized) { present(); return; }
-        if (status != AVAuthorizationStatusNotDetermined) { denyPermission(AVMediaTypeAudio); return; }
-        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) { dispatch_async(dispatch_get_main_queue(), ^{ if (revision != self.filePickerRevision) return; if (granted) present(); else denyPermission(AVMediaTypeAudio); }); }];
-    };
-    NSArray<AVMediaType> *mediaTypes = video ? @[AVMediaTypeVideo, AVMediaTypeAudio] : @[AVMediaTypeVideo];
+    if (![self filePickerAllowed:owner] || !self.fileSelectionProvider || !GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO)) { [self cancelFilePicker]; return; }
+    BOOL image = [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeJPEG conformsToType:type] || [UTTypePNG conformsToType:type]; }] != NSNotFound;
+    BOOL video = [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeQuickTimeMovie conformsToType:type] || [UTTypeMPEG4Movie conformsToType:type]; }] != NSNotFound;
+    if (image && video) { [self chooseCapturePurpose:owner]; return; }
+    NSArray<AVMediaType> *media = video ? @[AVMediaTypeVideo, AVMediaTypeAudio] : @[AVMediaTypeVideo];
     NSMutableArray<AVMediaType> *undetermined = [NSMutableArray array];
-    for (AVMediaType mediaType in mediaTypes) {
-        AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:mediaType];
-        if (status == AVAuthorizationStatusDenied || status == AVAuthorizationStatusRestricted) { denyPermission(mediaType); return; }
-        if (status == AVAuthorizationStatusNotDetermined) [undetermined addObject:mediaType];
+    for (AVMediaType type in media) {
+        AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:type];
+        if (status == AVAuthorizationStatusDenied || status == AVAuthorizationStatusRestricted) { [self selectHostFiles:YES]; return; }
+        if (status == AVAuthorizationStatusNotDetermined) [undetermined addObject:type];
     }
-    NSUInteger generation = self.callbackGeneration;
+    NSUInteger revision = self.filePickerRevision;
     [self explainMediaPermissions:undetermined fileCapture:YES completion:^(BOOL accepted) {
         if (revision != self.filePickerRevision) return;
-        if (!accepted || self.callbackGeneration != generation || !self.pageVisible || ![self filePickerAllowed:owner]) { [self cancelFilePicker]; return; }
-        AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
-        if (status == AVAuthorizationStatusAuthorized) { authorizeAudio(); return; }
-        if (status != AVAuthorizationStatusNotDetermined) { denyPermission(AVMediaTypeVideo); return; }
-        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) { dispatch_async(dispatch_get_main_queue(), ^{ if (revision != self.filePickerRevision) return; if (![self filePickerAllowed:owner]) { [self cancelFilePicker]; return; } if (granted) authorizeAudio(); else denyPermission(AVMediaTypeVideo); }); }];
+        if (!accepted || !self.pageVisible || ![self filePickerAllowed:owner]) { [self cancelFilePicker]; return; }
+        [self selectHostFiles:YES];
     }];
 }
-- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey,id> *)info {
-    if (picker != self.capturePicker) return;
-    if (![self filePickerAllowed:self.webView]) { [self cancelFilePicker]; return; }
-    NSURL *destination = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:[info[UIImagePickerControllerMediaType] isEqual:UTTypeMovie.identifier] ? @".mov" : @".jpg"]]];
-    BOOL saved = NO;
-    if ([info[UIImagePickerControllerMediaType] isEqual:UTTypeMovie.identifier]) {
-        NSURL *source = [info[UIImagePickerControllerMediaURL] isKindOfClass:NSURL.class] ? info[UIImagePickerControllerMediaURL] : nil;
-        saved = [source.pathExtension.lowercaseString isEqual:@"mov"] && [NSFileManager.defaultManager copyItemAtURL:source toURL:destination error:nil];
-    }
-    else { NSData *data = UIImageJPEGRepresentation(info[UIImagePickerControllerOriginalImage], 0.9); saved = data.length && [data writeToURL:destination atomically:YES]; }
-    if (!self.temporaryFiles) self.temporaryFiles = [NSMutableArray array];
-    if (!saved) [NSFileManager.defaultManager removeItemAtURL:destination error:nil];
-    BOOL acceptsMOV = [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeQuickTimeMovie conformsToType:type]; }] != NSNotFound;
-    BOOL acceptsMP4 = [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeMPEG4Movie conformsToType:type]; }] != NSNotFound;
-    if (saved && [destination.pathExtension isEqual:@"mov"] && !acceptsMOV && acceptsMP4) [self exportCapturedMovie:destination];
-    else [self finishFiles:saved ? @[destination] : nil];
-}
-// Input and final output are limited to 50 MiB; AVFoundation intermediate disk usage is not bounded.
-- (void)exportCapturedMovie:(NSURL *)source {
-    NSNumber *size = [NSFileManager.defaultManager attributesOfItemAtPath:source.path error:nil][NSFileSize];
-    if (!self.filePickerCompletion || ![self filePickerAllowed:self.webView] || size.longLongValue <= 0 || size.longLongValue > 50 * 1024 * 1024) {
-        [NSFileManager.defaultManager removeItemAtURL:source error:nil]; [self cancelFilePicker]; return;
-    }
-    NSURL *target = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:@".mp4"]]];
-    AVAssetExportSession *session = [[AVAssetExportSession alloc] initWithAsset:[AVURLAsset URLAssetWithURL:source options:nil] presetName:AVAssetExportPresetHighestQuality];
-    if (!session || ![session.supportedFileTypes containsObject:AVFileTypeMPEG4]) {
-        [NSFileManager.defaultManager removeItemAtURL:source error:nil]; [self cancelFilePicker]; return;
-    }
+- (void)chooseCapturePurpose:(WKWebView *)owner {
+    UIViewController *presenter = [self filePresenter];
+    if (!presenter || self.captureChoice) { [self cancelFilePicker]; return; }
+    BOOL english = [NSLocale.preferredLanguages.firstObject hasPrefix:@"en"];
+    UIAlertController *choice = [UIAlertController alertControllerWithTitle:nil message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    self.captureChoice = choice;
+    __weak UIAlertController *weakChoice = choice;
     NSUInteger revision = self.filePickerRevision;
-    self.videoExport = session; self.exportingFiles = @[source, target];
-    session.outputURL = target; session.outputFileType = AVFileTypeMPEG4;
-    [session exportAsynchronouslyWithCompletionHandler:^{ dispatch_async(dispatch_get_main_queue(), ^{
-        [NSFileManager.defaultManager removeItemAtURL:source error:nil];
-        if (self.videoExport == session) { self.videoExport = nil; self.exportingFiles = nil; }
-        if (revision != self.filePickerRevision) [NSFileManager.defaultManager removeItemAtURL:target error:nil];
-        else if (session.status == AVAssetExportSessionStatusCompleted && [self filePickerAllowed:self.webView]) [self finishFiles:@[target]];
-        else { [NSFileManager.defaultManager removeItemAtURL:target error:nil]; [self cancelFilePicker]; }
-    }); }];
+    __weak GYWebView *weakSelf = self;
+    for (NSNumber *movie in @[@NO, @YES]) {
+        [choice addAction:[UIAlertAction actionWithTitle:movie.boolValue ? (english ? @"Record video" : @"录制视频") : (english ? @"Take photo" : @"拍照") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [weakSelf finishCaptureChoice:weakChoice video:movie.boolValue owner:owner revision:revision];
+        }]];
+    }
+    [choice addAction:[UIAlertAction actionWithTitle:english ? @"Cancel" : @"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) { if (weakSelf.filePickerRevision == revision) [weakSelf cancelFilePicker]; }]];
+    choice.popoverPresentationController.sourceView = presenter.view;
+    choice.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1);
+    [presenter presentViewController:choice animated:YES completion:nil];
 }
-- (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker { if (picker == self.capturePicker) [self cancelFilePicker]; }
+- (void)finishCaptureChoice:(UIAlertController *)choice video:(BOOL)video owner:(WKWebView *)owner revision:(NSUInteger)revision {
+    if (!choice || self.captureChoice != choice || self.filePickerRevision != revision || self.webView != owner) return;
+    self.captureChoice = nil;
+    NSMutableArray<UTType *> *types = [NSMutableArray array];
+    UTType *category = video ? UTTypeMovie : UTTypeImage;
+    for (UTType *type in self.fileTypes) if ([type conformsToType:category]) [types addObject:type];
+    self.fileTypes = types.count ? types : @[category];
+    NSMutableArray<NSString *> *selectedTypes = [NSMutableArray array];
+    for (UTType *type in self.fileTypes) [selectedTypes addObject:type.identifier];
+    self.fileAcceptTypes = selectedTypes;
+    __weak GYWebView *weakSelf = self;
+    void (^resume)(void) = ^{ GYWebView *self = weakSelf; if (self && self.filePickerRevision == revision && [self filePickerAllowed:owner]) [self captureFile:owner]; };
+    if (choice.presentingViewController) [choice dismissViewControllerAnimated:YES completion:resume];
+    else resume();
+}
+- (void)selectHostFiles:(BOOL)capture {
+    if (![self filePickerAllowed:self.webView] || !self.fileSelectionProvider) { [self cancelFilePicker]; return; }
+    UIViewController *presenter = [self filePresenter];
+    if (!presenter) { [self cancelFilePicker]; return; }
+    NSUInteger revision = self.filePickerRevision;
+    WKWebView *owner = self.webView;
+    NSMutableArray<NSString *> *types = [NSMutableArray array];
+    if (self.fileAcceptTypes) [types addObjectsFromArray:self.fileAcceptTypes];
+    else for (UTType *type in self.fileTypes) [types addObject:type.identifier];
+    GYTraceFileSelection(self, revision, @"request", nil, YES);
+    __weak GYWebView *weakSelf = self;
+    [self.fileSelectionProvider selectFiles:types multiple:self.maxFiles > 1 capture:capture presenter:presenter completion:^(NSArray<NSURL *> *urls, NSString *status, NSArray<NSString *> *permissions, dispatch_block_t release) {
+        GYWebView *self = weakSelf;
+        GYTraceFileSelection(self, revision, @"provider_result", status, self.webView == owner && self.filePickerRevision == revision);
+        if (!self || self.filePickerRevision != revision || self.webView != owner) { if (release) release(); return; }
+        if (![self filePickerAllowed:owner]) { if (release) release(); [self cancelFilePicker]; return; }
+        if ([status isEqual:@"selected"]) {
+            self.pendingFileRelease = release;
+            [self finishFiles:urls];
+        } else {
+            if (release) release();
+            if ([status isEqual:@"blocked"] && self.pageVisible && permissions.count) [self emit:@{@"type": @"permissionSettingsRequired", @"permissions": permissions}];
+            if (self.filePickerRevision == revision) [self cancelFilePicker];
+        }
+    }];
+}
 - (void)finishFiles:(NSArray<NSURL *> *)urls {
     if (!self.pageVisible && urls.count && [self filePickerAllowed:self.webView]) {
-        if (self.capturePicker) {
-            if (!self.temporaryFiles) self.temporaryFiles = [NSMutableArray array];
-            [self.temporaryFiles addObjectsFromArray:urls];
-        }
+        NSUInteger revision = self.filePickerRevision;
+        WKWebView *owner = self.webView;
         __weak GYWebView *weakSelf = self;
-        self.pendingFilePickerAction = ^{ [weakSelf finishFiles:urls]; }; return;
+        self.pendingFilePickerAction = ^{
+            GYWebView *self = weakSelf;
+            if (self && self.filePickerRevision == revision && self.webView == owner) [self finishFiles:urls];
+        };
+        return;
     }
     BOOL allowed = [self filePickerAllowed:self.webView] && urls.count > 0 && urls.count <= (self.maxFiles ?: 1);
     if (allowed) for (NSURL *url in urls) {
         NSNumber *size, *regular; UTType *type;
-        if (!url.isFileURL || ![url getResourceValue:&regular forKey:NSURLIsRegularFileKey error:nil] || !regular.boolValue || ![url getResourceValue:&size forKey:NSURLFileSizeKey error:nil] || size.longLongValue <= 0 || size.longLongValue > 50 * 1024 * 1024 || ![url getResourceValue:&type forKey:NSURLContentTypeKey error:nil] || [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *accept, NSUInteger index, BOOL *stop) { return [type conformsToType:accept]; }] == NSNotFound) allowed = NO;
+        if (![url isKindOfClass:NSURL.class] || !url.isFileURL || ![url getResourceValue:&regular forKey:NSURLIsRegularFileKey error:nil] || !regular.boolValue || ![url getResourceValue:&size forKey:NSURLFileSizeKey error:nil] || size.longLongValue <= 0 || size.longLongValue > 50 * 1024 * 1024) { allowed = NO; continue; }
+        [url getResourceValue:&type forKey:NSURLContentTypeKey error:nil];
+        type = type ?: [UTType typeWithFilenameExtension:url.pathExtension] ?: UTTypeData;
+        if ([self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *accept, NSUInteger index, BOOL *stop) { return [type conformsToType:accept]; }] == NSNotFound) allowed = NO;
     }
-    if (self.capturePicker) {
-        if (allowed) { if (!self.temporaryFiles) self.temporaryFiles = [NSMutableArray array]; [self.temporaryFiles addObjectsFromArray:urls]; }
-        else for (NSURL *url in urls) [NSFileManager.defaultManager removeItemAtURL:url error:nil];
-    }
+    GYTraceFileSelection(self, self.filePickerRevision, @"deliver", allowed ? @"selected" : @"failed", YES);
+    dispatch_block_t release = self.pendingFileRelease; self.pendingFileRelease = nil;
+    if (allowed && release) {
+        if (!self.acceptedFileReleases) self.acceptedFileReleases = [NSMutableArray array];
+        [self.acceptedFileReleases addObject:release];
+    } else if (release) release();
     void (^completion)(NSArray<NSURL *> *) = self.filePickerCompletion; self.filePickerCompletion = nil;
-    self.filePickerRevision++;
-    self.filePicker.delegate = nil; [self.filePicker dismissViewControllerAnimated:NO completion:nil]; self.filePicker = nil;
-    self.capturePicker.delegate = nil; [self.capturePicker dismissViewControllerAnimated:NO completion:nil]; self.capturePicker = nil;
+    self.pendingFilePickerAction = nil; self.filePickerRevision++;
     if (completion) completion(allowed ? urls : nil);
 }
-- (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    if (picker != self.filePicker) return;
-    [self finishFiles:urls];
-}
-- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)picker { if (picker == self.filePicker) [self cancelFilePicker]; }
 - (void)cancelFilePicker {
     void (^cancelPermission)(void) = self.permissionExplanationForFilePicker ? [self takePermissionExplanationResult:NO] : nil;
-    self.filePickerRevision++;
-    self.pendingFilePickerAction = nil;
-    [self.videoExport cancelExport]; self.videoExport = nil;
-    for (NSURL *url in self.exportingFiles) [NSFileManager.defaultManager removeItemAtURL:url error:nil];
-    self.exportingFiles = nil;
-    UIDocumentPickerViewController *picker = self.filePicker; self.filePicker = nil;
+    self.filePickerRevision++; self.pendingFilePickerAction = nil;
+    dispatch_block_t release = self.pendingFileRelease; self.pendingFileRelease = nil;
     void (^completion)(NSArray<NSURL *> *) = self.filePickerCompletion; self.filePickerCompletion = nil;
-    picker.delegate = nil; [picker dismissViewControllerAnimated:NO completion:nil];
-    self.capturePicker.delegate = nil; [self.capturePicker dismissViewControllerAnimated:NO completion:nil]; self.capturePicker = nil;
+    UIAlertController *choice = self.captureChoice; self.captureChoice = nil;
+    [choice dismissViewControllerAnimated:NO completion:nil];
+    [self.fileSelectionProvider cancelFileSelection];
+    if (release) release();
     if (completion) completion(nil);
     if (cancelPermission) cancelPermission();
 }
 - (void)revokeFilePicker {
-    NSArray<NSURL *> *files = self.temporaryFiles.copy;
-    [self.temporaryFiles removeAllObjects];
-    for (NSURL *url in files) [NSFileManager.defaultManager removeItemAtURL:url error:nil];
+    NSArray<dispatch_block_t> *releases = self.acceptedFileReleases.copy; [self.acceptedFileReleases removeAllObjects];
+    for (dispatch_block_t release in releases) release();
     [self cancelFilePicker];
 }
 - (NSArray *)takeFullscreenCancellations {

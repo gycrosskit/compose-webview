@@ -23,7 +23,16 @@ class AndroidWebCapabilities(
     isAttached: (WebView) -> Boolean,
     onPermissionSettingsRequired: (Set<WebViewPermission>) -> Unit,
     showPermissionExplanation: ((Set<WebViewPermission>, (Boolean) -> Unit) -> (() -> Unit))?,
+    filePicker: AndroidWebFilePicker?,
 ) {
+    constructor(
+        activity: ComponentActivity,
+        request: () -> WebViewRequest,
+        isAttached: (WebView) -> Boolean,
+        onPermissionSettingsRequired: (Set<WebViewPermission>) -> Unit,
+        showPermissionExplanation: ((Set<WebViewPermission>, (Boolean) -> Unit) -> (() -> Unit))?,
+    ) : this(activity, request, isAttached, onPermissionSettingsRequired, showPermissionExplanation, null)
+
     constructor(
         activity: ComponentActivity,
         request: () -> WebViewRequest,
@@ -41,6 +50,7 @@ class AndroidWebCapabilities(
         request = request,
         isAttached = isAttached,
         permissions = permissions,
+        delegate = filePicker,
     )
     private val mediaCapture = AndroidWebMediaPermissionController(
         activity = activity,
@@ -76,9 +86,16 @@ class AndroidWebCapabilities(
     fun pauseForSystemPicker(owner: WebView): Boolean {
         val mediaRequest = mediaCapture.pendingRequest(owner)
         val suspended = fileChooser.suspendForExternal(owner)
-        if (!suspended) fileChooser.release(owner)
+        if (!suspended) fileChooser.pause(owner)
         mediaCapture.release(owner, mediaRequest)
         return suspended
+    }
+
+    /** 暂时隐藏只撤销在途请求，已交给当前文档的文件保留至文档结束。 */
+    fun pause(owner: WebView) {
+        val mediaRequest = mediaCapture.pendingRequest(owner)
+        fileChooser.pause(owner)
+        mediaCapture.release(owner, mediaRequest)
     }
 
     fun resume(owner: WebView) = fileChooser.resume(owner)

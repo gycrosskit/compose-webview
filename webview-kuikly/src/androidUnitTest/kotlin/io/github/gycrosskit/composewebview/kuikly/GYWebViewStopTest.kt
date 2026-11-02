@@ -27,11 +27,129 @@ class GYWebViewStopTest {
         settings = WebViewSettings(javaScriptEnabled = true),
         security = WebViewSecurity(WebViewTrustPolicy(listOf("https://safe.test")), fileChooserEnabled = true, mediaCaptureEnabled = true),
     )
+    @Test fun fileSelectionRequiresHostAndDiscardsLateDelegatedResult() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        val without = GYWebViewNative(activity)
+        without.setProp("request", WebViewWire.encodeRequest(request))
+        val first = without.getChildAt(0) as WebView
+        var absent = 0
+        shadowOf(first).webChromeClient.onShowFileChooser(first, { assertNull(it); absent++ }, StopFileParams())
+        assertEquals(1, absent)
+        assertNull(shadowOf(activity).nextStartedActivityForResult)
+        without.onDestroy()
+
+        var reply: ((AndroidWebFilePickerResult) -> Unit)? = null
+        var cancelled = 0
+        val picker = AndroidWebFilePicker { input, callback ->
+            assertEquals(listOf("application/pdf"), input.acceptTypes)
+            reply = callback
+            val cancel: () -> Unit = { cancelled++ }
+            cancel
+        }
+        val native = GYWebViewNative(activity, filePicker = picker)
+        native.setProp("request", WebViewWire.encodeRequest(request))
+        val owner = native.getChildAt(0) as WebView
+        var replies = 0
+        shadowOf(owner).webChromeClient.onShowFileChooser(owner, { assertNull(it); replies++ }, StopFileParams())
+        native.call("stopLoading", null, null)
+        assertEquals(1, replies); assertEquals(1, cancelled)
+        var releases = 0
+        reply!!(AndroidWebFilePickerResult.Selected(emptyList()) { releases++ })
+        assertEquals(1, releases); assertEquals(1, replies)
+        native.onDestroy()
+    }
+    @Test fun delegatedFileIsDeliveredAndReleasedOnPageStop() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        val uri = Uri.parse("content://trusted.host/delegated.pdf")
+        var reply: ((AndroidWebFilePickerResult) -> Unit)? = null
+        val picker = AndroidWebFilePicker { _, complete -> reply = complete; {} }
+        val native = GYWebViewNative(activity, filePicker = picker)
+        native.setProp("request", WebViewWire.encodeRequest(request))
+        val owner = native.getChildAt(0) as WebView
+        var delivered: Array<Uri>? = null
+        shadowOf(owner).webChromeClient.onShowFileChooser(owner, { delivered = it }, StopFileParams())
+        var releases = 0
+        reply!!(AndroidWebFilePickerResult.Selected(listOf(AndroidWebPickedFile(uri, "delegated.pdf", "application/pdf", 9))) { releases++ })
+        assertArrayEquals(arrayOf(uri), delivered)
+        assertEquals(0, releases)
+        native.setProp("visible", false)
+        assertEquals(0, releases)
+        native.call("stopLoading", null, null)
+        assertEquals(1, releases)
+        native.onDestroy()
+    }
+    @Test fun wildcardCaptureVideoIsExplicitlyDelegatedAsVideo() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        shadowOf(activity.application).grantPermissions(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        var requested: AndroidWebFilePickerRequest? = null
+        val picker = AndroidWebFilePicker { input, _ -> requested = input; {} }
+        val native = GYWebViewNative(activity, filePicker = picker)
+        native.setProp("request", WebViewWire.encodeRequest(request))
+        val owner = native.getChildAt(0) as WebView
+        shadowOf(owner).webChromeClient.onShowFileChooser(owner, {}, object : WebChromeClient.FileChooserParams() {
+            override fun getMode() = MODE_OPEN
+            override fun getAcceptTypes() = arrayOf("*/*")
+            override fun isCaptureEnabled() = true
+            override fun getTitle(): CharSequence? = null
+            override fun getFilenameHint(): String? = null
+            override fun createIntent() = Intent(Intent.ACTION_GET_CONTENT)
+        })
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertNotNull(dialog)
+        dialog.listView.performItemClick(dialog.listView.getChildAt(1), 1, 1)
+        assertEquals(listOf("video/*"), requested?.acceptTypes)
+        assertEquals(true, requested?.capture)
+        native.onDestroy()
+    }
+    @Test fun mixedUnknownExtensionUsesValidatedHostMetadataWithoutProviderReads() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        var reply: ((AndroidWebFilePickerResult) -> Unit)? = null
+        val picker = AndroidWebFilePicker { _, complete -> reply = complete; {} }
+        val native = GYWebViewNative(activity, filePicker = picker)
+        native.setProp("request", WebViewWire.encodeRequest(request))
+        val owner = native.getChildAt(0) as WebView
+        var delivered: Array<Uri>? = null
+        shadowOf(owner).webChromeClient.onShowFileChooser(owner, { delivered = it }, object : WebChromeClient.FileChooserParams() {
+            override fun getMode() = MODE_OPEN
+            override fun getAcceptTypes() = arrayOf(".unmappedextension,image/*")
+            override fun isCaptureEnabled() = false
+            override fun getTitle(): CharSequence? = null
+            override fun getFilenameHint(): String? = null
+            override fun createIntent() = Intent(Intent.ACTION_GET_CONTENT)
+        })
+        val uri = Uri.parse("content://unavailable.provider/document/1")
+        reply!!(AndroidWebFilePickerResult.Selected(listOf(AndroidWebPickedFile(uri, "record.unmappedextension", "application/octet-stream", 42))) {})
+        assertArrayEquals(arrayOf(uri), delivered)
+        native.onDestroy()
+    }
+    @Test fun customerMediaAliasesAcceptActualJpegAndQuicktimeResults() {
+        val accept = "image/gif,image/jpeg,image/jpg,image/png,image/bmp,image/webp,video/mov,video/mp4"
+        for ((name, mime) in listOf("photo.jpg" to "image/jpeg", "clip.mov" to "video/quicktime")) {
+            val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+            var reply: ((AndroidWebFilePickerResult) -> Unit)? = null
+            val native = GYWebViewNative(activity, filePicker = AndroidWebFilePicker { _, callback -> reply = callback; {} })
+            native.setProp("request", WebViewWire.encodeRequest(request))
+            val owner = native.getChildAt(0) as WebView
+            var delivered: Array<Uri>? = null
+            shadowOf(owner).webChromeClient.onShowFileChooser(owner, { delivered = it }, object : WebChromeClient.FileChooserParams() {
+                override fun getMode() = MODE_OPEN
+                override fun getAcceptTypes() = arrayOf(accept)
+                override fun isCaptureEnabled() = false
+                override fun getTitle(): CharSequence? = null
+                override fun getFilenameHint(): String? = null
+                override fun createIntent() = Intent(Intent.ACTION_GET_CONTENT)
+            })
+            val uri = Uri.parse("content://trusted.host/$name")
+            reply!!(AndroidWebFilePickerResult.Selected(listOf(AndroidWebPickedFile(uri, name, mime, 42))) {})
+            assertArrayEquals(arrayOf(uri), delivered)
+            native.onDestroy()
+        }
+    }
     @Test fun systemPickerPauseKeepsPendingRequestButPageLeaveCancelsIt() {
         for (leave in listOf(false, true)) {
             val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
             val activity = controller.get()
-            val native = GYWebViewNative(activity)
+            val native = GYWebViewNative(activity, filePicker = testFilePicker(activity))
             activity.setContentView(native)
             native.setProp("request", WebViewWire.encodeRequest(request))
             val owner = native.getChildAt(0) as WebView
@@ -55,7 +173,7 @@ class GYWebViewStopTest {
     @Test fun independentNavigationKeepsTrustedFileAndMediaCapabilities() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         shadowOf(activity.application).grantPermissions(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-        val native = GYWebViewNative(activity)
+        val native = GYWebViewNative(activity, filePicker = testFilePicker(activity))
         val independent = request.copy(navigationPolicy = WebViewNavigationPolicy(
             navigationOrigins = WebViewNavigationOrigins(exactOrigins = setOf("https://safe.test", "https://other.test"))))
         native.setProp("request", WebViewWire.encodeRequest(independent))
@@ -83,7 +201,7 @@ class GYWebViewStopTest {
     }
     @Test fun stopDiscardsOldJavascriptButKeepsTheOwnerUsable() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        val native = GYWebViewNative(activity)
+        val native = GYWebViewNative(activity, filePicker = testFilePicker(activity))
         native.setProp("request", WebViewWire.encodeRequest(request))
         val owner = native.getChildAt(0) as WebView
         val shadow = Shadow.extract<StopWebViewShadow>(owner)
@@ -103,7 +221,7 @@ class GYWebViewStopTest {
     }
     @Test fun fileCancellationCannotCancelReentrantMediaRequestOnSameOwner() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        val native = GYWebViewNative(activity)
+        val native = GYWebViewNative(activity, filePicker = testFilePicker(activity))
         native.setProp("request", WebViewWire.encodeRequest(request))
         val owner = native.getChildAt(0) as WebView
         val chrome = shadowOf(owner).webChromeClient
@@ -129,7 +247,7 @@ class GYWebViewStopTest {
 
     @Test fun stopSettlesFileAndMediaOnceAndDoesNotStopReentrantOwner() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        val native = GYWebViewNative(activity)
+        val native = GYWebViewNative(activity, filePicker = testFilePicker(activity))
         native.setProp("request", WebViewWire.encodeRequest(request))
         val owner = native.getChildAt(0) as WebView
         val chrome = shadowOf(owner).webChromeClient
@@ -183,4 +301,12 @@ private class StopFileParams : WebChromeClient.FileChooserParams() {
     override fun getTitle(): CharSequence? = null
     override fun getFilenameHint(): String? = null
     override fun createIntent() = Intent(Intent.ACTION_GET_CONTENT)
+}
+
+private fun testFilePicker(activity: ComponentActivity): AndroidWebFilePicker = AndroidWebFilePicker { _, callback ->
+    val launcher = activity.activityResultRegistry.register("test-file-${java.util.UUID.randomUUID()}",
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { callback(AndroidWebFilePickerResult.Cancelled) }
+    launcher.launch(Intent(Intent.ACTION_GET_CONTENT).setType("*/*"))
+    val cancel: () -> Unit = { launcher.unregister(); callback(AndroidWebFilePickerResult.Cancelled) }
+    cancel
 }

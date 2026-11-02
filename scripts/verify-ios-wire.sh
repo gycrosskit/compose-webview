@@ -47,11 +47,57 @@ mkdir -p "$app/Frameworks"
 xcrun swift verification/native-ios/CreateMovie.swift "$app/capture.mov"
 cp -R "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR/OpenKuiklyIOSRender.framework" "$app/Frameworks/"
 sdk="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-xcrun --sdk iphonesimulator clang -target "$(uname -m)-apple-ios15.0-simulator" -isysroot "$sdk" \
-    -fobjc-arc -fmodules -DDEBUG="$debug_build" -F "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR" -I ios/Sources \
-    ios/Tests/BooleanWireCheck.m -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework AVFoundation \
-    -framework OpenKuiklyIOSRender -framework Foundation -framework CoreFoundation -lc++ -ObjC \
-    -Wl,-rpath,@executable_path/Frameworks -o "$app/WireCheck"
+wire_compile=(xcrun --sdk iphonesimulator clang -target "$(uname -m)-apple-ios15.0-simulator" -isysroot "$sdk"
+    -fobjc-arc -fmodules -DDEBUG="$debug_build" -F "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR" -I ios/Sources)
+if [[ -n "${WEBVIEW_HOST_MEDIA_ROOT:-}" ]]; then
+    : "${WEBVIEW_HOST_PROVIDER_SOURCE:?Pass the actual host MediaSdkBridge.swift for the optional consumer integration}"
+    test -f "$WEBVIEW_HOST_PROVIDER_SOURCE"
+    test -f "$WEBVIEW_HOST_MEDIA_ROOT/build/ios-picker-check/module/GycMedia.swiftmodule"
+    test -f "$WEBVIEW_HOST_MEDIA_ROOT/build/ios-picker-check/PickerCheck.app/Frameworks/libGycMedia.dylib"
+    module="$output/host-module"
+    mkdir -p "$module"
+    python3 - "$WEBVIEW_HOST_PROVIDER_SOURCE" "$module" "$PWD/ios/Sources/GYWebView.h" <<'PYHOST'
+import json, pathlib, sys
+source = pathlib.Path(sys.argv[1]).read_text()
+provider = source[source.index('private final class WebFileSelectionProvider'):]
+out = pathlib.Path(sys.argv[2])
+(out / 'module.modulemap').write_text('module GYWebView { header ' + json.dumps(sys.argv[3]) + ' export * }\n')
+prefix = '''import Foundation
+import UIKit
+import PhotosUI
+import UniformTypeIdentifiers
+import GYWebView
+@testable import GycMedia
+@_cdecl("GYRegisterHostFileProvider") public func registerHostFileProvider() {
+    GYWebView.configureFileSelectionFactory { WebFileSelectionProvider() }
+}
+@_cdecl("GYCompleteHostMediaSelection") public func completeHostMediaSelection(_ pickerPointer: UnsafeMutableRawPointer, _ sourcesPointer: UnsafeMutableRawPointer) {
+    let picker = Unmanaged<PHPickerViewController>.fromOpaque(pickerPointer).takeUnretainedValue()
+    let urls = Unmanaged<NSArray>.fromOpaque(sourcesPointer).takeUnretainedValue() as! [URL]
+    let providers = urls.map { url -> NSItemProvider in
+        let provider = NSItemProvider()
+        let type = UTType(filenameExtension: url.pathExtension) ?? .data
+        provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { completion in completion(url, false, nil); return nil }
+        return provider
+    }
+    MediaClient.shared.finishPhotoFileSelection(picker, providers: providers)
+}
+'''
+(out / 'HostProvider.swift').write_text(prefix + provider)
+PYHOST
+    "${wire_compile[@]}" -DWEBVIEW_HOST_MEDIA=1 -c ios/Tests/BooleanWireCheck.m -o "$output/WireCheck.o"
+    cp "$WEBVIEW_HOST_MEDIA_ROOT/build/ios-picker-check/PickerCheck.app/Frameworks/libGycMedia.dylib" "$app/Frameworks/"
+    xcrun --sdk iphonesimulator swiftc -parse-as-library -target "$(uname -m)-apple-ios15.0-simulator" -sdk "$sdk" \
+      -I "$module" -I "$WEBVIEW_HOST_MEDIA_ROOT/build/ios-picker-check/module" -F "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR" \
+      -L "$app/Frameworks" -lGycMedia -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework AVFoundation -framework PhotosUI \
+      -framework OpenKuiklyIOSRender -lc++ -Xlinker -ObjC -Xlinker -rpath -Xlinker @executable_path/Frameworks \
+      "$output/WireCheck.o" "$module/HostProvider.swift" -o "$app/WireCheck"
+else
+    rm -f "$app/Frameworks/libGycMedia.dylib"
+    "${wire_compile[@]}" ios/Tests/BooleanWireCheck.m -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework AVFoundation \
+      -framework OpenKuiklyIOSRender -framework Foundation -framework CoreFoundation -lc++ -ObjC \
+      -Wl,-rpath,@executable_path/Frameworks -o "$app/WireCheck"
+fi
 cat > "$app/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -72,6 +118,7 @@ cat > "$app/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - "$app/Frameworks/OpenKuiklyIOSRender.framework" >/dev/null
+if [[ -f "$app/Frameworks/libGycMedia.dylib" ]]; then codesign --force --sign - "$app/Frameworks/libGycMedia.dylib" >/dev/null; fi
 codesign --force --sign - "$app" >/dev/null
 xcrun simctl install "${WEBVIEW_SIMULATOR:-booted}" "$app"
 wire_data="$(xcrun simctl get_app_container "${WEBVIEW_SIMULATOR:-booted}" io.github.gycrosskit.webview.wire-check data)"
@@ -92,3 +139,9 @@ grep -q "^PASS: Native inspectable policy DEBUG=$debug_build$" "$output/result.l
     printf 'FAIL: WireCheck DEBUG=%s policy PASS marker missing\n' "$debug_build" >&2
     exit "$wire_exit"
 }
+if [[ -n "${WEBVIEW_HOST_MEDIA_ROOT:-}" ]]; then
+    grep -q '^PASS: Actual WK DOM accept -> actual App Swift provider -> real MediaClient' "$output/result.log" || {
+        printf 'FAIL: Explicit host media integration PASS marker missing\n' >&2
+        exit 1
+    }
+fi

@@ -1,4 +1,4 @@
-export { GYWebView, WebEvent } from './src/main/ets/GYWebView';
+export { GYWebView, WebEvent, WebFileSelectionRequest } from './src/main/ets/GYWebView';
 export { OhosWebViewDataCleaner } from './src/main/ets/OhosWebViewDataCleaner';
 export { WebViewRequest, WebViewSettings, WebViewSecurity, WebViewContent, WebViewUrlRule } from './src/main/ets/WebViewWire';
 export { KuiklyRenderBaseView, KRRenderViewExportCreator, KuiklyRenderCallback } from '@kuikly-open/render';
