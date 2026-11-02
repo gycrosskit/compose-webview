@@ -702,7 +702,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
       this.selectHostFiles({
         acceptTypes: event.fileSelector.getAcceptType(),
         multiple: !event.fileSelector.isCapture() && event.fileSelector.getMode() === FileSelectorMode.FileOpenMultipleMode,
-        capture: event.fileSelector.isCapture(), captureEnabled: current.security.mediaCaptureEnabled,
+        capture: event.fileSelector.isCapture() === true, captureEnabled: current.security.mediaCaptureEnabled,
         valid, visible: () => this.visible,
         waitVisible: () => new Promise<void>(resolve => this.fileVisibilityWaiters.add(resolve)),
         authorizeCapture: (video: boolean) => this.authorizeCapture(context, video ?
