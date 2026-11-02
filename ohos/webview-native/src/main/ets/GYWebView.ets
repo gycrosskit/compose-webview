@@ -7,13 +7,20 @@ import { window } from '@kit.ArkUI';
 import { common, Configuration, ConfigurationConstant } from '@kit.AbilityKit';
 import { FullscreenWindowLease, FullscreenWindowPolicy, WindowPolicyController } from '@gycrosskit/system-actions-native';
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
-import { picker, fileIo, fileUri } from '@kit.CoreFileKit';
-import { camera, cameraPicker } from '@kit.CameraKit';
-import { uniformTypeDescriptor } from '@kit.ArkData';
 import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings } from './WebViewWire';
 import { createGYWebView } from './WebViewComponent';
 import { createWebPermissionDialog, WebPermissionDialogOptions } from './WebPermissionDialog';
 
+export interface WebFileSelectionRequest {
+  acceptTypes: string[];
+  multiple: boolean;
+  capture: boolean;
+  captureEnabled: boolean;
+  valid: () => boolean;
+  visible: () => boolean;
+  waitVisible: () => Promise<void>;
+  authorizeCapture: (video: boolean) => Promise<boolean>;
+}
 interface EvalParams { script: string; }
 interface PageReplyParams { replyId: string; data: string; }
 interface PendingPageReply { nonce: string; channel: string; }
@@ -120,7 +127,6 @@ export class GYWebView extends KuiklyRenderBaseView {
   private pageOwnerActive: boolean | null = null;
   private fileGeneration: number = 0;
   private fileVisibilityWaiters: Set<() => void> = new Set();
-  private captureFiles: Set<string> = new Set();
   private fullscreenHandler: FullScreenExitHandler | null = null;
   private fullscreenLease: FullscreenWindowLease | null = null;
   private fullscreenRevision: number = 0;
@@ -180,7 +186,7 @@ export class GYWebView extends KuiklyRenderBaseView {
       this.visible = value === true;
       const controllerOwner = this.controller;
       const ownerToken = this.renderToken;
-      this.revokePending(!this.visible, this.pageOwnerActive === true && this.fileResults.size > 0);
+      this.revokePending(!this.visible, this.pageOwnerActive === true && this.fileResults.size > 0, true);
       if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
       if (this.attached) {
         try {
@@ -553,6 +559,11 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     const access = abilityAccessCtrl.createAtManager();
     const states = permissions.map(permission => access.getSelfPermissionStatus(permission));
     if (states.some(status => status === abilityAccessCtrl.PermissionStatus.RESTRICTED)) return false;
+    const denied = permissions.filter((_permission, index) => states[index] === abilityAccessCtrl.PermissionStatus.DENIED);
+    if (denied.length > 0) {
+      this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
+      return false;
+    }
     if (states.every(status => status === abilityAccessCtrl.PermissionStatus.GRANTED)) return true;
     if (states.some(status => status === abilityAccessCtrl.PermissionStatus.NOT_DETERMINED) &&
       !await this.explainCapture(context, permissions.filter((_permission, index) => states[index] === abilityAccessCtrl.PermissionStatus.NOT_DETERMINED), valid, fileCapture)) return false;
@@ -560,8 +571,6 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     const result = await access.requestPermissionsFromUser(context, permissions);
     if (!valid()) return false;
     if (result.authResults.length === permissions.length && result.authResults.every(state => state === 0)) return true;
-    const denied = permissions.filter((_permission, index) => result.authResults[index] === -1 && result.dialogShownResults?.[index] === false);
-    if (denied.length > 0) this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
     return false;
   }
 
@@ -690,67 +699,25 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
       valid = (): boolean => !this.lifetime.disposed && this.fileGeneration === generation && this.fileResults.has(event.result) &&
         (this.visible || this.pageOwnerActive === true) && this.pageOwnerActive !== false && this.request === current && this.documentReady &&
         origin(value) === origin(this.currentUrl()) && trusted(this.currentUrl(), current.security);
-      const accepts = event.fileSelector.getAcceptType().flatMap(type => type.split(',')).map(type => type.trim().toLowerCase()).filter(type => !!type);
-      if (event.fileSelector.isCapture()) {
-        const video = accepts.length > 0 && accepts.every(type => type === 'video/*' || type === 'video/mp4');
-        const mime = video ? 'video/mp4' : 'image/jpeg';
-        if (!current.security.mediaCaptureEnabled || (accepts.length > 0 && !accepts.some(type => type === '*/*' || type === mime || type === (video ? 'video/*' : 'image/*')))) {
-          complete([]); return true;
-        }
-        const permissions: Permissions[] = video ? ['ohos.permission.CAMERA', 'ohos.permission.MICROPHONE'] : ['ohos.permission.CAMERA'];
-        this.authorizeCapture(context, permissions, valid, true).then(async granted => {
-          if (!valid() || !granted) { complete([]); return; }
-          if (!this.visible) await new Promise<void>(resolve => this.fileVisibilityWaiters.add(resolve));
-          if (!valid() || !this.visible) { complete([]); return; }
-          const path = `${context.cacheDir}/gy-webview-${util.generateRandomUUID()}${video ? '.mp4' : '.jpg'}`;
-          const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE); fileIo.closeSync(file);
-          this.captureFiles.add(path);
-          const uri = fileUri.getUriFromPath(path);
-          const mediaType = video ? cameraPicker.PickerMediaType.VIDEO : cameraPicker.PickerMediaType.PHOTO;
-          try {
-            const result = await cameraPicker.pick(context, [mediaType], { cameraPosition: camera.CameraPosition.CAMERA_POSITION_BACK, saveUri: uri, videoDuration: 60 });
-            if (!valid()) { this.captureFiles.delete(path); try { fileIo.unlinkSync(path); } catch (_) {} complete([]); return; }
-            const size = fileIo.statSync(path).size;
-            const output = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
-            const header = new ArrayBuffer(12);
-            let bytesRead = 0;
-            try { bytesRead = fileIo.readSync(output.fd, header); } finally { fileIo.closeSync(output); }
-            const bytes = new Uint8Array(header);
-            const mediaMatches = video ? bytesRead >= 12 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70 :
-              bytesRead >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-            const accepted = valid() && result.resultCode === 0 && result.resultUri === uri && result.mediaType === mediaType && mediaMatches && size > 0 && size <= 50 * 1024 * 1024;
-            if (!accepted) { this.captureFiles.delete(path); try { fileIo.unlinkSync(path); } catch (_) {} }
-            complete(accepted ? [uri] : []);
-          } catch (_) { this.captureFiles.delete(path); try { fileIo.unlinkSync(path); } catch (_) {} complete([]); }
-        }).catch(() => complete([]));
-        return true;
-      }
-      const options = new picker.DocumentSelectOptions();
-      const maxFiles = event.fileSelector.getMode() === FileSelectorMode.FileOpenMultipleMode ? 10 : 1;
-      options.maxSelectNumber = maxFiles;
-      new picker.DocumentViewPicker(context).select(options).then(values => {
-        if (!valid()) { complete([]); return; }
-        // URI 来自系统 picker；逐个打开核验大小，无法读取的结果不交给内核。
-        const bounded = values.length <= maxFiles && values.every(uri => {
-          const extension = `.${new fileUri.FileUri(uri).name.split('.').pop() || ''}`.toLowerCase();
-          let mimeMatches = accepts.length === 0 || accepts.includes('*/*') || accepts.includes(extension);
-          if (!mimeMatches) {
-            const descriptor = uniformTypeDescriptor.getTypeDescriptor(uniformTypeDescriptor.getUniformDataTypeByFilenameExtension(extension));
-            mimeMatches = accepts.some(type => descriptor.mimeTypes.some(mime =>
-              type.endsWith('/*') ? mime.startsWith(type.slice(0, -1)) : mime === type));
-          }
-          const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
-          try { const size = fileIo.statSync(file.fd).size; return mimeMatches && size > 0 && size <= 50 * 1024 * 1024; }
-          finally { fileIo.closeSync(file); }
-        });
-        complete(valid() && bounded ? values : []);
-      }).catch(() => complete([]));
+      this.selectHostFiles({
+        acceptTypes: event.fileSelector.getAcceptType(),
+        multiple: !event.fileSelector.isCapture() && event.fileSelector.getMode() === FileSelectorMode.FileOpenMultipleMode,
+        capture: event.fileSelector.isCapture(), captureEnabled: current.security.mediaCaptureEnabled,
+        valid, visible: () => this.visible,
+        waitVisible: () => new Promise<void>(resolve => this.fileVisibilityWaiters.add(resolve)),
+        authorizeCapture: (video: boolean) => this.authorizeCapture(context, video ?
+          ['ohos.permission.CAMERA', 'ohos.permission.MICROPHONE'] : ['ohos.permission.CAMERA'], valid, true),
+      }, files => complete(valid() ? files : []));
       return true;
     } catch (_) {
       complete([]);
       return true;
     }
   }
+
+  /** 宿主提供文件选择；组件自身不依赖媒体能力。 */
+  selectHostFiles(_request: WebFileSelectionRequest, complete: (uris: string[]) => void): void { complete([]); }
+  revokeHostFiles(): void {}
 
   /** 默认保持原生 View 的 layout/orientation 语义；应用可覆写方向与系统栏目标。 */
   fullscreenPolicy(width: number, height: number): FullscreenWindowPolicy {
@@ -911,17 +878,16 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     const waiters = Array.from(this.fileVisibilityWaiters); this.fileVisibilityWaiters.clear();
     waiters.forEach(waiter => waiter());
   }
-  private revokeFilePickers(): void {
+  private revokeFilePickers(preserveHostFiles: boolean = false): void {
     const cancel = this.permissionExplanationForFile ? this.cancelPermissionExplanation : null;
     this.fileGeneration++;
     const results = Array.from(this.fileResults); this.fileResults.clear();
-    const files = Array.from(this.captureFiles); this.captureFiles.clear();
+    if (!preserveHostFiles) this.revokeHostFiles();
     cancel?.();
     this.resumeFilePickers();
-    files.forEach(path => { try { fileIo.unlinkSync(path); } catch (_) {} });
     results.forEach(result => { try { result.handleFileList([]); } catch (_) {} });
   }
-  private revokePending(revokePageChannels: boolean = true, preserveFilePickers: boolean = false): void {
+  private revokePending(revokePageChannels: boolean = true, preserveFilePickers: boolean = false, preserveHostFiles: boolean = false): void {
     const cancel = this.cancelPermissionExplanation;
     if (revokePageChannels) {
       this.pageMessageActive = false; this.pageMessageSecret = ''; this.pageMessageNonce = '';
@@ -933,7 +899,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     this.bridgeVisibilityPending = false;
     this.lifetime.invalidate(); this.closePorts();
     const requests = Array.from(this.permissionRequests); this.permissionRequests.clear();
-    if (!preserveFilePickers) this.revokeFilePickers();
+    if (!preserveFilePickers) this.revokeFilePickers(preserveHostFiles);
     cancel?.();
     requests.forEach(request => { try { request.deny(); } catch (_) {} });
   }

@@ -1,365 +1,186 @@
 package io.github.gycrosskit.composewebview
 
 import android.Manifest
-import android.app.Activity
-import android.content.Intent
+import android.app.AlertDialog
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
+import android.webkit.MimeTypeMap
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
-import androidx.core.content.FileProvider
-import java.io.File
-import java.util.UUID
 
-/** 管理文件选择、Photo Picker 与拍摄输出，权限申请统一交给权限控制器串行执行。 */
+/** 选择能力归宿主；本控制器持有权限、来源、结果和页面所有权。 */
 internal class AndroidWebFileChooserController(
     private val activity: ComponentActivity,
     private val request: () -> WebViewRequest,
     private val isAttached: (WebView) -> Boolean,
     private val permissions: AndroidWebPermissionController,
+    private val delegate: AndroidWebFilePicker? = null,
 ) {
     private var callback: ValueCallback<Array<Uri>>? = null
-    private var callbackOwner: WebView? = null
-    private var cameraOutputUri: Uri? = null
-    private var cameraOutputFile: File? = null
-    private val captureFiles = mutableMapOf<File, WebView>()
-    private var acceptedTypes: List<String> = emptyList()
-    private var maxFiles = 1
-    private var pendingIntent: Intent? = null
+    private var owner: WebView? = null
+    private var pending: AndroidWebFilePickerRequest? = null
     private var permissionKey: Any? = null
-    private var externalResultInFlight = false
+    private var cancelPicker: (() -> Unit)? = null
+    private var pickerInFlight = false
     private var suspendedOwner: WebView? = null
-    private var pendingResult: Array<Uri>? = null
+    private var pendingResult: Pair<Array<Uri>, () -> Unit>? = null
     private var launchAfterResume = false
-    private var requestId = 0L
+    private var captureChoice: AlertDialog? = null
+    private val delivered = mutableMapOf<WebView, MutableList<() -> Unit>>()
+    private var acceptedTypes: List<String> = emptyList()
+    private var acceptedExtensions: List<String> = emptyList()
+    private var maxFiles = 1
+    private var generation = 0L
     private var destroyed = false
-    private val key = UUID.randomUUID().toString()
-    private val fileLauncher = activity.activityResultRegistry.register(
-        "cmp_web_file_$key",
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        externalResultInFlight = false
-        handleResult(result.resultCode, result.data)
-    }
-    private val photoPickerLauncher = activity.activityResultRegistry.register(
-        "cmp_web_photo_$key",
-        ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        externalResultInFlight = false
-        complete(uri?.let { arrayOf(it) })
-    }
 
-    fun show(
-        webView: WebView?,
-        callbackValue: ValueCallback<Array<Uri>>?,
-        params: WebChromeClient.FileChooserParams?,
-    ): Boolean {
-        if (webView == null || !isAttached(webView)) {
-            callbackValue?.onReceiveValue(null)
-            return true
-        }
+    fun show(webView: WebView?, result: ValueCallback<Array<Uri>>?, params: WebChromeClient.FileChooserParams?): Boolean {
+        trace("selector-enter")
+        if (webView == null || !isAttached(webView)) { result?.onReceiveValue(null); return true }
+        val previous = generation
         cancel()
-        if (destroyed) {
-            callbackValue?.onReceiveValue(null)
-            return true
+        if (generation != previous + 1) { result?.onReceiveValue(null); return true }
+        if (destroyed || delegate == null || !allowed(webView)) { trace("selector-unavailable"); result?.onReceiveValue(null); return true }
+        if (result == null) return false
+        callback = result; owner = webView
+        val ticket = ++generation
+        acceptedTypes = normalizeWebViewMimeTypes(params?.acceptTypes.orEmpty())
+        acceptedExtensions = params?.acceptTypes.orEmpty().flatMap { it.split(',') }.map { it.trim().lowercase() }
+            .filter { it.startsWith('.') && MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.drop(1)) == null }
+        val multiple = params?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
+        maxFiles = if (multiple) 10 else 1
+        val capture = params?.isCaptureEnabled == true && request().security.mediaCaptureEnabled
+        val raw = params?.acceptTypes?.toList().orEmpty()
+        val image = accepts(acceptedTypes, "image/"); val video = accepts(acceptedTypes, "video/")
+        if (capture && image && video) {
+            captureChoice = AlertDialog.Builder(activity).setItems(arrayOf(activity.getString(R.string.web_capture_photo), activity.getString(R.string.web_capture_video))) { _, which ->
+                captureChoice = null
+                if (ticket != generation || !allowed(webView)) { cancel(); return@setItems }
+                val isVideo = which == 1
+                val prefix = if (isVideo) "video/" else "image/"
+                val selected = acceptedTypes.filter { it.startsWith(prefix) }.ifEmpty { listOf("${prefix}*") }
+                pending = AndroidWebFilePickerRequest(selected, multiple, true)
+                launchWithPermission(capture = true, video = isVideo, webView)
+            }.setOnCancelListener { cancel() }.create().also { it.show() }
+        } else {
+            pending = AndroidWebFilePickerRequest(raw, multiple, capture)
+            launchWithPermission(capture, video && !image, webView)
         }
-        if (callbackValue == null) return false
-        // ActivityResult 没有本次网页请求 ID；旧系统页面返回前不能把结果交给新实例。
-        if (externalResultInFlight) {
-            callbackValue.onReceiveValue(null)
-            return true
-        }
-        val current = request()
-        if (!current.security.fileChooserEnabled ||
-            !current.security.trustedOrigins.isTrusted(webView?.url)
-        ) {
-            logWebWarning("已拦截非可信来源或未启用的文件选择请求")
-            callbackValue.onReceiveValue(null)
-            return true
-        }
-
-        callback = callbackValue
-        callbackOwner = webView
-        val currentRequestId = ++requestId
-        val acceptTypes = normalizeWebViewMimeTypes(params?.acceptTypes.orEmpty())
-        val captureEnabled = params?.isCaptureEnabled == true && current.security.mediaCaptureEnabled
-        val allowMultiple = params?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
-        acceptedTypes = acceptTypes
-        maxFiles = if (allowMultiple) 10 else 1
-        val acceptsImage = accepts(acceptTypes, "image/")
-        val acceptsVideo = accepts(acceptTypes, "video/")
-
-        if (!captureEnabled && !allowMultiple && acceptsImage && !acceptsVideo && Build.VERSION.SDK_INT >= 33) {
-            activity.runOnUiThread {
-                if (requestId != currentRequestId) return@runOnUiThread
-                if (callbackOwner !== webView || !allowed(webView)) {
-                    cancel()
-                    return@runOnUiThread
-                }
-                runCatching {
-                    externalResultInFlight = true
-                    photoPickerLauncher.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
-                }.onFailure {
-                    externalResultInFlight = false
-                    logWebWarning("系统 Photo Picker 启动失败，回退到 GET_CONTENT", it)
-                    launchLegacyChooser(acceptTypes, captureEnabled, allowMultiple, currentRequestId, webView)
-                }
-            }
-            return true
-        }
-
-        val intent = buildLegacyChooserIntent(acceptTypes, captureEnabled, allowMultiple)
-        if (intent == null) cancel() else launchWithPermission(intent, webView)
         return true
     }
 
-    fun destroy() {
-        if (destroyed) return
-        destroyed = true
-        cancel()
-        clearCaptureFiles()
-        fileLauncher.unregister()
-        photoPickerLauncher.unregister()
+    fun destroy() { if (!destroyed) { destroyed = true; cancel(); delivered.values.flatten().forEach { it() }; delivered.clear() } }
+    fun release(view: WebView) {
+        val ticket = generation
+        delivered.remove(view)?.forEach { it() }
+        if (ticket == generation && owner === view) cancel()
     }
-
-    fun release(owner: WebView) {
-        // 先清理旧文件；null 回执可同步发起同 owner 的新选择，不能再扫描新文件。
-        captureFiles.filterValues { it === owner }.keys.toList().forEach { file -> file.delete(); captureFiles.remove(file) }
-        if (callbackOwner === owner) cancel()
+    fun pause(view: WebView) { if (owner === view) cancel() }
+    fun suspendForExternal(view: WebView): Boolean {
+        if ((!pickerInFlight && !permissions.isSystemRequestInFlight(permissionKey)) || owner !== view) return false
+        suspendedOwner = view; return true
     }
-
-    /** 系统选择器导致 Activity 暂停时，等原页面恢复再交付结果。 */
-    fun suspendForExternal(owner: WebView): Boolean {
-        if ((!externalResultInFlight && !permissions.isSystemRequestInFlight(permissionKey)) || callbackOwner !== owner) return false
-        suspendedOwner = owner
-        return true
-    }
-
-    fun resume(owner: WebView) {
-        if (suspendedOwner !== owner) return
+    fun resume(view: WebView) {
+        if (suspendedOwner !== view) return
         suspendedOwner = null
-        pendingResult?.let { result -> pendingResult = null; complete(result); return }
-        if (launchAfterResume) {
-            launchAfterResume = false
-            val intent = pendingIntent
-            pendingIntent = null
-            if (intent != null && callbackOwner === owner) launch(intent)
-        }
+        pendingResult?.let { pendingResult = null; complete(it.first, it.second); return }
+        if (launchAfterResume) { launchAfterResume = false; if (pending != null && owner === view) launch(view) }
     }
-
-    private fun launchLegacyChooser(
-        acceptTypes: List<String>,
-        captureEnabled: Boolean,
-        allowMultiple: Boolean,
-        currentRequestId: Long,
-        webView: WebView?,
-    ) {
-        if (requestId != currentRequestId || callback == null) return
-        val intent = buildLegacyChooserIntent(acceptTypes, captureEnabled, allowMultiple)
-        if (intent == null) cancel() else launchWithPermission(intent, webView)
-    }
-
-    private fun buildLegacyChooserIntent(
-        acceptTypes: List<String>,
-        captureEnabled: Boolean,
-        allowMultiple: Boolean,
-    ): Intent? {
-        val acceptsImage = accepts(acceptTypes, "image/")
-        val acceptsVideo = accepts(acceptTypes, "video/")
-        if (captureEnabled) {
-            return when {
-                acceptsVideo && !acceptsImage -> createCaptureIntent(video = true)
-                acceptsImage -> createCaptureIntent(video = false)
-                else -> null
-            }
-        }
-        return Intent(Intent.ACTION_GET_CONTENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
-            when (acceptTypes.size) {
-                0 -> type = "*/*"
-                1 -> type = acceptTypes.first()
-                else -> {
-                    type = "*/*"
-                    putExtra(Intent.EXTRA_MIME_TYPES, acceptTypes.toTypedArray())
-                }
-            }
-        }
-    }
-
-    private fun createCaptureIntent(video: Boolean): Intent? = runCatching {
-        val directory = if (video) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
-        val extension = if (video) ".mp4" else ".jpg"
-        val prefix = if (video) "webview_video_" else "webview_capture_"
-        val outputDirectory = activity.getExternalFilesDir(directory)
-            ?: File(activity.cacheDir, "webview_capture/$directory")
-        val output = File(outputDirectory, "$prefix${UUID.randomUUID()}$extension")
-            .also { it.parentFile?.mkdirs() }
-        cameraOutputFile = output
-        callbackOwner?.let { captureFiles[output] = it }
-        cameraOutputUri = FileProvider.getUriForFile(
-            activity,
-            "${activity.packageName}.composewebview.fileprovider",
-            output,
-        )
-        Intent(if (video) MediaStore.ACTION_VIDEO_CAPTURE else MediaStore.ACTION_IMAGE_CAPTURE).apply {
-            putExtra(MediaStore.EXTRA_OUTPUT, cameraOutputUri)
-            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-    }.onFailure {
-        cameraOutputFile?.delete()
-        captureFiles.remove(cameraOutputFile)
-        cameraOutputFile = null
-        cameraOutputUri = null
-        logWebError("无法创建 WebView 拍摄输出文件", it)
-    }.getOrNull()
-
-    private fun launchWithPermission(intent: Intent, webView: WebView?) {
-        val missing = capturePermissions(intent.action).filterNot(permissions::isGranted)
-        if (missing.isEmpty()) {
-            launch(intent)
-            return
-        }
-        pendingIntent = intent
-        val key = Any()
-        permissionKey = key
-        permissions.request(
-            key = key,
-            permissions = missing,
-            purpose = WebPermissionPurpose.FILE_CAPTURE,
-            stillAllowed = {
-                callbackOwner === webView && webView != null && (isAttached(webView) || suspendedOwner === webView) &&
-                    request().security.run {
-                        fileChooserEnabled && mediaCaptureEnabled && trustedOrigins.isTrusted(webView.url)
-                    }
-            },
-            onResult = permissionResult@ { granted ->
+    private fun launchWithPermission(capture: Boolean, video: Boolean, view: WebView) {
+        val missing = capturePermissions(capture, video).filterNot(permissions::isGranted)
+        if (missing.isEmpty()) { launch(view); return }
+        val key = Any(); permissionKey = key
+        permissions.request(key = key, permissions = missing, purpose = WebPermissionPurpose.FILE_CAPTURE,
+            stillAllowed = { owner === view && (isAttached(view) || suspendedOwner === view) && request().security.run {
+                fileChooserEnabled && mediaCaptureEnabled && trustedOrigins.isTrusted(view.url)
+            } }, onResult = permissionResult@ { granted ->
                 if (permissionKey !== key) return@permissionResult
-                val pending = pendingIntent
                 permissionKey = null
-                if (granted && pending != null && suspendedOwner === webView && webView != null && !isAttached(webView)) {
-                    launchAfterResume = true
-                } else {
-                    pendingIntent = null
-                    if (granted && pending != null) launch(pending) else cancel()
-                }
-            },
-        )
+                if (granted && pending != null && suspendedOwner === view && !isAttached(view)) launchAfterResume = true
+                else if (granted && pending != null) launch(view) else cancel()
+            })
     }
-
-    private fun launch(intent: Intent) {
-        val currentRequestId = requestId
-        val owner = callbackOwner
+    private fun launch(view: WebView) {
+        val ticket = generation
         activity.runOnUiThread {
-            if (requestId != currentRequestId) return@runOnUiThread
-            if (callback == null || owner == null || !allowed(owner)) {
-                cancel()
-                return@runOnUiThread
-            }
-            externalResultInFlight = true
-            runCatching { fileLauncher.launch(intent) }
-                .onFailure {
-                    externalResultInFlight = false
-                    logWebError("无法启动 WebView 文件选择器", it)
-                    cancel()
+            if (ticket != generation) return@runOnUiThread
+            val picker = delegate; val input = pending
+            if (picker == null || input == null || callback == null || owner !== view || !allowed(view)) { cancel(); return@runOnUiThread }
+            trace("picker-start")
+            pickerInFlight = true
+            try {
+                val cancel = picker.pick(input) { outcome ->
+                    trace(when (outcome) {
+                        is AndroidWebFilePickerResult.Selected -> "picker-selected"
+                        AndroidWebFilePickerResult.Cancelled -> "picker-cancelled"
+                        AndroidWebFilePickerResult.PermissionDenied -> "picker-permission-denied"
+                        AndroidWebFilePickerResult.PermissionBlocked -> "picker-permission-blocked"
+                        AndroidWebFilePickerResult.PermissionRestricted -> "picker-permission-restricted"
+                        is AndroidWebFilePickerResult.Failed -> "picker-failed"
+                    })
+                    if (ticket != generation || owner !== view) {
+                        trace("picker-stale")
+                        if (outcome is AndroidWebFilePickerResult.Selected) outcome.release()
+                    } else {
+                        pickerInFlight = false; cancelPicker = null; pending = null
+                        if (outcome is AndroidWebFilePickerResult.Selected) {
+                            val uris = outcome.files.map { it.uri }.toTypedArray()
+                            if (uris.size in 1..maxFiles && outcome.files.all(::validFile)) complete(uris, outcome.release)
+                            else { trace("picker-invalid"); complete(null); outcome.release() }
+                        } else complete(null)
+                    }
                 }
+                if (ticket == generation && pickerInFlight) cancelPicker = cancel else cancel()
+            } catch (_: Exception) { trace("picker-launch-failed"); if (ticket == generation) cancel() }
         }
     }
-
-    private fun handleResult(resultCode: Int, data: Intent?) {
-        complete(resolveResult(resultCode, data))
-    }
-
-    private fun allowed(owner: WebView): Boolean = !destroyed && isAttached(owner) &&
-        request().security.run { fileChooserEnabled && trustedOrigins.isTrusted(owner.url) }
-
-    /** 系统 RESULT_OK 不代表输出有效；成功文件保留到文档撤销，供内核异步上传。 */
-    private fun complete(result: Array<Uri>?) {
-        val suspended = suspendedOwner
-        if (result != null && suspended != null && suspended === callbackOwner && !isAttached(suspended)) {
-            pendingResult = result
-            return
+    private fun allowed(view: WebView): Boolean = !destroyed && isAttached(view) && request().security.run { fileChooserEnabled && trustedOrigins.isTrusted(view.url) }
+    private fun complete(result: Array<Uri>?, release: () -> Unit = {}) {
+        val currentOwner = owner
+        if (result != null && suspendedOwner != null && suspendedOwner === currentOwner && currentOwner != null && !isAttached(currentOwner)) {
+            pendingResult = result to release; return
         }
-        suspendedOwner = null
-        pendingResult = null
+        val permitted = result != null && currentOwner != null && allowed(currentOwner)
         val current = callback
-        val permitted = callbackOwner?.let(::allowed) == true && result != null &&
-            result.size in 1..maxFiles && result.all(::validFile)
-        val output = cameraOutputFile
-        if (!permitted || result?.contains(cameraOutputUri) != true) {
-            output?.delete()
-            captureFiles.remove(output)
-        }
-        callback = null
-        callbackOwner = null
-        cameraOutputUri = null
-        cameraOutputFile = null
+        callback = null; owner = null; suspendedOwner = null; pendingResult = null; pending = null
+        if (permitted) delivered.getOrPut(requireNotNull(currentOwner)) { mutableListOf() }.add(release) else release()
         current?.onReceiveValue(if (permitted) result else null)
     }
-
-    private fun validFile(uri: Uri): Boolean = runCatching {
-        val capture = if (uri == cameraOutputUri) cameraOutputFile else null
-        val mime = if (capture != null) {
-            val header = capture.inputStream().use { stream -> ByteArray(12).also { stream.read(it) } }
-            when {
-                capture.extension == "jpg" && header[0] == 0xff.toByte() && header[1] == 0xd8.toByte() && header[2] == 0xff.toByte() -> "image/jpeg"
-                capture.extension == "mp4" && String(header, 4, 4, Charsets.US_ASCII) == "ftyp" -> "video/mp4"
-                else -> return false
-            }
-        } else activity.contentResolver.getType(uri)?.lowercase() ?: return false
-        val size = capture?.length() ?: activity.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: return false
-        size in 1L..50L * 1024L * 1024L && (acceptedTypes.isEmpty() || acceptedTypes.any {
+    private fun validFile(file: AndroidWebPickedFile): Boolean = runCatching {
+        val mime = canonicalFileMime(file.mimeType.lowercase())
+        val validType = (acceptedTypes.isEmpty() && acceptedExtensions.isEmpty()) || acceptedTypes.any {
             it == "*/*" || it == mime || (it.endsWith("/*") && mime.startsWith(it.dropLast(1)))
-        })
+        } || acceptedExtensions.any { file.name.lowercase().endsWith(it) }
+        file.uri.scheme == "content" && !file.uri.authority.isNullOrBlank() && mime.isNotBlank() && file.size in 1L..50L * 1024L * 1024L && validType
     }.getOrDefault(false)
-
-    private fun clearCaptureFiles() {
-        captureFiles.keys.forEach(File::delete)
-        captureFiles.clear()
-    }
-
-    private fun resolveResult(resultCode: Int, data: Intent?): Array<Uri>? {
-        if (resultCode != Activity.RESULT_OK) return null
-        cameraOutputUri?.let { return arrayOf(it) }
-        data?.clipData?.let { selected ->
-            return Array(selected.itemCount) { index -> selected.getItemAt(index).uri }
-        }
-        data?.data?.let { return arrayOf(it) }
-        return cameraOutputUri?.let { arrayOf(it) }
-    }
-
     private fun cancel() {
-        requestId++
-        val key = permissionKey
-        permissionKey = null
-        pendingIntent = null
-        launchAfterResume = false
+        generation++
+        captureChoice?.dismiss(); captureChoice = null
+        val pickerCancel = cancelPicker; cancelPicker = null; pickerInFlight = false
+        val key = permissionKey; permissionKey = null; launchAfterResume = false
+        val releasePending = pendingResult?.second; pendingResult = null
         complete(null)
+        releasePending?.invoke()
+        pickerCancel?.invoke()
         if (key != null) permissions.cancel(key)
     }
+    private fun trace(stage: String) { runCatching { AppWebViewRuntime.log(AppWebViewLogLevel.DEBUG, "file-picker $stage") } }
 }
 
-internal fun normalizeWebViewMimeTypes(values: Array<out String>): List<String> = values
-    .flatMap { it.split(',') }
-    .map { it.trim().lowercase() }
-    .filter { it == "*/*" || MIME_TYPE_PATTERN.matches(it) }
-    .distinct()
-
-private fun accepts(types: List<String>, prefix: String): Boolean =
-    types.isEmpty() || types.any { it.startsWith(prefix) || it == "*/*" }
-
-internal fun capturePermissions(action: String?): List<String> = when (action) {
-    MediaStore.ACTION_IMAGE_CAPTURE -> listOf(Manifest.permission.CAMERA)
-    MediaStore.ACTION_VIDEO_CAPTURE -> listOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-    else -> emptyList()
+internal fun normalizeWebViewMimeTypes(values: Array<out String>): List<String> = values.flatMap { it.split(',') }.map { it.trim().lowercase() }
+    .map { if (it.startsWith('.')) MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.drop(1)) ?: it else it }
+    .map(::canonicalFileMime)
+    .filter { it == "*/*" || MIME_TYPE_PATTERN.matches(it) }.distinct()
+private fun accepts(types: List<String>, prefix: String): Boolean = types.isEmpty() || types.any { it.startsWith(prefix) || it == "*/*" }
+internal fun capturePermissions(capture: Boolean, video: Boolean): List<String> = when {
+    !capture -> emptyList()
+    video -> listOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+    else -> listOf(Manifest.permission.CAMERA)
 }
-
 private val MIME_TYPE_PATTERN = Regex("^[a-z0-9][a-z0-9.+-]*/[a-z0-9*][a-z0-9.+*-]*$")
+private fun canonicalFileMime(value: String): String = when (value) {
+    "image/jpg" -> "image/jpeg"
+    "video/mov" -> "video/quicktime"
+    "*" -> "*/*"
+    else -> value
+}

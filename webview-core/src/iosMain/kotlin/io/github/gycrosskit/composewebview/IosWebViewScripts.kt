@@ -15,22 +15,40 @@ internal val IOS_FILE_CHOOSER_GATE_SCRIPT = """
       function isFileInput(value) {
         return value instanceof HTMLInputElement && value.type === 'file';
       }
+      function rememberInput(input) {
+        window.__GY_WEBVIEW_FILE_INPUT__ = input.disabled ? null : {
+          accept: input.accept || '', capture: input.hasAttribute('capture'), at: Date.now()
+        };
+      }
       document.addEventListener('click', function(event) {
-        if (!isFileInput(event.target) || window.$FILE_CHOOSER_ALLOWED_FLAG === true) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
+        if (!isFileInput(event.target)) return;
+        if (window.$FILE_CHOOSER_ALLOWED_FLAG === true) { rememberInput(event.target); return; }
+        window.__GY_WEBVIEW_FILE_INPUT__ = null;
+        event.preventDefault(); event.stopImmediatePropagation();
       }, true);
-      var originalClick = HTMLInputElement.prototype.click;
-      HTMLInputElement.prototype.click = function() {
-        if (isFileInput(this) && window.$FILE_CHOOSER_ALLOWED_FLAG !== true) return;
-        return originalClick.call(this);
-      };
+      ['click', 'showPicker'].forEach(function(name) {
+        var original = HTMLInputElement.prototype[name];
+        if (typeof original !== 'function') return;
+        HTMLInputElement.prototype[name] = function() {
+          if (!isFileInput(this)) return original.call(this);
+          if (window.$FILE_CHOOSER_ALLOWED_FLAG !== true) return;
+          rememberInput(this);
+          try { return original.call(this); }
+          catch (error) { window.__GY_WEBVIEW_FILE_INPUT__ = null; throw error; }
+        };
+      });
+      window.addEventListener('pagehide', function() { window.__GY_WEBVIEW_FILE_INPUT__ = null; });
     })();
 """.trimIndent()
 
 /** 仅提供 accept/capture UI 提示；来源、能力、可见性和文档代次仍由原生校验。 */
 internal const val IOS_FILE_INPUT_SCRIPT = """
-JSON.stringify((function(){var input=document.activeElement;return input&&input.tagName==='INPUT'&&input.type==='file'?{accept:input.accept||'',capture:input.hasAttribute('capture')}:{};})())
+JSON.stringify((function(){
+  var pending=window.__GY_WEBVIEW_FILE_INPUT__; window.__GY_WEBVIEW_FILE_INPUT__=null;
+  var age=pending?Date.now()-pending.at:-1;
+  if(age>=0&&age<1500) return {accept:pending.accept,capture:pending.capture};
+  return {};
+})())
 """
 
 /** 仅把既有 Android Bridge 兼容协议转发给 WKScriptMessageHandler，不在脚本中解释业务消息。 */

@@ -26,6 +26,7 @@ class GYWebViewNative @JvmOverloads constructor(
     context: Context,
     private val fullscreenOrientation: Int? = null,
     private val fullscreenControlsFactory: ((Context, AndroidWebFullscreenActions) -> AndroidWebFullscreenControls)? = null,
+    private val filePicker: io.github.gycrosskit.composewebview.AndroidWebFilePicker? = null,
 ) : FrameLayout(context), IKuiklyRenderViewExport {
     @Volatile private var request: WebViewRequest? = null
     private var onEvent: KuiklyRenderCallback? = null
@@ -92,9 +93,9 @@ class GYWebViewNative @JvmOverloads constructor(
                     if (activity != null && oldCapabilities?.pauseForSystemPicker(owner) == true) {
                         // renderer.onPause 可能早于 Activity 的 ON_PAUSE；下一轮再区分真正离页。
                         Handler(Looper.getMainLooper()).post {
-                            if (owner === webView && !pageVisible && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) capabilities?.release(owner)
+                            if (owner === webView && !pageVisible && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) capabilities?.pause(owner)
                         }
-                    } else oldCapabilities?.release(owner)
+                    } else oldCapabilities?.pause(owner)
                 }
                 popupRouter?.release()
             } else webView?.let { capabilities?.resume(it) }
@@ -180,7 +181,7 @@ class GYWebViewNative @JvmOverloads constructor(
         capabilities = hostActivity?.let {
             AndroidWebCapabilities(it, { requireNotNull(request) }, { target -> target === webView && pageVisible && !destroyed && !crashed },
                 { emit(WebViewEvent.PermissionSettingsRequired(it)) },
-                if (current.permissionPresentation == WebViewPermissionPresentation.HOST) ::showPermissionExplanation else null)
+                if (current.permissionPresentation == WebViewPermissionPresentation.HOST) ::showPermissionExplanation else null, filePicker)
         }
         popupRouter = AndroidPopupRouter({ requireNotNull(request) }, { emit(WebViewEvent.Navigation(it, true)) }) { navigation ->
             if (route(navigation)) WebViewNavigationDecision.BLOCK else WebViewNavigationDecision.ALLOW
@@ -381,4 +382,10 @@ class GYWebViewNative @JvmOverloads constructor(
 fun IKuiklyRenderExport.registerGYWebView(
     fullscreenOrientation: Int? = null,
     fullscreenControlsFactory: ((Context, AndroidWebFullscreenActions) -> AndroidWebFullscreenControls)? = null,
-) = renderViewExport(GYWebView.VIEW_NAME, { GYWebViewNative(it, fullscreenOrientation, fullscreenControlsFactory) })
+) = registerGYWebView(fullscreenOrientation, null, fullscreenControlsFactory)
+
+fun IKuiklyRenderExport.registerGYWebView(
+    fullscreenOrientation: Int?,
+    filePicker: io.github.gycrosskit.composewebview.AndroidWebFilePicker?,
+    fullscreenControlsFactory: ((Context, AndroidWebFullscreenActions) -> AndroidWebFullscreenControls)? = null,
+) = renderViewExport(GYWebView.VIEW_NAME, { GYWebViewNative(it, fullscreenOrientation, fullscreenControlsFactory, filePicker) })
