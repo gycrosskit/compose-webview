@@ -855,16 +855,20 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     navigationPolicy: { ...standard.navigationPolicy, navigationOrigins: { exactOrigins: ['https://trusted.test', 'https://other.test'], hostSuffixOrigins: [] } } });
   mediaView.setProp('request', encoded(mediaPolicy)); mediaView.onControllerAttached(); mediaView.onPageVisible('https://trusted.test/page');
   if (!mediaIntegration) {
-    for (const capture of [false, undefined]) {
+    for (const mediaCaptureEnabled of [true, false, undefined]) {
+      mediaView.setProp('request', encoded({ ...mediaPolicy, security: { ...mediaPolicy.security, mediaCaptureEnabled } }));
+      mediaView.onControllerAttached(); mediaView.onPageVisible('https://trusted.test/page');
       selectedFile = deferred(); const replies = [];
-      mediaView.selectFile({ fileSelector: { isCapture: () => capture, getAcceptType: () => ['image/*', '.pdf'], getMode: () => 1 }, result: { handleFileList: files => replies.push(Array.from(files)) } });
+      mediaView.selectFile({ fileSelector: { isCapture: () => false, getAcceptType: () => ['image/*', '.pdf'], getMode: () => 1 }, result: { handleFileList: files => replies.push(Array.from(files)) } });
       assert.deepEqual(Array.from(mediaView.lastHostFileRequest.acceptTypes), ['image/*', '.pdf']);
       assert.equal(mediaView.lastHostFileRequest.multiple, true);
-      assert.equal(mediaView.lastHostFileRequest.capture, false, 'false or undefined capture defaults to false before host delegation');
+      assert.equal(mediaView.lastHostFileRequest.capture, false);
+      assert.equal(mediaView.lastHostFileRequest.captureEnabled, mediaCaptureEnabled === true, 'capture requires explicit policy opt-in; omitted JSON flag defaults to false');
       selectedFile.resolve(['file://picked/document.pdf']); await flushNativeCallbacks();
       mediaView.lastHostFileComplete(['file://picked/late.pdf']);
       assert.deepEqual(replies, [['file://picked/document.pdf']], 'duplicate host result is ignored');
     }
+    mediaView.setProp('request', encoded(mediaPolicy)); mediaView.onControllerAttached(); mediaView.onPageVisible('https://trusted.test/page');
   }
   selectedFile = deferred(); const acceptedFiles = [];
   mediaView.selectFile({ fileSelector: { isCapture: () => false, getAcceptType: () => [], getMode: () => 0 }, result: { handleFileList: files => acceptedFiles.push(Array.from(files)) } });
