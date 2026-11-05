@@ -1,4 +1,4 @@
-## HAR 2.0.1
+## 2.0.1
 
 - Web 隐藏、替换、渲染进程退出或销毁前，仅释放当前 render 持有的原生焦点，避免返回后输入框被动获焦。
 - 新增原生 `onNativeFocusChanged` 与 `releaseNativeFocus()`，供嵌套 Renderer 宿主在父容器隐藏前同步交接。
