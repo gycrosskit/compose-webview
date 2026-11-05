@@ -23,7 +23,7 @@ if (harArgument >= 0) {
   const manifest = JSON.parse(fs.readFileSync(path.join(extracted, 'package/oh-package.json5'), 'utf8'));
   assert.equal(manifest.dependencies['@gycrosskit/system-actions-native'],
     systemActionsVersion, 'actual HAR must retain the exact Registry dependency');
-  assert.equal(manifest.version, '2.0.0', 'actual HAR must use the new immutable release version');
+  assert.equal(manifest.version, '2.0.1', 'actual HAR must use the new immutable release version');
   assert.equal(manifest.overrides, undefined, 'actual HAR must not retain task overrides');
   root = path.join(extracted, 'package/src/main/ets');
 }
@@ -531,6 +531,58 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   vm.runInNewContext(prototypeIdScript, prototypeIdContext); vm.runInNewContext(prototypeIdScript, prototypeIdContext);
   assert.equal(prototypeIdPage.executions, 1, '__proto__ script id uses own-property per-document deduplication');
   const { GYWebView } = load('GYWebView.ets');
+  // 执行真实 owner/隐藏/销毁边界；ArkUI 焦点事件和根容器转移由替身提供。
+  {
+    let clears = 0;
+    const focusedView = () => {
+      const view = new GYWebView(), context = view.getUIContext();
+      view.getUIContext = () => ({ ...context, getFocusController: () => ({ clearFocus: () => {
+        assert.equal(view.visible, true, '焦点必须在 Web Hidden 前交还根容器');
+        clears++;
+      } }) });
+      return view;
+    };
+    const untouched = focusedView();
+    untouched.setProp('visible', false); untouched.onDestroy();
+    assert.equal(clears, 0, '没有持有焦点的网页不能清理其他输入');
+
+    const hidden = focusedView(), states = [];
+    hidden.onNativeFocusChanged = focused => states.push(focused);
+    hidden.nativeFocusChanged(hidden.renderToken, true);
+    hidden.setProp('visible', false); hidden.onDestroy();
+    assert.equal(clears, 1, '隐藏和销毁只交还一次焦点');
+    assert.deepEqual(states, [true, false]);
+    assert.equal(hidden.onNativeFocusChanged, null, '销毁不能保留认证宿主的回调');
+
+    const blurred = focusedView();
+    blurred.nativeFocusChanged(blurred.renderToken, true);
+    blurred.nativeFocusChanged(blurred.renderToken, false);
+    blurred.setProp('visible', false); blurred.onDestroy();
+    assert.equal(clears, 1, '后继输入已获焦时，旧网页清理不能抢焦点');
+
+    const replaced = focusedView();
+    replaced.nativeFocusChanged(replaced.renderToken, true);
+    const oldToken = replaced.renderToken;
+    replaced.setProp('request', encoded(request()));
+    assert.equal(clears, 2, '替换 Controller 前交还旧 Web 焦点');
+    replaced.nativeFocusChanged(oldToken, true); replaced.releaseNativeFocus();
+    assert.equal(clears, 2, '旧 render 的迟到获焦不能成为当前 owner');
+    replaced.nativeFocusChanged(replaced.renderToken, true);
+    replaced.nativeFocusChanged(oldToken, false); replaced.releaseNativeFocus();
+    assert.equal(clears, 3, '旧 render 的迟到失焦不能清掉当前 owner');
+
+    const exited = focusedView();
+    exited.nativeFocusChanged(exited.renderToken, true); exited.renderExited(); exited.onDestroy();
+    assert.equal(clears, 4, '渲染进程退出和销毁只交还一次焦点');
+
+    const inactive = focusedView();
+    inactive.setProp('visible', false);
+    inactive.nativeFocusChanged(inactive.renderToken, true); inactive.releaseNativeFocus();
+    inactive.onDestroy();
+    inactive.nativeFocusChanged(inactive.renderToken, true); inactive.releaseNativeFocus();
+    assert.equal(clears, 4, '隐藏或销毁后的迟到获焦不能成为 owner');
+    console.log('PASS: OHOS native focus ownership and release boundaries');
+  }
   const mediaExports = {};
   if (mediaIntegration) {
     vm.runInNewContext(ts.transpileModule(fs.readFileSync(process.env.WEBVIEW_MEDIA_SOURCE, 'utf8'), { compilerOptions: {

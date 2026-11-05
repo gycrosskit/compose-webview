@@ -14,6 +14,8 @@ export function createWebView(): KuiklyRenderBaseView {
   const view = new GYWebView();
   view.setProp('request', JSON.stringify(request));
   view.setProp('visible', true);
+  view.onNativeFocusChanged = (focused: boolean) => {};
+  view.releaseNativeFocus();
   view.setProp('onEvent', (event) => {});
   view.call('exitFullscreen', null, (result) => {});
   return view;

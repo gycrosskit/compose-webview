@@ -1,6 +1,6 @@
 # GY WebView 鸿蒙构建
 
-当前 HAR 为 `1.2.0` 未发布候选，新增可选 HOST 权限说明与回执隔离，保留页面 URL 规范化、fileAccess/MIME 及 WindowStage 窗口策略，配套 system-actions-native `1.0.1`；新源码须重新编译和冻结。Release下载与Registry可安装性分别核对，详见[原生README](webview-native/README.md)。系统 ArkWeb + Kuikly 2.29.1，工程target/compatible为HarmonyOS API22；本机编译SDK为API26。完整五入口能力见[功能与平台差异](../docs/功能与平台差异.md)。
+当前 HAR 为 `2.0.1`，新增原生焦点归属与离页同步交接；Maven/Git Pod 保持 `2.0.0`，配套 system-actions-native `1.0.2`。Release 下载与 Registry 可安装性分别核对，详见[原生 README](webview-native/README.md)。工程 target/compatible 为 HarmonyOS API22，构建与设备验收分别记录。
 
 完整安装、公共 wire、能力限制与安全来源证据见 [HAR README](webview-native/README.md)。变更见 [CHANGELOG](webview-native/CHANGELOG.md)，本地验证见 [VERIFICATION](VERIFICATION.md)。
 

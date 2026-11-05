@@ -1,8 +1,8 @@
-> 版本 `2.0.0`：Maven、Git Pod `GYWebView`（`native-2.0.0`）与私有 OHPM/HAR（`har-2.0.0`）。文件选择改由宿主注入，未接线时取消请求；各渠道发布与精确远程消费状态以对应 Release 为准，设备验收单独记录。
+> Maven/Git Pod 保持 `2.0.0`（`native-2.0.0`）；鸿蒙私有 OHPM/HAR 使用 `2.0.1`（`har-2.0.1`）。文件选择改由宿主注入，未接线时取消请求；各渠道发布与精确远程消费状态以对应 Release 为准，设备验收单独记录。
 
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **2.0.0**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **2.0.1**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
 
 rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和空路径按同一文档身份匹配；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。主帧 capability、nonce、owner 与单次回复门禁保持有效。
 
@@ -10,14 +10,14 @@ rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和
 
 ## 安装与注册
 
-本轮 Maven/Git Pod/HAR 使用 `2.0.0`，Git Pod Tag 为 `native-2.0.0`，私有 OHPM/HAR Tag 为 `har-2.0.0`；配套 system-actions `1.0.2` 保持，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.2；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+Maven/Git Pod 保持 `2.0.0`，Git Pod Tag 为 `native-2.0.0`；本轮私有 OHPM/HAR 为 `2.0.1`，Tag 为 `har-2.0.1`；配套 system-actions `1.0.2` 保持，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.2；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 
 以下为本版本精确 Registry 坐标；审核通过并实际可查询、安装后使用。
 
 ```bash
-ohpm install @gycrosskit/webview@2.0.0
+ohpm install @gycrosskit/webview@2.0.1
 ```
 
 候选可从 assembleHar 输出验证；正式发布后从对应不可变 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry `1.0.2`。干净消费者核对只有一份窗口 owner。离线验证使用已核对冻结 SHA-256 的 Web HAR 和 system-actions `1.0.2` HAR，并用 root override 保证同一系统包；候选字节不得冒充公开 Release 下载或 Registry 安装。文件下载消费与 Registry 安装分开验收。
@@ -63,6 +63,19 @@ class AudienceWebView extends GYWebView {
 ```
 
 hook 仅选择现有 lease 的 owner，不改变 `fullscreenPolicy()`、原生退出确认或窗口恢复规则。同 controller 仍替换旧全屏 owner，不同 controller 不互相替换；宿主负责把 controller 与实际 Ability/Window 对齐。本轮轻量回归使用真实 WindowPolicy 实现和系统 Window 替身，尚非 HAR 编译或设备验收。
+
+## 原生焦点交接（HAR 2.0.1）
+
+OHOS Web 通过原生 `onFocus/onBlur` 记录当前 render 的焦点归属。在隐藏、替换 Controller、渲染进程退出或销毁前，
+仅持有焦点的实例同步调用所属 `UIContext.getFocusController().clearFocus()`，将焦点交给页面根容器，避免系统把
+离场 Web 的焦点自动移给后继输入框。可见网页的正常输入不变；已失焦实例的迟到隐藏或销毁不清理后继输入。
+
+嵌套 Renderer 的宿主可通过原生 `onNativeFocusChanged` 回调保存自身当前获焦 Web，并在父容器隐藏或移除前调用该
+实例的 `releaseNativeFocus()`；不能等 child 的异步生命周期回调，也不能无条件清理全局焦点。回调只用于同步更新
+焦点归属，不执行路由或申请新的焦点；该接线不进入 KMP 事件或 H5 JS，销毁时清除回调。
+
+`node ohos/tests/contract.test.cjs` 覆盖 owner、旧 render、隐藏、重建和销毁边界；ArkUI 焦点事件与根容器转移由
+替身提供，不能替代真实 Web 输入、返回后立即搜索及认证 child 父先隐藏等设备验收。
 
 ## 共享 Web 数据清理
 

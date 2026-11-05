@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-> 版本 `2.0.0`：Maven、Git Pod `GYWebView`（`native-2.0.0`）与私有 OHPM/HAR（`har-2.0.0`）。文件选择改由宿主注入，未接线时取消请求；各渠道发布与精确远程消费状态以对应 Release 为准，设备验收单独记录。
+> Maven/Git Pod 保持 `2.0.0`（`native-2.0.0`）；鸿蒙私有 OHPM/HAR 使用 `2.0.1`（`har-2.0.1`）。文件选择改由宿主注入，未接线时取消请求；各渠道发布与精确远程消费状态以对应 Release 为准，设备验收单独记录。
 
 Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。 各渠道发布与精确消费状态见对应 Release，既有验收按原 tag 保留。
 
@@ -126,7 +126,7 @@ dependencyResolutionManagement {
 }
 ```
 
-本轮 Maven、Git Pod/HAR 统一使用 `2.0.0`；以下为精确依赖示例，实际可用性以对应渠道的 Release 与消费收据为准。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
+Maven 与 Git Pod 使用 `2.0.0`，鸿蒙 HAR 使用 `2.0.1`；以下为精确依赖示例，实际可用性以对应渠道的 Release 与消费收据为准。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
@@ -142,7 +142,7 @@ pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :t
 当前源码继续使用 iOS Renderer 2.29.1；发布 Tag 与候选提交的消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS HAR `2.0.0`（`har-2.0.0`）在配置的私有 OHPM 精确安装，见[HAR 接入指南](ohos/webview-native/README.md)，Registry 可安装性须单独核验。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
+HarmonyOS HAR `2.0.1`（`har-2.0.1`）在配置的私有 OHPM 精确安装，见[HAR 接入指南](ohos/webview-native/README.md)，Registry 可安装性须单独核验。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
 
 ## 快速使用
 

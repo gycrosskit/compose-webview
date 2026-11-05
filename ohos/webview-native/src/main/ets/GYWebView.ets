@@ -113,6 +113,9 @@ export class GYWebView extends KuiklyRenderBaseView {
   private renderFailed: boolean = false;
   private eventCallback: KuiklyRenderCallback | null = null;
   private attached: boolean = false;
+  private nativeFocused: boolean = false;
+  /** 原生焦点状态供嵌套 Renderer 的宿主同步结束所属网页焦点；不进入 KMP 事件。 */
+  onNativeFocusChanged: ((focused: boolean) => void) | null = null;
   private lifetime: CallbackLifetime = new CallbackLifetime();
   private pendingHtmlNavigation: boolean = false;
   private loadingRequest: boolean = false;
@@ -183,6 +186,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     if (key === 'visible') {
       const changed = this.visible !== (value === true);
       if (!changed) return true;
+      if (value !== true) this.releaseNativeFocus();
       this.visible = value === true;
       const controllerOwner = this.controller;
       const ownerToken = this.renderToken;
@@ -237,6 +241,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.renderFailed = false;
     this.documentReady = false;
     this.bridgeVisibilityPending = false;
+    this.releaseNativeFocus();
     this.controller = new webview.WebviewController();
     this.request = null;
     this.pendingHtmlNavigation = false;
@@ -268,6 +273,21 @@ export class GYWebView extends KuiklyRenderBaseView {
 
   /** ArkUI 回调入口核验节点身份、销毁状态及渲染进程状态。 */
   isRenderActive(token: number): boolean { return !this.lifetime.disposed && !this.renderFailed && token === this.renderToken; }
+
+  nativeFocusChanged(token: number, focused: boolean): void {
+    if (token !== this.renderToken || this.lifetime.disposed || (focused && (!this.visible || !this.isRenderActive(token))) ||
+      this.nativeFocused === focused) return;
+    this.nativeFocused = focused;
+    this.onNativeFocusChanged?.(focused);
+  }
+
+  /** 必须在隐藏或移除前同步交给页面根容器；旧网页不能打断后继输入。 */
+  releaseNativeFocus(): void {
+    if (!this.nativeFocused) return;
+    this.nativeFocused = false;
+    try { this.getUIContext()?.getFocusController().clearFocus(); } catch (_) {}
+    this.onNativeFocusChanged?.(false);
+  }
 
   /** 当前节点首次附着后提交内容，重复或旧节点附着安全忽略。 */
   onControllerAttached(token: number = this.renderToken): void {
@@ -868,6 +888,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
   /** 标记渲染进程失败，撤销所有能力；reload 会重建 Controller。 */
   renderExited(): void {
     const controllerOwner = this.controller; const ownerToken = this.renderToken;
+    this.releaseNativeFocus();
     this.renderFailed = true; this.documentReady = false; this.revokePending();
     if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return;
     this.exitFullscreen();
@@ -904,6 +925,8 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     requests.forEach(request => { try { request.deny(); } catch (_) {} });
   }
   onDestroy(): void {
+    this.releaseNativeFocus();
+    this.onNativeFocusChanged = null;
     if (this.environmentContext && this.environmentId !== null) {
       try { this.environmentContext.off('environment', this.environmentId).catch(() => {}); } catch (_) {}
     }

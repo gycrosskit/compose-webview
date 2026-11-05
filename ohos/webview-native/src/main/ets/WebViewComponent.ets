@@ -25,6 +25,8 @@ function webViewAttributes(view: GYWebView, token: number) {
       (view.settings().cachePolicy === 'CACHE_ELSE_NETWORK' ? CacheMode.None : CacheMode.Default)))
   .mediaPlayGestureAccess(view.settings().mediaPlaybackRequiresUserGesture !== false)
 
+  .onFocus(() => view.nativeFocusChanged(token, true))
+  .onBlur(() => view.nativeFocusChanged(token, false))
   .onControllerAttached(() => { if (view.isRenderActive(token)) view.onControllerAttached(token); })
   .onWindowNew(event => { if (view.isRenderActive(token)) view.rejectNewWindow(event); else event.handler.setWebController(null!); })
   .onLoadIntercept(event => view.isRenderActive(token) && event ? view.interceptNavigation(event.data) : true)
