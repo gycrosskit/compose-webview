@@ -130,6 +130,7 @@ enum class WebViewCapability {
 enum class WebViewPermission {
     CAMERA,
     MICROPHONE,
+    LOCATION,
 }
 
 /** Navigation/Paint Timing 指标；具体支持与上报次数取决于浏览器内核。 */

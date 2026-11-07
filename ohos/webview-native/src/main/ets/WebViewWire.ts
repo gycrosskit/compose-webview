@@ -94,7 +94,7 @@ export interface TrustOrigins { urls: string[]; trustedHostSuffixes: string[]; }
  */
 export interface WebViewSecurity {
   trustedOrigins: TrustOrigins; appBridgeEnabled?: boolean; pageBridgeEnabled?: boolean;
-  fileChooserEnabled?: boolean; mediaCaptureEnabled?: boolean;
+  fileChooserEnabled?: boolean; mediaCaptureEnabled?: boolean; geolocationEnabled?: boolean;
 }
 /**
  * 声明式 URL 过滤规则，不用 Contains 替代来源鉴权。
@@ -137,6 +137,7 @@ export interface WebViewRequest {
   scripts: WebViewScript[]; blockedResourceRules: WebViewUrlRule[]; navigationPolicy: NavigationPolicy;
   pageMessageChannels?: string[];
   permissionPresentation?: string;
+  sensitiveDiagnostics?: boolean;
 }
 
 /** 规范化 HTTP/HTTPS origin 为显式有效端口；凭据、无效 URL 或端口返回空字符串。 */
@@ -288,7 +289,8 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   const maximumZoom = request.settings.maximumTextZoomPercent === undefined ? 200 : request.settings.maximumTextZoomPercent;
   if (!Number.isInteger(minimumZoom) || !Number.isInteger(maximumZoom) || minimumZoom < 50 ||
     maximumZoom > 500 || maximumZoom < minimumZoom) throw new Error('Invalid text zoom range');
-  const securityFlags = [request.security.appBridgeEnabled, request.security.pageBridgeEnabled, request.security.fileChooserEnabled, request.security.mediaCaptureEnabled];
+  if (request.sensitiveDiagnostics !== undefined && typeof request.sensitiveDiagnostics !== 'boolean') throw new Error('Invalid diagnostics flag');
+  const securityFlags = [request.security.appBridgeEnabled, request.security.pageBridgeEnabled, request.security.fileChooserEnabled, request.security.mediaCaptureEnabled, request.security.geolocationEnabled];
   securityFlags.forEach(flag => { if (flag !== undefined && typeof flag !== 'boolean') throw new Error('Invalid security flag'); });
   if (request.navigationPolicy.allowNewWindows !== undefined && typeof request.navigationPolicy.allowNewWindows !== 'boolean') throw new Error('Invalid navigation policy');
   if (request.settings.mixedContentPolicy && !['NEVER_ALLOW', 'COMPATIBILITY', 'ALWAYS_ALLOW'].includes(request.settings.mixedContentPolicy)) throw new Error('Invalid mixed content policy');
@@ -335,7 +337,7 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
     if (content.encoding !== undefined && (typeof content.encoding !== 'string' || !content.encoding.trim())) throw new Error('Invalid encoding');
     if (content.historyUrl && !content.baseUrl) throw new Error('HTML historyUrl requires baseUrl');
   } else throw new Error('Unsupported content type');
-  if (request.security.appBridgeEnabled || request.security.fileChooserEnabled || request.security.mediaCaptureEnabled) {
+  if (request.security.appBridgeEnabled || request.security.fileChooserEnabled || request.security.mediaCaptureEnabled || request.security.geolocationEnabled) {
     if (!request.security.trustedOrigins.urls.some(item => trusted(item, request.security)) &&
       !request.security.trustedOrigins.trustedHostSuffixes.some(item => trusted(`https://${item}/`, request.security))) {
       throw new Error('High privilege capability requires trusted HTTP(S) origins');

@@ -926,6 +926,34 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     assert.deepEqual(replies, [[capture.profile.saveUri]]);
     suspended.onDestroy();
   }
+  // 标准定位沿用权限说明管线：同源包括 iframe，拒绝跨源，不持久保存，撤销后不交付迟到结果。
+  {
+    const geo = new GYWebView(), replies = [], events = [];
+    const geoPolicy = { ...mediaPolicy, sensitiveDiagnostics: true, permissionPresentation: 'HOST',
+      security: { ...mediaPolicy.security, geolocationEnabled: true } };
+    geo.setProp('request', encoded(geoPolicy)); geo.onControllerAttached(); geo.onPageVisible('https://trusted.test/page');
+    geo.setProp('onEvent', value => events.push(value));
+    const prompt = source => ({ origin: source, geolocation: { invoke: (...args) => replies.push(args) } });
+    permissionStatus = 0;
+    geo.geolocationShow(prompt('https://trusted.test')); await flushNativeCallbacks();
+    assert.deepEqual(replies, [['https://trusted.test', true, false]]);
+    geo.geolocationShow(prompt('https://other.test')); await flushNativeCallbacks();
+    assert.deepEqual(replies.at(-1), ['https://other.test', false, false]);
+    permissionStatus = 1; permission = deferred();
+    const before = permissionCalls;
+    geo.geolocationShow(prompt('https://trusted.test')); await flushNativeCallbacks();
+    const explanation = events.at(-1);
+    assert.equal(explanation.type, 'permissionExplanationRequested');
+    assert.deepEqual(Array.from(explanation.permissions), ['LOCATION']);
+    geo.setProp('visible', false); await flushNativeCallbacks();
+    assert.deepEqual(replies.at(-1), ['https://trusted.test', false, false]);
+    let accepted;
+    geo.call('completePermissionExplanation', JSON.stringify({ requestId: explanation.requestId, accepted: true }), value => accepted = value.result);
+    assert.equal(accepted, false); assert.equal(permissionCalls, before);
+    geo.setProp('request', encoded({ ...geoPolicy, sensitiveDiagnostics: false }));
+    assert.equal(geo.request.sensitiveDiagnostics, true, 'native privacy protection cannot downgrade');
+    geo.onDestroy(); permissionStatus = 2;
+  }
   // HOST 仅接管说明，确认不是授权；旧/重复/撤销回执不能启动系统或交付旧页面。
   {
     const host = new GYWebView(), events = [];

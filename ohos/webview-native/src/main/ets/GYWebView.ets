@@ -119,10 +119,13 @@ export class GYWebView extends KuiklyRenderBaseView {
   private loadSubmitted: boolean = false;
   private ports: webview.WebMessagePort[] = [];
   private permissionRequests: Set<PermissionRequest> = new Set();
+  private geolocationRequest: OnGeolocationShowEvent | null = null;
+  private geolocationCancelExplanation: (() => void) | null = null;
   private cancelPermissionExplanation: (() => void) | null = null;
   private permissionExplanationForFile: boolean = false;
   private hostPermissionExplanation: HostPermissionExplanation | null = null;
   private requestRevision: number = 0;
+  private sensitiveDiagnostics: boolean = false;
   private fileResults: Set<FileSelectorResult> = new Set();
   private pageOwnerActive: boolean | null = null;
   private fileGeneration: number = 0;
@@ -216,6 +219,9 @@ export class GYWebView extends KuiklyRenderBaseView {
     if (this.request && !this.renderFailed && typeof value === 'string') {
       try {
         const next = decodeRequest(value as string, false);
+        this.sensitiveDiagnostics = this.sensitiveDiagnostics || next.sensitiveDiagnostics === true;
+        next.sensitiveDiagnostics = this.sensitiveDiagnostics;
+        this.request.sensitiveDiagnostics = this.sensitiveDiagnostics;
         if (JSON.stringify(this.request.navigationPolicy) !== JSON.stringify(next.navigationPolicy) &&
           JSON.stringify(this.request.content) === JSON.stringify(next.content) &&
           JSON.stringify(this.request.settings) === JSON.stringify(next.settings) &&
@@ -248,6 +254,8 @@ export class GYWebView extends KuiklyRenderBaseView {
     try {
       if (typeof value !== 'string') throw new Error('request must be a JSON string');
       this.request = decodeRequest(value as string);
+      this.sensitiveDiagnostics = this.sensitiveDiagnostics || this.request.sensitiveDiagnostics === true;
+      this.request.sensitiveDiagnostics = this.sensitiveDiagnostics;
       this.pageMessageStarted = false; this.pageMessageIntercepted = false;
       if (this.request.pageMessageChannels?.length && this.request.settings.javaScriptEnabled === true) {
         const bytes = cryptoFramework.createRandom().generateRandomSync(32).data;
@@ -561,7 +569,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     if (states.some(status => status === abilityAccessCtrl.PermissionStatus.RESTRICTED)) return false;
     const denied = permissions.filter((_permission, index) => states[index] === abilityAccessCtrl.PermissionStatus.DENIED);
     if (denied.length > 0) {
-      this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') });
+      this.emit({ type: 'permissionSettingsRequired', permissions: denied.map(permission => permission === 'ohos.permission.APPROXIMATELY_LOCATION' ? 'LOCATION' : (permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE')) });
       return false;
     }
     if (states.every(status => status === abilityAccessCtrl.PermissionStatus.GRANTED)) return true;
@@ -591,16 +599,17 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
         this.hostPermissionExplanation = { requestId: requestId, complete: accepted => finish(accepted, false) };
         this.cancelPermissionExplanation = cancel; this.permissionExplanationForFile = fileCapture;
         try { this.emit({ type: 'permissionExplanationRequested', requestId: requestId,
-          permissions: permissions.map(permission => permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE') }); }
+          permissions: permissions.map(permission => permission === 'ohos.permission.APPROXIMATELY_LOCATION' ? 'LOCATION' : (permission === 'ohos.permission.CAMERA' ? 'CAMERA' : 'MICROPHONE')) }); }
         catch (_) { cancel(); }
       });
     }
     const chinese = context.config.language?.startsWith('zh') === true;
     const camera = permissions.indexOf('ohos.permission.CAMERA') >= 0;
     const microphone = permissions.indexOf('ohos.permission.MICROPHONE') >= 0;
-    const name = camera && microphone ? (chinese ? '相机和麦克风' : 'camera and microphone') :
+    const location = permissions.indexOf('ohos.permission.APPROXIMATELY_LOCATION') >= 0;
+    const name = location ? (chinese ? '位置' : 'location') : camera && microphone ? (chinese ? '相机和麦克风' : 'camera and microphone') :
       microphone ? (chinese ? '麦克风' : 'microphone') : (chinese ? '相机' : 'camera');
-    const scenario = fileCapture ? (chinese ? '用于拍摄并上传照片或视频。' : 'Used to capture and upload photos or videos.') :
+    const scenario = location ? (chinese ? '用于当前网页获取附近位置。' : 'Used to obtain nearby location for the current page.') : fileCapture ? (chinese ? '用于拍摄并上传照片或视频。' : 'Used to capture and upload photos or videos.') :
       (chinese ? '用于当前网页的音视频采集或通话。' : 'Used for audio/video capture or calls on the current page.');
     const uiContext = this.getUIContext();
     if (!uiContext) return Promise.resolve(false);
@@ -640,6 +649,37 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
         else if (!this.visible || !valid()) cancel();
       }).catch(() => { finish(false); dispose(); });
     });
+  }
+
+  /** ArkWeb 仅提供 origin，授权范围包含当前可信主页面及其同源 iframe，不持久保存。 */
+  geolocationShow(event: OnGeolocationShowEvent): void {
+    this.geolocationHide();
+    const current = this.request;
+    const generation = this.lifetime.generation;
+    const valid = (): boolean => this.geolocationRequest === event && this.lifetime.current(generation) &&
+      this.visible && this.pageOwnerActive !== false && this.request === current &&
+      !!current?.security.geolocationEnabled && trusted(this.currentUrl(), current.security) &&
+      trusted(event.origin, current.security) && !!origin(event.origin) && origin(event.origin) === origin(this.currentUrl());
+    this.geolocationRequest = event;
+    if (!valid()) { this.geolocationHide(); return; }
+    const context = (this.getUIContext() as UIContext).getHostContext() as common.UIAbilityContext;
+    const previousExplanation = this.cancelPermissionExplanation;
+    const authorization = this.authorizeCapture(context, ['ohos.permission.APPROXIMATELY_LOCATION'], valid, false);
+    this.geolocationCancelExplanation = this.cancelPermissionExplanation !== previousExplanation ? this.cancelPermissionExplanation : null;
+    authorization.then(granted => {
+      if (this.geolocationRequest !== event) return;
+      const allowed = granted && valid();
+      this.geolocationRequest = null; this.geolocationCancelExplanation = null;
+      event.geolocation.invoke(event.origin, allowed, false);
+    }).catch(() => { if (this.geolocationRequest === event) this.geolocationHide(); });
+  }
+
+  geolocationHide(): void {
+    const old = this.geolocationRequest;
+    this.geolocationRequest = null;
+    const cancel = this.geolocationCancelExplanation; this.geolocationCancelExplanation = null;
+    cancel?.();
+    if (old) { try { old.geolocation.invoke(old.origin, false, false); } catch (_) {} }
   }
 
   /** 主文档来源授权通过后申请系统权限；取消/异源/部分授权均 deny，结果只结算一次。 */
@@ -899,6 +939,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     this.bridgeVisibilityPending = false;
     this.lifetime.invalidate(); this.closePorts();
     const requests = Array.from(this.permissionRequests); this.permissionRequests.clear();
+    this.geolocationHide();
     if (!preserveFilePickers) this.revokeFilePickers(preserveHostFiles);
     cancel?.();
     requests.forEach(request => { try { request.deny(); } catch (_) {} });

@@ -23,6 +23,7 @@ function webViewAttributes(view: GYWebView, token: number) {
   .cacheMode(view.settings().cachePolicy === 'NO_CACHE' ? CacheMode.Online :
     (view.settings().cachePolicy === 'CACHE_ONLY' ? CacheMode.Only :
       (view.settings().cachePolicy === 'CACHE_ELSE_NETWORK' ? CacheMode.None : CacheMode.Default)))
+  .geolocationAccess(view.request?.security.geolocationEnabled === true)
   .mediaPlayGestureAccess(view.settings().mediaPlaybackRequiresUserGesture !== false)
 
   .onControllerAttached(() => { if (view.isRenderActive(token)) view.onControllerAttached(token); })
@@ -38,6 +39,8 @@ function webViewAttributes(view: GYWebView, token: number) {
   .onHttpErrorReceive(event => { if (view.isRenderActive(token) && event?.request.isMainFrame()) view.fail('HTTP', 'HTTP load failed', undefined, event.response.getResponseCode()); })
   .onSslErrorEventReceive(event => { event?.handler.handleCancel(); if (view.isRenderActive(token)) view.fail('SSL', 'TLS certificate rejected'); })
   .onRenderExited(() => { if (view.isRenderActive(token)) view.renderExited(); })
+  .onGeolocationShow(event => { if (event) { if (view.isRenderActive(token)) view.geolocationShow(event); else event.geolocation.invoke(event.origin, false, false); } })
+  .onGeolocationHide(() => { if (view.isRenderActive(token)) view.geolocationHide(); })
   .onPermissionRequest(event => { if (event) { if (view.isRenderActive(token)) view.permissionRequest(event.request); else event.request.deny(); } })
   .onShowFileSelector(event => { if (!event) return true; if (view.isRenderActive(token)) return view.selectFile(event); event.result.handleFileList([]); return true; })
   .onFullScreenEnter(event => { if (view.isRenderActive(token)) view.enterFullscreen(event.handler, event.videoWidth || 0, event.videoHeight || 0); else event.handler.exitFullScreen(); })

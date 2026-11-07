@@ -59,6 +59,13 @@ class AndroidWebCapabilities(
         permissions = permissions,
     )
 
+    private val geolocation = AndroidWebGeolocationController(request, isAttached, permissions)
+
+    fun requestGeolocation(owner: WebView, origin: String?, callback: android.webkit.GeolocationPermissions.Callback?) =
+        geolocation.request(owner, origin, callback)
+
+    fun cancelGeolocation(owner: WebView) = geolocation.cancel(owner)
+
     /** 处理文件选择；true 表示接管结果回调，撤销以 null 完成本次请求。 */
     fun showFileChooser(
         webView: WebView?,
@@ -77,6 +84,7 @@ class AndroidWebCapabilities(
     /** 撤销指定实例的文件与媒体请求；系统选择器返回前保留关联门禁。 */
     fun release(owner: WebView) {
         val mediaRequest = mediaCapture.pendingRequest(owner)
+        geolocation.cancel(owner)
         fileChooser.release(owner)
         // 文件取消回执可同步发起新媒体请求，只撤销进入 release 时的请求。
         mediaCapture.release(owner, mediaRequest)
@@ -85,6 +93,7 @@ class AndroidWebCapabilities(
     /** 仅系统选择器在途时保留文件回执；媒体授权仍随页面暂停撤销。 */
     fun pauseForSystemPicker(owner: WebView): Boolean {
         val mediaRequest = mediaCapture.pendingRequest(owner)
+        geolocation.cancel(owner)
         val suspended = fileChooser.suspendForExternal(owner)
         if (!suspended) fileChooser.pause(owner)
         mediaCapture.release(owner, mediaRequest)
@@ -94,6 +103,7 @@ class AndroidWebCapabilities(
     /** 暂时隐藏只撤销在途请求，已交给当前文档的文件保留至文档结束。 */
     fun pause(owner: WebView) {
         val mediaRequest = mediaCapture.pendingRequest(owner)
+        geolocation.cancel(owner)
         fileChooser.pause(owner)
         mediaCapture.release(owner, mediaRequest)
     }
@@ -102,6 +112,7 @@ class AndroidWebCapabilities(
 
     /** 页面结束时撤销全部请求并注销 ActivityResult 入口；此后不可复用。 */
     fun destroy() {
+        geolocation.destroy()
         fileChooser.destroy()
         mediaCapture.destroy()
         permissions.destroy()
@@ -115,12 +126,12 @@ tailrec fun Context.findComponentActivity(): ComponentActivity? = when (this) {
     else -> null
 }
 
-/** 同步交付可恢复的平台警告，异常可为空；日志可能含页面地址。 */
+/** 平台权限流程只交付固定警告信息，不转发可能含页面数据的异常。 */
 fun logWebWarning(message: String, error: Throwable? = null) {
-    AppWebViewRuntime.log(AppWebViewLogLevel.WARNING, message, error)
+    AppWebViewRuntime.log(AppWebViewLogLevel.WARNING, message)
 }
 
-/** 同步交付平台错误，异常可为空；日志内容不自动脱敏。 */
+/** 平台权限流程只交付固定错误信息，不转发可能含页面数据的异常。 */
 fun logWebError(message: String, error: Throwable? = null) {
-    AppWebViewRuntime.log(AppWebViewLogLevel.ERROR, message, error)
+    AppWebViewRuntime.log(AppWebViewLogLevel.ERROR, message)
 }

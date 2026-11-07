@@ -12,6 +12,32 @@ class WebViewDiagnosticsTest {
     }
 
     @Test
+    fun `sensitive trace removes all document addresses and never downgrades`() {
+        val messages = mutableListOf<String>()
+        AppWebViewRuntime.installLogSink { _, message, error ->
+            assertEquals(null, error)
+            messages += message
+        }
+        val secret = "https://secret.test/page?token=private#fragment"
+        val trace = WebViewPerformanceTrace("android", "sensitive", sensitiveDiagnostics = true)
+        trace.created()
+        trace.load(WebViewContent.Url(secret))
+        trace.load(WebViewContent.Html("private HTML", secret))
+        trace.pageStarted(secret)
+        trace.firstContentVisible(secret)
+        trace.pageFinished(secret)
+        trace.pageFailed(WebViewLoadError(WebViewErrorKind.NETWORK, "private error", url = secret))
+        trace.released(secret)
+        assertTrue(messages.none { "secret.test" in it || "private" in it || "fragment" in it })
+        assertTrue(messages.any { "kind=NETWORK" in it })
+        assertTrue(messages.any { "html(length=12" in it })
+        val upgraded = WebViewPerformanceTrace("android", "upgraded")
+        upgraded.protectSensitiveDiagnostics()
+        upgraded.pageStarted(secret)
+        assertTrue(messages.none { "secret.test" in it })
+    }
+
+    @Test
     fun `media stop log distinguishes request from native completion`() {
         val messages = mutableListOf<String>()
         AppWebViewRuntime.installLogSink { _, message, _ -> messages += message }
