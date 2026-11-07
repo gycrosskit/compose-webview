@@ -52,6 +52,16 @@ class PublicationContracts(unittest.TestCase):
             'har': har['version'],
         }
         self.assertEqual(versions, {channel: versions['maven'] for channel in versions})
+        for path, current in (('CHANGELOG.md', versions['maven']),
+                              ('ohos/webview-native/CHANGELOG.md', versions['har'])):
+            sections = re.findall(r'^##[ \t]+(.*?)\n(.*?)(?=^#{1,2}[ \t]|\Z)',
+                                  (root / path).read_text(), re.MULTILINE | re.DOTALL)
+            current_sections = [(title, body) for title, body in sections
+                                if re.match(re.escape(current) + r'($|[ \t（(])', title)]
+            self.assertEqual(len(current_sections), 1, path)
+            title, body = current_sections[0]
+            self.assertEqual(title, current, f'{path}: use ## <version>; put release status in the body')
+            self.assertRegex(body, r'(?m)^-[ \t]+\S', path)
         self.assertIn(':tag => "native-#{s.version}"', (root / 'GYWebView.podspec').read_text())
         consumer = json.loads((root / 'ohos/verification-consumer/consumer/oh-package.json5').read_text())
         for manifest in (har, consumer):
