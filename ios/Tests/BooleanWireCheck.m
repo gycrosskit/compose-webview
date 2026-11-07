@@ -487,6 +487,19 @@ static void CheckHostPermissionExplanation(void) {
         request[@"permissionPresentation"] = presentation;
         Require([validation validRequest:request] == [@[@"NATIVE", @"HOST"] containsObject:presentation], @"Permission presentation wire accepted an invalid mode");
     }
+    [request removeObjectForKey:@"permissionPresentation"];
+    for (id sensitive in @[@YES, @NO, @1, @"true", NSNull.null]) {
+        request[@"sensitiveDiagnostics"] = sensitive;
+        Require([validation validRequest:request] == (sensitive == (__bridge id)kCFBooleanTrue || sensitive == (__bridge id)kCFBooleanFalse), @"Sensitive diagnostics must require a real JSON boolean");
+    }
+    PermissionRequestPage *sensitivePage = [[PermissionRequestPage alloc] initWithFrame:CGRectZero];
+    request[@"sensitiveDiagnostics"] = @YES;
+    [sensitivePage hrv_setPropWithKey:@"request" propValue:RequestJSON(request)];
+    Require([sensitivePage.request[@"sensitiveDiagnostics"] boolValue], @"Sensitive protection must be set before native load");
+    request[@"sensitiveDiagnostics"] = @NO;
+    [sensitivePage hrv_setPropWithKey:@"request" propValue:RequestJSON(request)];
+    Require([sensitivePage.request[@"sensitiveDiagnostics"] boolValue] && [sensitivePage.loadedRequest[@"sensitiveDiagnostics"] boolValue], @"Native request replacement must not downgrade sensitive diagnostics");
+    [sensitivePage hrv_removeFromSuperview];
     [validation hrv_removeFromSuperview];
     for (NSNumber *accepted in @[@NO, @YES]) {
         PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
@@ -621,6 +634,42 @@ static void CheckHostMediaPermissionContinuation(void) {
     }
     method_setImplementation(status, originalStatus);
     puts("PASS: HOST WebRTC continuations retain real frame/source/owner/AV authorization, cancellation and reentry gates");
+}
+static void CheckGeolocationPermissionContinuation(void) {
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000
+    if (@available(iOS 27.0, *)) {
+        for (NSString *mode in @[@"accept", @"child", @"decline", @"cross", @"disabled", @"hidden", @"inactive", @"owner", @"generation", @"cancel"]) {
+            PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+            WKWebView *owner = [[UploadWebView alloc] initWithFrame:CGRectZero]; page.webView = owner;
+            page.request = @{@"permissionPresentation": @"HOST", @"security": @{@"geolocationEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+            PermissionFrame *frame = [PermissionFrame new]; frame.probeWebView = owner;
+            if ([mode isEqual:@"child"]) frame.childFrame = YES;
+            if ([mode isEqual:@"cross"]) frame.probeURL = @"https://other.example/page";
+            if ([mode isEqual:@"disabled"]) page.request = @{@"security": @{}};
+            __block NSUInteger replies = 0, explanations = 0;
+            __block WKPermissionDecision decision = WKPermissionDecisionGrant;
+            page.onEvent = ^(id event) { if ([event[@"type"] isEqual:@"permissionExplanationRequested"]) {
+                explanations++; Require([event[@"permissions"] isEqual:@[@"LOCATION"]], @"Geolocation HOST lost LOCATION purpose");
+            }};
+            [page webView:owner requestGeolocationPermissionForOrigin:(WKSecurityOrigin *)[PermissionOrigin new] initiatedByFrame:(WKFrameInfo *)frame decisionHandler:^(WKPermissionDecision value) { replies++; decision = value; }];
+            NSString *requestId = page.permissionExplanationRequestId;
+            if (requestId) {
+                if ([mode isEqual:@"hidden"]) page.pageVisible = NO;
+                if ([mode isEqual:@"inactive"]) page.pageOwnerActive = @NO;
+                if ([mode isEqual:@"owner"]) frame.probeWebView = [[UploadWebView alloc] initWithFrame:CGRectZero];
+                if ([mode isEqual:@"generation"]) page.callbackGeneration++;
+                if ([mode isEqual:@"cancel"]) [page hrv_setPropWithKey:@"visible" propValue:@NO];
+                else Require(CompleteHostExplanation(page, requestId, [mode isEqual:@"decline"] ? @NO : @YES), @"Current geolocation HOST receipt failed");
+                Require(!CompleteHostExplanation(page, requestId, @YES), @"Old geolocation HOST receipt was accepted twice");
+            }
+            Require(replies == 1, @"Geolocation request must settle exactly once");
+            Require(decision == ([@[@"accept", @"child"] containsObject:mode] ? WKPermissionDecisionPrompt : WKPermissionDecisionDeny), @"Geolocation bypassed WebKit Prompt or current owner/source/visibility gates");
+            Require(explanations == ([@[@"cross", @"disabled"] containsObject:mode] ? 0 : 1), @"Invalid geolocation requested system explanation");
+            page.onEvent = nil; page.webView = nil; [page hrv_removeFromSuperview];
+        }
+        puts("PASS: HOST geolocation continuation preserves same-origin frames, native owner/generation, one-shot cancellation and WebKit Prompt (iOS27+)");
+    }
+#endif
 }
 static void CheckWebRTCPermissionSettings(void) {
     Method status = class_getClassMethod(AVCaptureDevice.class, @selector(authorizationStatusForMediaType:));
@@ -898,6 +947,7 @@ static void Check(void) {
     CheckPermissionExplanationPresentation();
     CheckHostPermissionExplanation();
     CheckHostMediaPermissionContinuation();
+    CheckGeolocationPermissionContinuation();
     CheckWebRTCPermissionSettings();
     puts("PHASE: System WebKit readiness");
     NSString *startupURL = [NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"] stringByReplacingOccurrencesOfString:@"/page" withString:@"/other"];

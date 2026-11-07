@@ -98,7 +98,7 @@ internal fun dispatchAppWebBridgeMessage(
     onMessage: (handlerName: String, data: String) -> Unit,
 ) {
     val message = parseAppWebBridgeMessage(raw) ?: return
-    WebViewDiagnostics.bridge(event = "message", handlerName = message.handlerName)
+    WebViewDiagnostics.bridge(event = "message")
     onMessage(message.handlerName, message.data)
 }
 
@@ -210,6 +210,6 @@ internal const val APP_WEB_BRIDGE_SCRIPT = """
             registerHandler: function(handlerName, callback) {}
           };
         }
-      } catch (e) { console.log('bridge inject error: ' + e); }
+      } catch (e) { console.log('bridge inject error'); }
     })();
 """

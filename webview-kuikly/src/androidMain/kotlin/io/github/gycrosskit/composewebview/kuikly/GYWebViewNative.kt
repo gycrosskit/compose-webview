@@ -31,6 +31,7 @@ class GYWebViewNative @JvmOverloads constructor(
     @Volatile private var request: WebViewRequest? = null
     private var onEvent: KuiklyRenderCallback? = null
     private var webView: WebView? = null
+    private var sensitiveDiagnostics = false
     private var destroyed = false
     private var crashed = false
     private var initialHtmlNavigation = false
@@ -55,7 +56,13 @@ class GYWebViewNative @JvmOverloads constructor(
     override fun setProp(propKey: String, propValue: Any): Boolean = when (propKey) {
         "request" -> {
             try {
-                val next = WebViewWire.decodeRequest(propValue as String)
+                val decoded = WebViewWire.decodeRequest(propValue as String)
+                sensitiveDiagnostics = sensitiveDiagnostics || decoded.sensitiveDiagnostics
+                val next = decoded.copy(sensitiveDiagnostics = sensitiveDiagnostics)
+                if (sensitiveDiagnostics) {
+                    webView?.let(WebViewDiagnostics::protectSensitiveDiagnostics)
+                    popupRouter?.protectSensitiveDiagnostics()
+                }
                 if (next != request && !destroyed) {
                     val previous = request
                     if (webView != null && !crashed && previous?.copy(navigationPolicy = next.navigationPolicy) == next) {
@@ -111,12 +118,13 @@ class GYWebViewNative @JvmOverloads constructor(
         val owner = webView?.takeUnless { destroyed || crashed }
         val result: Any? = when (method) {
             "reload" -> {
+                owner?.let { capabilities?.cancelGeolocation(it) }
                 if (crashed || request?.pageMessageChannels?.isNotEmpty() == true) { val current = request; releaseWebView(); if (current != null) createWebView(current) }
                 else owner?.reload()
                 owner != null || webView != null
             }
-            "goBack" -> if (exitFullscreen()) true else owner?.let { if (it.canGoBack()) { pageMessageChannels?.revoke(); it.goBack(); true } else false } ?: false
-            "goForward" -> owner?.let { if (it.canGoForward()) { pageMessageChannels?.revoke(); it.goForward(); true } else false } ?: false
+            "goBack" -> if (exitFullscreen()) true else owner?.let { if (it.canGoBack()) { pageMessageChannels?.revoke(); capabilities?.cancelGeolocation(it); it.goBack(); true } else false } ?: false
+            "goForward" -> owner?.let { if (it.canGoForward()) { pageMessageChannels?.revoke(); capabilities?.cancelGeolocation(it); it.goForward(); true } else false } ?: false
             "stopLoading" -> {
                 discardEarlyBridgeMessages = true
                 callbackGeneration++
@@ -176,7 +184,7 @@ class GYWebViewNative @JvmOverloads constructor(
         crashed = false
         val owner = WebView(context)
         webView = owner
-        WebViewDiagnostics.created(owner, "kuikly")
+        WebViewDiagnostics.created(owner, "kuikly", sensitiveDiagnostics = sensitiveDiagnostics)
         val hostActivity = context.findComponentActivity()
         capabilities = hostActivity?.let {
             AndroidWebCapabilities(it, { requireNotNull(request) }, { target -> target === webView && pageVisible && !destroyed && !crashed },
@@ -188,6 +196,7 @@ class GYWebViewNative @JvmOverloads constructor(
         }
         owner.applyWebViewConfig(current.settings, owner.settings.userAgentString, resources.configuration.fontScale,
             resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES, Color.TRANSPARENT)
+        owner.settings.setGeolocationEnabled(current.security.geolocationEnabled)
         owner.webViewClient = object : AppWebViewClient(object : AppWebViewClient.Listener {
             override fun onPageLoadStarted(url: String?) { if (owner !== webView || destroyed) return;
                 pageMessageChannels?.onPageStarted(url)
@@ -240,6 +249,11 @@ class GYWebViewNative @JvmOverloads constructor(
                 callback?.onReceiveValue(null)
                 return true
             }
+            override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: android.webkit.GeolocationPermissions.Callback?) {
+                if (owner !== webView || destroyed || !pageVisible) callback?.invoke(origin.orEmpty(), false, false)
+                else capabilities?.requestGeolocation(owner, origin, callback) ?: callback?.invoke(origin.orEmpty(), false, false)
+            }
+            override fun onGeolocationPermissionsHidePrompt() { if (owner === webView && !destroyed) capabilities?.cancelGeolocation(owner) }
             override fun onPermissionRequest(value: PermissionRequest?) { capabilities?.requestMedia(owner, value) ?: value?.deny() }
             override fun onPermissionRequestCanceled(value: PermissionRequest?) { if (owner === webView && !destroyed) capabilities?.cancelMedia(value) }
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean =

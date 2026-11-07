@@ -154,6 +154,7 @@ static BOOL GYRuleMatches(NSDictionary *rule, NSString *value) {
 @property(nonatomic, copy) NSDictionary *request;
 @property(nonatomic, copy) KuiklyRenderCallback onEvent;
 @property(nonatomic, assign) BOOL pageVisible;
+@property(nonatomic, assign) BOOL sensitiveDiagnostics;
 @property(nonatomic, assign) BOOL pictureInPicturePageActive;
 @property(nonatomic, copy) NSString *pictureInPictureDocumentToken;
 @property(nonatomic, copy) NSString *pictureInPictureFrameId;
@@ -245,6 +246,11 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         if (@available(iOS 18.4, *)) fileChooserSupported = YES;
         NSDictionary *request = GYPlatformRequest(input, fileChooserSupported);
         BOOL fileChooserUnavailable = request != input;
+        if (inputValid) self.sensitiveDiagnostics = self.sensitiveDiagnostics || GYBool(request, @"sensitiveDiagnostics", NO);
+        if (inputValid && self.sensitiveDiagnostics) {
+            NSMutableDictionary *protectedRequest = [request mutableCopy];
+            protectedRequest[@"sensitiveDiagnostics"] = @YES; request = protectedRequest;
+        }
         if (inputValid && [request isEqual:self.request]) return;
         NSMutableDictionary *oldPage = [self.request mutableCopy], *newPage = [request mutableCopy];
         [oldPage removeObjectForKey:@"navigationPolicy"]; [newPage removeObjectForKey:@"navigationPolicy"];
@@ -290,6 +296,8 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
 }
 - (BOOL)validRequest:(NSDictionary *)request {
     if (!request) return NO;
+    id sensitive = request[@"sensitiveDiagnostics"];
+    if (sensitive && (![sensitive isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)sensitive) != CFBooleanGetTypeID())) return NO;
     id presentation = request[@"permissionPresentation"];
     if (presentation && ![@[@"NATIVE", @"HOST"] containsObject:presentation]) return NO;
     NSDictionary *content = request[@"content"], *security = request[@"security"], *settings = request[@"settings"], *policy = request[@"navigationPolicy"];
@@ -299,7 +307,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     if (![type isEqual:@"url"] && ![type isEqual:@"html"]) return NO;
     if (!GYString(content[[type isEqual:@"url"] ? @"url" : @"html"])) return NO;
     if (![self validRules:request[@"blockedResourceRules"]] || ![self validRules:policy[@"blockedRules"]]) return NO;
-    for (NSString *key in @[@"appBridgeEnabled", @"pageBridgeEnabled", @"fileChooserEnabled", @"mediaCaptureEnabled"]) {
+    for (NSString *key in @[@"appBridgeEnabled", @"pageBridgeEnabled", @"fileChooserEnabled", @"mediaCaptureEnabled", @"geolocationEnabled"]) {
         id value = security[key];
         if (value && (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID())) return NO;
     }
@@ -348,7 +356,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     }
     NSRegularExpression *hostPattern = [NSRegularExpression regularExpressionWithPattern:@"^[\\p{L}\\p{N}]([\\p{L}\\p{N}-]*[\\p{L}\\p{N}])?(\\.[\\p{L}\\p{N}]([\\p{L}\\p{N}-]*[\\p{L}\\p{N}])?)*$" options:0 error:nil];
     for (NSString *suffix in origins[@"trustedHostSuffixes"]) if (![hostPattern firstMatchInString:GYHost(suffix) options:0 range:NSMakeRange(0, GYHost(suffix).length)]) return NO;
-    if (GYBool(security, @"appBridgeEnabled", NO) || GYBool(security, @"mediaCaptureEnabled", NO) || GYBool(security, @"fileChooserEnabled", NO)) {
+    if (GYBool(security, @"appBridgeEnabled", NO) || GYBool(security, @"mediaCaptureEnabled", NO) || GYBool(security, @"fileChooserEnabled", NO) || GYBool(security, @"geolocationEnabled", NO)) {
         if (![origins[@"urls"] count] && ![origins[@"trustedHostSuffixes"] count]) return NO;
     }
     if (GYBool(settings, @"allowFileAccess", NO) || GYBool(settings, @"allowContentAccess", NO)) return NO;
@@ -675,6 +683,25 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     if (failed) { self.navigationFailed = YES; [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES; [self emit:@{@"type": @"loadFailed", @"kind": @"HTTP", @"url": http.URL.absoluteString ?: NSNull.null, @"httpStatus": @(http.statusCode), @"message": @"", @"isMainFrame": @YES}]; }
     decision(failed ? WKNavigationResponsePolicyCancel : WKNavigationResponsePolicyAllow);
 }
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000
+- (void)webView:(WKWebView *)view requestGeolocationPermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame decisionHandler:(void (^)(WKPermissionDecision))decision API_AVAILABLE(ios(27.0)) {
+    if (@available(iOS 27.0, *)) {
+        NSString *source = GYSourceOrigin(origin);
+        NSUInteger generation = self.callbackGeneration;
+        BOOL (^current)(void) = ^BOOL {
+            return !self.released && self.webView == view && self.pageVisible && (!self.pageOwnerActive || self.pageOwnerActive.boolValue) &&
+                self.callbackGeneration == generation && frame.webView == view && GYBool(self.request[@"security"], @"geolocationEnabled", NO) &&
+                [self trusted:source] && [self trusted:view.URL.absoluteString] && [GYOrigin(source) isEqual:GYOrigin(view.URL.absoluteString)] &&
+                [GYFrameOrigin(frame) isEqual:GYOrigin(source)] && [GYOrigin(frame.request.URL.absoluteString) isEqual:GYOrigin(source)];
+        };
+        if (!current() || self.permissionExplanationCompletion) { decision(WKPermissionDecisionDeny); return; }
+        [self explainMediaPermissions:@[@"LOCATION"] fileCapture:NO completion:^(BOOL accepted) {
+            // 用途说明确认不等于定位授权，系统与站点授权继续交给 WebKit。
+            decision(accepted && current() ? WKPermissionDecisionPrompt : WKPermissionDecisionDeny);
+        }];
+    } else decision(WKPermissionDecisionDeny);
+}
+#endif
 - (void)webView:(WKWebView *)view requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision))decision API_AVAILABLE(ios(15.0)) {
     NSString *url = GYSourceOrigin(origin);
     BOOL allow = !self.released && view == self.webView && self.pageVisible && (!self.pageOwnerActive || self.pageOwnerActive.boolValue) && frame.isMainFrame && frame.webView == view &&
@@ -927,6 +954,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         self.permissionExplanationForFilePicker = fileCapture;
         self.permissionExplanationRequestId = NSUUID.UUID.UUIDString;
         NSMutableArray<NSString *> *permissions = [NSMutableArray array];
+        if ([mediaTypes containsObject:@"LOCATION"]) [permissions addObject:@"LOCATION"];
         if ([mediaTypes containsObject:AVMediaTypeVideo]) [permissions addObject:@"CAMERA"];
         if ([mediaTypes containsObject:AVMediaTypeAudio]) [permissions addObject:@"MICROPHONE"];
         [self emit:@{@"type": @"permissionExplanationRequested", @"requestId": self.permissionExplanationRequestId, @"permissions": permissions}];
@@ -935,10 +963,11 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     UIViewController *presenter = [self filePresenter];
     if (!presenter || !self.pageVisible || self.released) { completion(NO); return; }
     BOOL camera = [mediaTypes containsObject:AVMediaTypeVideo], microphone = [mediaTypes containsObject:AVMediaTypeAudio];
+    BOOL location = [mediaTypes containsObject:@"LOCATION"];
     BOOL chinese = [NSLocale.preferredLanguages.firstObject.lowercaseString hasPrefix:@"zh"];
-    NSString *name = chinese ? (camera && microphone ? @"相机和麦克风" : microphone ? @"麦克风" : @"相机") :
+    NSString *name = location ? (chinese ? @"位置" : @"Location") : chinese ? (camera && microphone ? @"相机和麦克风" : microphone ? @"麦克风" : @"相机") :
         (camera && microphone ? @"Camera and microphone" : microphone ? @"Microphone" : @"Camera");
-    NSString *scenario = chinese ? (fileCapture ? @"用于拍摄并上传照片或视频。" : @"用于当前网页的音视频采集或通话。") :
+    NSString *scenario = location ? (chinese ? @"用于当前网页获取附近位置。" : @"Used to obtain nearby location for the current webpage.") : chinese ? (fileCapture ? @"用于拍摄并上传照片或视频。" : @"用于当前网页的音视频采集或通话。") :
         (fileCapture ? @"Used to take and upload photos or videos." : @"Used for audio/video capture or calls on the current webpage.");
     NSString *message = chinese ? [NSString stringWithFormat:@"需要%@权限。\n\n%@拒绝后将无法使用对应功能，其他浏览功能不受影响。", name, scenario] :
         [NSString stringWithFormat:@"%@ access is needed.\n\n%@ Declining disables the corresponding feature; other browsing remains available.", name, scenario];

@@ -238,6 +238,7 @@ internal class AndroidWebPermissionController(
 internal enum class WebPermissionPurpose {
     FILE_CAPTURE,
     MEDIA_CAPTURE,
+    GEOLOCATION,
 }
 
 internal data class WebPermissionExplanation(
@@ -258,12 +259,15 @@ internal fun webPermissionExplanationResources(
 ): WebPermissionExplanationResources {
     val camera = Manifest.permission.CAMERA in permissions
     val microphone = Manifest.permission.RECORD_AUDIO in permissions
+    val location = Manifest.permission.ACCESS_COARSE_LOCATION in permissions
     val permissionName = when {
+        location -> R.string.web_permission_name_location
         camera && microphone -> R.string.web_permission_name_camera_microphone
         microphone -> R.string.web_permission_name_microphone
         else -> R.string.web_permission_name_camera
     }
     val scenario = when {
+        location -> R.string.web_permission_scenario_location
         purpose == WebPermissionPurpose.FILE_CAPTURE && microphone -> R.string.web_permission_scenario_upload_video
         purpose == WebPermissionPurpose.FILE_CAPTURE -> R.string.web_permission_scenario_upload_photo
         camera && microphone -> R.string.web_permission_scenario_av_call
@@ -271,6 +275,7 @@ internal fun webPermissionExplanationResources(
         else -> R.string.web_permission_scenario_video_capture
     }
     val impact = when {
+        location -> R.string.web_permission_impact_location
         camera && microphone -> R.string.web_permission_impact_camera_microphone
         microphone -> R.string.web_permission_impact_microphone
         else -> R.string.web_permission_impact_camera
@@ -311,6 +316,7 @@ internal fun Collection<String>.toWebViewPermissions(): Set<WebViewPermission> =
     when (permission) {
         Manifest.permission.CAMERA -> WebViewPermission.CAMERA
         Manifest.permission.RECORD_AUDIO -> WebViewPermission.MICROPHONE
+        Manifest.permission.ACCESS_COARSE_LOCATION -> WebViewPermission.LOCATION
         else -> null
     }
 }

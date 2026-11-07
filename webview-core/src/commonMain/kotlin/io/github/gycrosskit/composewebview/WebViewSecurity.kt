@@ -18,13 +18,15 @@ data class WebViewSecurity(
     val pageBridgeEnabled: Boolean = false,
     val fileChooserEnabled: Boolean = false,
     val mediaCaptureEnabled: Boolean = false,
+    /** 标准网页定位；只允许当前可信主页面及其同源 iframe。iOS 27+ 接说明后交回 WK，旧版沿系统授权。 */
+    val geolocationEnabled: Boolean = false,
 ) {
     init {
         require(!(appBridgeEnabled && pageBridgeEnabled)) {
             "应用 Bridge 与页面 Bridge 不能同时开启"
         }
         require(
-            !(appBridgeEnabled || fileChooserEnabled || mediaCaptureEnabled) || !trustedOrigins.isEmpty,
+            !(appBridgeEnabled || fileChooserEnabled || mediaCaptureEnabled || geolocationEnabled) || !trustedOrigins.isEmpty,
         ) { "开启 WebView 高权限能力前必须配置有效 HTTP(S) 来源" }
     }
 }

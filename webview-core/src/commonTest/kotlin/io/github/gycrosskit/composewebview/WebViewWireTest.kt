@@ -3,6 +3,19 @@ package io.github.gycrosskit.composewebview
 import kotlin.test.*
 
 class WebViewWireTest {
+    @Test fun sensitiveAndGeolocationWireAreExplicitAndStrict() {
+        val request = WebViewRequest(WebViewContent.Url("https://safe.example"),
+            security = WebViewSecurity(WebViewTrustPolicy(listOf("https://safe.example")), geolocationEnabled = true),
+            sensitiveDiagnostics = true)
+        val encoded = WebViewWire.encodeRequest(request)
+        assertEquals(request, WebViewWire.decodeRequest(encoded))
+        assertFails { WebViewWire.decodeRequest(encoded.replace("\"sensitiveDiagnostics\":true", "\"sensitiveDiagnostics\":\"true\"")) }
+        assertFails { WebViewWire.decodeRequest(encoded.replace("\"geolocationEnabled\":true", "\"geolocationEnabled\":1")) }
+        assertFails { WebViewSecurity(geolocationEnabled = true) }
+        assertEquals(WebViewEvent.PermissionSettingsRequired(setOf(WebViewPermission.LOCATION)),
+            WebViewWire.decodeEvent("""{"type":"permissionSettingsRequired","permissions":["LOCATION"]}"""))
+    }
+
     @Test fun permissionPresentationAndExplanationEventsRoundTrip() {
         val native = WebViewRequest(WebViewContent.Url("https://safe.example"))
         assertFalse(WebViewWire.encodeRequest(native).contains("permissionPresentation"))

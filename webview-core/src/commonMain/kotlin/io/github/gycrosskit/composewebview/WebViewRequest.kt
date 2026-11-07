@@ -24,6 +24,8 @@ data class WebViewRequest(
     val navigationPolicy: WebViewNavigationPolicy = WebViewNavigationPolicy(),
     val pageMessageChannels: Set<String> = emptySet(),
     val permissionPresentation: WebViewPermissionPresentation = WebViewPermissionPresentation.NATIVE,
+    /** 敏感页面仅记录元数据；原生实例开启后直到销毁不可恢复正文诊断。 */
+    val sensitiveDiagnostics: Boolean = false,
 ) {
     init {
         require(pageMessageChannels.size <= 16 && pageMessageChannels.all(::isValidPageMessageChannel)) {

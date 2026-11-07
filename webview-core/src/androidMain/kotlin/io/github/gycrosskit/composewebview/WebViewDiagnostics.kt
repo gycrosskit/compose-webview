@@ -7,7 +7,7 @@ import java.util.WeakHashMap
 /**
  * WebView 生命周期诊断和存活门禁的唯一入口。
  *
- * 日志中的 URL 保留查询参数值和 fragment，便于直接核对传入 WebView 的完整地址。
+ * 敏感实例在加载前登记，地址和异常正文不得进入日志。
  * 使用弱引用记录实例状态，不延长 WebView 生命周期；未由 [AppWebView] 创建的实例默认视为可用。
  */
 object WebViewDiagnostics {
@@ -22,14 +22,16 @@ object WebViewDiagnostics {
         role: String = "main",
         pageEnteredAtMillis: Long? = null,
         creationDurationMillis: Long? = null,
+        sensitiveDiagnostics: Boolean = false,
     ) {
         val trace = WebViewPerformanceTrace(
             platform = "android",
             instanceId = view.logId(),
             role = role,
             pageEnteredAtMillis = pageEnteredAtMillis,
+            sensitiveDiagnostics = sensitiveDiagnostics,
         )
-        viewStates[view] = DiagnosticState(trace = trace)
+        viewStates[view] = DiagnosticState(trace = trace, sensitive = sensitiveDiagnostics)
         trace.created(creationDurationMillis)
     }
 
@@ -55,7 +57,7 @@ object WebViewDiagnostics {
         log(
             AppWebViewLogLevel.WARNING,
             "release-step-failed id=${view.logId()} step=$step",
-            throwable,
+            throwable.takeUnless { isSensitive(view) },
         )
     }
 
@@ -108,10 +110,17 @@ object WebViewDiagnostics {
             buildString {
                 append("bridge-").append(event)
                 view?.let { append(" id=").append(it.logId()) }
-                handlerName?.let { append(" handler=").append(it.take(80)) }
+                handlerName?.takeUnless { view == null || isSensitive(view) }?.let { append(" handler=").append(it.take(80)) }
             },
         )
     }
+
+    /** 开启后保留到实例弱引用被回收；release 和迟到回调同样使用此标记。 */
+    fun protectSensitiveDiagnostics(view: WebView) {
+        viewStates[view]?.let { it.sensitive = true; it.trace.protectSensitiveDiagnostics() }
+    }
+
+    fun isSensitive(view: WebView): Boolean = viewStates[view]?.sensitive == true
 
     private fun WebView.logId(): String = Integer.toHexString(System.identityHashCode(this))
 
@@ -126,6 +135,7 @@ object WebViewDiagnostics {
     private data class DiagnosticState(
         val trace: WebViewPerformanceTrace,
         var released: Boolean = false,
+        var sensitive: Boolean = false,
     )
 }
 
