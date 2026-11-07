@@ -17,6 +17,7 @@ object WebViewWire {
             }
         })
         if (request.permissionPresentation != WebViewPermissionPresentation.NATIVE) put("permissionPresentation", request.permissionPresentation.name)
+        put("sensitiveDiagnostics", request.sensitiveDiagnostics)
         put("settings", settings(request.settings))
         put("security", buildJsonObject {
             val security = request.security
@@ -25,7 +26,7 @@ object WebViewWire {
                 put("trustedHostSuffixes", strings(security.trustedOrigins.trustedHostSuffixes))
             })
             put("appBridgeEnabled", security.appBridgeEnabled); put("pageBridgeEnabled", security.pageBridgeEnabled)
-            put("fileChooserEnabled", security.fileChooserEnabled); put("mediaCaptureEnabled", security.mediaCaptureEnabled)
+            put("fileChooserEnabled", security.fileChooserEnabled); put("mediaCaptureEnabled", security.mediaCaptureEnabled); put("geolocationEnabled", security.geolocationEnabled)
         })
         put("scripts", JsonArray(request.scripts.map { script -> buildJsonObject {
             put("id", script.id); put("source", script.source); put("injectionTime", script.injectionTime.name)
@@ -64,6 +65,7 @@ object WebViewWire {
                 WebViewTrustPolicy(origins.strings("urls"), origins.strings("trustedHostSuffixes").toSet()),
                 security.boolean("appBridgeEnabled", false), security.boolean("pageBridgeEnabled", false),
                 security.boolean("fileChooserEnabled", false), security.boolean("mediaCaptureEnabled", false),
+                security.boolean("geolocationEnabled", false),
             ),
             scripts = value["scripts"]?.jsonArray?.map { item ->
                 val script = item.jsonObject
@@ -82,6 +84,7 @@ object WebViewWire {
             ),
             pageMessageChannels = value.strings("pageMessageChannels").toSet(),
             permissionPresentation = value.enum("permissionPresentation", WebViewPermissionPresentation.NATIVE),
+            sensitiveDiagnostics = value.boolean("sensitiveDiagnostics", false),
         )
     }
 

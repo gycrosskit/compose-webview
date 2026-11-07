@@ -35,6 +35,34 @@ class GYWebViewNativeTest {
     )
 
     @Test
+    fun `sensitive diagnostics latch covers first load redirects failures replacement and stale callbacks`() {
+        val messages = mutableListOf<String>()
+        AppWebViewRuntime.installLogSink { _, message, error -> assertNull(error); messages += message }
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        try {
+            val sensitive = request.copy(content = WebViewContent.Url("https://trusted.test/page?token=private"), sensitiveDiagnostics = true)
+            native.setProp("request", WebViewWire.encodeRequest(sensitive))
+            val owner = native.getChildAt(0) as WebView
+            val client = Shadow.extract<RecordingWebView>(owner).webViewClient
+            client.onPageStarted(owner, "https://trusted.test/redirect?token=private", null)
+            client.onPageCommitVisible(owner, owner.url)
+            WebViewDiagnostics.load(owner, WebViewContent.Html("private body", "https://trusted.test/?private"))
+            WebViewDiagnostics.loadFailure(owner, WebViewLoadError(WebViewErrorKind.NETWORK, "private error", "https://trusted.test/?private"))
+            WebViewDiagnostics.releaseFailure(owner, "stop", IllegalStateException("private exception"))
+            native.setProp("request", WebViewWire.encodeRequest(request.copy(content = WebViewContent.Url("https://trusted.test/new?token=private"))))
+            assertTrue(WebViewDiagnostics.isSensitive(native.getChildAt(0) as WebView))
+            client.onPageFinished(owner, "https://trusted.test/stale?token=private")
+            native.call("reload", null, null)
+            native.onDestroy()
+            assertTrue(messages.none { "trusted.test" in it || "private" in it })
+            assertTrue(messages.any { "kind=NETWORK" in it })
+        } finally {
+            native.onDestroy()
+            AppWebViewRuntime.installLogSink { _, _, _ -> }
+        }
+    }
+
+    @Test
     fun `host permission explanation is one-shot and cancellation preserves a reentrant owner`() {
         val activityController = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         val native = GYWebViewNative(activityController.get())

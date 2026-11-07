@@ -3,8 +3,8 @@ package io.github.gycrosskit.composewebview
 import kotlin.time.TimeSource
 
 /**
- * 记录完整页面地址与单调时钟耗时，便于从日志直接还原 H5 现场。
- * 同一实例的调用由所属平台 UI 线程串行执行；日志保留完整 URL，宿主日志接收器应控制敏感数据留存。
+ * 记录页面生命周期耗时；敏感实例在格式化前删除地址，仅保留长度与稳定元数据。
+ * 同一实例的调用由所属平台 UI 线程串行执行。
  * @param platform 平台诊断标识。
  * @param instanceId 网页实例标识，不使用用户或设备标识。
  * @param role 实例角色，默认 main。
@@ -17,7 +17,21 @@ class WebViewPerformanceTrace(
     private val role: String = "main",
     private val pageEnteredAtMillis: Long? = null,
     private val nowMillis: () -> Long = ::webViewMonotonicNowMillis,
+    sensitiveDiagnostics: Boolean = false,
 ) {
+    private var sensitive = sensitiveDiagnostics
+
+    /** 同一实例只允许提升保护级别，导航和 reload 不恢复敏感正文。 */
+    fun protectSensitiveDiagnostics() { sensitive = true }
+
+    private fun describeUrl(value: String?): String =
+        if (sensitive) "<redacted> rawLength=${value?.length ?: 0}" else describeWebViewUrl(value)
+
+    private fun describeContent(content: WebViewContent): String = if (!sensitive) describeWebViewContent(content) else when (content) {
+        is WebViewContent.Url -> describeUrl(content.url)
+        is WebViewContent.Html -> "html(length=${content.html.length}, base=${describeUrl(content.baseUrl)})"
+    }
+
     private val createdAtMillis = nowMillis()
     private var loadRequestedAtMillis: Long? = null
     private var pageStartedAtMillis: Long? = null
@@ -39,7 +53,7 @@ class WebViewPerformanceTrace(
         pageStartedAtMillis = null
         log(
             AppWebViewLogLevel.INFO,
-            "load createdToLoadMs=${now.since(createdAtMillis)} target=${describeWebViewContent(content)}",
+            "load createdToLoadMs=${now.since(createdAtMillis)} target=${describeContent(content)}",
         )
     }
 
@@ -49,7 +63,7 @@ class WebViewPerformanceTrace(
         pageStartedAtMillis = now
         log(
             AppWebViewLogLevel.INFO,
-            "page-start loadToStartMs=${now.since(loadRequestedAtMillis)} url=${describeWebViewUrl(url)}",
+            "page-start loadToStartMs=${now.since(loadRequestedAtMillis)} url=${describeUrl(url)}",
         )
     }
 
@@ -59,7 +73,7 @@ class WebViewPerformanceTrace(
         log(
             AppWebViewLogLevel.INFO,
             "page-finish loadToFinishMs=${now.since(loadRequestedAtMillis)} " +
-                "startToFinishMs=${now.since(pageStartedAtMillis)} url=${describeWebViewUrl(url)}",
+                "startToFinishMs=${now.since(pageStartedAtMillis)} url=${describeUrl(url)}",
         )
     }
 
@@ -70,7 +84,7 @@ class WebViewPerformanceTrace(
             AppWebViewLogLevel.INFO,
             "first-visible entryToVisibleMs=${now.since(pageEnteredAtMillis)} " +
                 "loadToVisibleMs=${now.since(loadRequestedAtMillis)} " +
-                "startToVisibleMs=${now.since(pageStartedAtMillis)} url=${describeWebViewUrl(url)}",
+                "startToVisibleMs=${now.since(pageStartedAtMillis)} url=${describeUrl(url)}",
         )
     }
 
@@ -89,7 +103,7 @@ class WebViewPerformanceTrace(
             AppWebViewLogLevel.WARNING,
             "page-failed loadToFailureMs=${now.since(loadRequestedAtMillis)} " +
                 "kind=${error.kind} code=${error.errorCode} http=${error.httpStatus} " +
-                "url=${describeWebViewUrl(error.url)}",
+                "url=${describeUrl(error.url)}",
         )
     }
 
@@ -98,7 +112,7 @@ class WebViewPerformanceTrace(
         val now = nowMillis()
         log(
             AppWebViewLogLevel.INFO,
-            "release lifetimeMs=${now.since(createdAtMillis)} url=${describeWebViewUrl(url)}",
+            "release lifetimeMs=${now.since(createdAtMillis)} url=${describeUrl(url)}",
         )
     }
 

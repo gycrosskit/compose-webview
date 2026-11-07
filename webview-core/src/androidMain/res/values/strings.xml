@@ -15,4 +15,7 @@
     <string name="web_permission_impact_camera">未授权时，将无法使用网页拍照或视频画面功能，但仍可浏览网页和从相册选择图片。</string>
     <string name="web_permission_impact_microphone">未授权时，将无法使用网页录音或通话功能，但仍可浏览网页。</string>
     <string name="web_permission_impact_camera_microphone">未授权时，将无法使用网页拍摄、视频画面或录音功能，但仍可浏览网页。</string>
+    <string name="web_permission_name_location">位置权限</string>
+    <string name="web_permission_scenario_location">用于当前网页获取附近位置。</string>
+    <string name="web_permission_impact_location">未授权时，网页定位不可用，其他浏览功能不受影响。</string>
 </resources>

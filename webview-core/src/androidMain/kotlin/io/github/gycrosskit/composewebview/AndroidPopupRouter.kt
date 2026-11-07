@@ -56,7 +56,7 @@ class AndroidPopupRouter(
             close(popup)
         }
         popup = WebView(parent.context).apply {
-            WebViewDiagnostics.created(this, "popup")
+            WebViewDiagnostics.created(this, "popup", sensitiveDiagnostics = WebViewDiagnostics.isSensitive(parent))
             settings.javaScriptEnabled = true
             settings.allowFileAccess = false
             settings.allowContentAccess = false
@@ -104,6 +104,9 @@ class AndroidPopupRouter(
         runCatching { target.webViewClient = android.webkit.WebViewClient() }
         runCatching { target.destroy() }
     }
+
+    /** 父实例提升保护时，已存在的临时窗口也必须先于释放日志脱敏。 */
+    fun protectSensitiveDiagnostics() = popups.forEach(WebViewDiagnostics::protectSensitiveDiagnostics)
 
     /** 页面退出时释放全部临时弹窗；所有调用位于 UI 线程。 */
     fun release() = popups.toList().forEach(::close)

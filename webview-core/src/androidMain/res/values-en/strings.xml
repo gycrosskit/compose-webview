@@ -15,4 +15,7 @@
     <string name="web_permission_impact_camera">Without permission, web photo and video features are unavailable. You can still browse and choose an image from your gallery.</string>
     <string name="web_permission_impact_microphone">Without permission, web recording and calling features are unavailable. You can still browse the page.</string>
     <string name="web_permission_impact_camera_microphone">Without permission, web capture, video, and recording features are unavailable. You can still browse the page.</string>
+    <string name="web_permission_name_location">Location permission</string>
+    <string name="web_permission_scenario_location">Used to obtain nearby location for the current page.</string>
+    <string name="web_permission_impact_location">Without permission, web location is unavailable. Other browsing is unaffected.</string>
 </resources>
