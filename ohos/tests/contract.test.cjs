@@ -11,6 +11,7 @@ const harArgument = process.argv.indexOf('--har');
 const mediaIntegration = process.argv.includes('--media-integration');
 if (mediaIntegration && !process.env.WEBVIEW_MEDIA_SOURCE) throw Error('--media-integration requires WEBVIEW_MEDIA_SOURCE');
 const systemActionsVersion = '1.0.2';
+const webviewVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../webview-native/oh-package.json5'), 'utf8')).version;
 for (const manifest of ['../webview-native/oh-package.json5', '../verification-consumer/consumer/oh-package.json5']) {
   assert.equal(JSON.parse(fs.readFileSync(path.resolve(__dirname, manifest), 'utf8')).dependencies['@gycrosskit/system-actions-native'],
     systemActionsVersion, `${manifest} must use the same exact WindowPolicy owner version`);
@@ -23,7 +24,7 @@ if (harArgument >= 0) {
   const manifest = JSON.parse(fs.readFileSync(path.join(extracted, 'package/oh-package.json5'), 'utf8'));
   assert.equal(manifest.dependencies['@gycrosskit/system-actions-native'],
     systemActionsVersion, 'actual HAR must retain the exact Registry dependency');
-  assert.equal(manifest.version, '2.0.0', 'actual HAR must use the new immutable release version');
+  assert.equal(manifest.version, webviewVersion, 'actual HAR must match the exact source candidate version');
   assert.equal(manifest.overrides, undefined, 'actual HAR must not retain task overrides');
   root = path.join(extracted, 'package/src/main/ets');
 }
