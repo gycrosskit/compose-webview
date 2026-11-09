@@ -1,5 +1,13 @@
 # 更新记录
 
+## 2.1.1
+
+状态：Maven 候选，发布与精确远程消费待本轮回执确认。
+
+- Android 安全 App Bridge 传输不受支持时报告 `CapabilityUnsupported(APP_BRIDGE)`，同一物理 WebView 一次；仍继续加载网页，不降级来源校验。提示样式、关闭交互与页面去重由宿主负责。
+- 新增 `WebViewCapability.APP_BRIDGE`；穷举该枚举的调用方需补充分支。支持该能力的设备、普通网页和关闭 JavaScript 的页面行为保持。
+- 仅 Maven/KMP 升级到 `2.1.1`；iOS Git Pod 保留 `native-2.1.0`，私有 OHPM/HAR 保留 `har-2.1.0`。既有 Tag、归档与摘要保持不变，设备验收单独记录。
+
 ## 2.1.0
 
 状态：候选，发布与远程消费以各渠道回执为准。

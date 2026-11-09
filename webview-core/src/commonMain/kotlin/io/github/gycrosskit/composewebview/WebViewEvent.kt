@@ -124,6 +124,8 @@ enum class WebViewCapability {
     FILE_CHOOSER,
     FILE_CAPTURE,
     PAGE_MESSAGE_CHANNEL,
+    /** 安全 App Bridge 传输不可用；网页仍可继续加载。 */
+    APP_BRIDGE,
 }
 
 /** H5 可以申请、且需要在设置提示中向用户解释的系统能力。 */

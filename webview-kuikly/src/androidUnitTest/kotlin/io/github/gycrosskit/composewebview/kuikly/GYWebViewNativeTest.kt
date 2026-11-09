@@ -6,6 +6,7 @@ import android.webkit.ValueCallback
 import androidx.activity.ComponentActivity
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
 import android.webkit.WebView
+import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import io.github.gycrosskit.composewebview.*
 import org.junit.Assert.*
@@ -21,7 +22,7 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowWebView
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], shadows = [RecordingWebView::class, LegacyWebViewFeatures::class])
+@Config(sdk = [28], shadows = [RecordingWebView::class, LegacyWebViewFeatures::class, BridgeWebViewCompat::class])
 class GYWebViewNativeTest {
     private val finished = "window.finished=(window.finished||0)+1;"
     private val request = WebViewRequest(
@@ -33,6 +34,71 @@ class GYWebViewNativeTest {
             WebViewScript("finished", finished, WebViewScriptInjectionTime.DOCUMENT_FINISHED),
         ),
     )
+
+    @Test
+    fun `unsupported app bridge reports once after load and leaves the document working`() {
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        val events = mutableListOf<Map<*, *>>()
+        native.setProp("onEvent", { raw: Any? -> events += raw as Map<*, *> } as KuiklyRenderCallback)
+        val trusted = request.copy(security = request.security.copy(appBridgeEnabled = true))
+        native.setProp("request", WebViewWire.encodeRequest(trusted))
+        val owner = native.getChildAt(0) as WebView
+        val client = Shadow.extract<RecordingWebView>(owner).webViewClient
+        assertEquals("https://trusted.test/page", owner.url)
+        assertTrue(events.isEmpty())
+        client.onPageCommitVisible(owner, owner.url)
+        client.onPageFinished(owner, owner.url)
+        client.onPageStarted(owner, owner.url, null)
+        client.onPageFinished(owner, owner.url)
+        assertEquals(1, events.count { it["capability"] == "APP_BRIDGE" })
+        assertTrue(events.none { it["type"] == "loadFailed" })
+        assertTrue(events.any { it["type"] == "pageFinished" })
+        native.setProp("request", WebViewWire.encodeRequest(trusted.copy(content = WebViewContent.Url("https://trusted.test/new"))))
+        client.onPageFinished(owner, owner.url)
+        assertEquals(1, events.count { it["capability"] == "APP_BRIDGE" })
+        val replacement = native.getChildAt(0) as WebView
+        Shadow.extract<RecordingWebView>(replacement).webViewClient.onPageFinished(replacement, replacement.url)
+        assertEquals(2, events.count { it["capability"] == "APP_BRIDGE" })
+        native.onDestroy()
+    }
+
+    @Test
+    fun `untrusted disabled javascript and ordinary pages do not report app bridge unsupported`() {
+        val bridgeSecurity = request.security.copy(appBridgeEnabled = true)
+        val untrusted = request.copy(
+            content = WebViewContent.Url("https://other.test/page"),
+            security = bridgeSecurity,
+            navigationPolicy = WebViewNavigationPolicy(
+                navigationOrigins = WebViewNavigationOrigins(exactOrigins = setOf("https://other.test"))),
+        )
+        for (candidate in listOf(request, request.copy(settings = WebViewSettings(), security = bridgeSecurity), untrusted)) {
+            val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+            val events = mutableListOf<Map<*, *>>()
+            native.setProp("onEvent", { raw: Any? -> events += raw as Map<*, *> } as KuiklyRenderCallback)
+            native.setProp("request", WebViewWire.encodeRequest(candidate))
+            val owner = native.getChildAt(0) as WebView
+            Shadow.extract<RecordingWebView>(owner).webViewClient.onPageFinished(owner, owner.url)
+            assertTrue(events.none { it["capability"] == "APP_BRIDGE" })
+            native.onDestroy()
+        }
+    }
+
+    @Test
+    fun `supported app bridge does not report unsupported`() {
+        LegacyWebViewFeatures.appBridgeSupported = true
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        try {
+            val events = mutableListOf<Map<*, *>>()
+            native.setProp("onEvent", { raw: Any? -> events += raw as Map<*, *> } as KuiklyRenderCallback)
+            native.setProp("request", WebViewWire.encodeRequest(request.copy(security = request.security.copy(appBridgeEnabled = true))))
+            val owner = native.getChildAt(0) as WebView
+            Shadow.extract<RecordingWebView>(owner).webViewClient.onPageFinished(owner, owner.url)
+            assertTrue(events.none { it["capability"] == "APP_BRIDGE" })
+        } finally {
+            native.onDestroy()
+            LegacyWebViewFeatures.appBridgeSupported = false
+        }
+    }
 
     @Test
     fun `sensitive diagnostics latch covers first load redirects failures replacement and stale callbacks`() {
@@ -258,9 +324,10 @@ class RecordingWebView : ShadowWebView() {
 @Implements(value = WebViewFeature::class, isInAndroidSdk = false)
 class LegacyWebViewFeatures {
     companion object {
+        var appBridgeSupported = false
         @JvmStatic
         @Implementation
-        fun isFeatureSupported(feature: String): Boolean = false
+        fun isFeatureSupported(feature: String): Boolean = appBridgeSupported && feature == WebViewFeature.WEB_MESSAGE_LISTENER
     }
 }
 
@@ -271,4 +338,15 @@ private class RecordingPermissionRequest : PermissionRequest() {
     override fun getResources(): Array<String> = arrayOf(RESOURCE_VIDEO_CAPTURE)
     override fun grant(resources: Array<String>) { grants++ }
     override fun deny() { denials++ }
+}
+
+/** 仅替代系统消息传输注册；能力开关和 Native 加载、事件逻辑仍走生产代码。 */
+@Implements(value = WebViewCompat::class, isInAndroidSdk = false)
+class BridgeWebViewCompat {
+    companion object {
+        @JvmStatic @Implementation
+        fun addWebMessageListener(owner: WebView, name: String, rules: Set<String>, listener: WebViewCompat.WebMessageListener) = Unit
+        @JvmStatic @Implementation
+        fun removeWebMessageListener(owner: WebView, name: String) = Unit
+    }
 }

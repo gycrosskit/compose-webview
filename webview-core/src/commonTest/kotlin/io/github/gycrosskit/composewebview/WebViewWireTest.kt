@@ -89,6 +89,11 @@ class WebViewWireTest {
         assertFails { WebViewWire.decodeRequest("""{"content":{"type":"other"}}""") }
         assertFails { WebViewWire.decodeRequest("""{"content":{"type":"url","url":"https://safe.example"},"navigationPolicy":{"allowedOrigins":["https://safe.example:0"]}}""") }
     }
+    @Test fun unsupportedAppBridgeRoundTripsWithoutChangingLoadEvents() {
+        val event = WebViewEvent.CapabilityUnsupported(WebViewCapability.APP_BRIDGE)
+        assertEquals(event, WebViewWire.decodeEvent("""{"type":"capabilityUnsupported","capability":"APP_BRIDGE"}"""))
+        assertEquals(mapOf("type" to "capabilityUnsupported", "capability" to "APP_BRIDGE"), WebViewWire.eventValues(event))
+    }
     @Test fun nativeEventDictionariesDecodeAndRejectInvalidProgress() {
         assertEquals(WebViewEvent.BridgeMessage(WebViewBridgeMessage("sample", "{\"value\":1}")), WebViewWire.decodeEvent("""{"type":"bridgeMessage","handlerName":"sample","data":"{\"value\":1}"}"""))
         assertEquals(WebViewEvent.HistoryChanged(true, false, null), WebViewWire.decodeEvent("""{"type":"historyChanged","canGoBack":true,"canGoForward":false,"url":null}"""))
