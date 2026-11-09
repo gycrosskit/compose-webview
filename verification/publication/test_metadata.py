@@ -51,7 +51,14 @@ class PublicationContracts(unittest.TestCase):
             'verify-consumer': version('scripts/verify.sh', r'-PwebViewVersion=([^\s]+)'),
             'har': har['version'],
         }
-        self.assertEqual(versions, {channel: versions['maven'] for channel in versions})
+        self.assertEqual(versions, {
+            'maven': '2.1.1',
+            'maven-package': '2.1.1',
+            'maven-consumer': '2.1.1',
+            'verify-consumer': '2.1.1',
+            'pod': '2.1.0',
+            'har': '2.1.0',
+        })
         for path, current in (('CHANGELOG.md', versions['maven']),
                               ('ohos/webview-native/CHANGELOG.md', versions['har'])):
             sections = re.findall(r'^##[ \t]+(.*?)\n(.*?)(?=^#{1,2}[ \t]|\Z)',

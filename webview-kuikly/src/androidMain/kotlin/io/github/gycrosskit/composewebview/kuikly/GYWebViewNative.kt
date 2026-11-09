@@ -13,6 +13,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.widget.FrameLayout
+import androidx.webkit.WebViewFeature
 import androidx.lifecycle.Lifecycle
 import com.tencent.kuikly.core.render.android.export.IKuiklyRenderViewExport
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
@@ -40,6 +41,7 @@ class GYWebViewNative @JvmOverloads constructor(
     private var documentToken = UUID.randomUUID().toString()
     private var discardEarlyBridgeMessages = false
     private var pageVisible = true
+    private var appBridgeUnsupportedReported = false
     private var finishedScriptsInjected = false
     private var fullscreenHost: AndroidWebFullscreenHost? = null
     private var capabilities: AndroidWebCapabilities? = null
@@ -182,6 +184,7 @@ class GYWebViewNative @JvmOverloads constructor(
             return
         }
         crashed = false
+        appBridgeUnsupportedReported = false
         val owner = WebView(context)
         webView = owner
         WebViewDiagnostics.created(owner, "kuikly", sensitiveDiagnostics = sensitiveDiagnostics)
@@ -321,6 +324,12 @@ class GYWebViewNative @JvmOverloads constructor(
         if (finished && !finishedScriptsInjected) {
             finishedScriptsInjected = true
             current.finishedScriptsAt(owner.url).forEach { owner.evaluateJavascript(it.source, null) }
+        }
+        // 在文档回调中报告，避免创建节点时宿主尚未绑定 controller；不阻断网页或降级来源校验。
+        if (!appBridgeUnsupportedReported && current.canUseAppBridgeAt(owner.url) &&
+            !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            appBridgeUnsupportedReported = true
+            emit(WebViewEvent.CapabilityUnsupported(WebViewCapability.APP_BRIDGE))
         }
     }
 
