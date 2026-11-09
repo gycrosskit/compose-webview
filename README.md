@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-> 候选版本 `2.1.0`：Maven、Git Pod `GYWebView`（`native-2.1.0`）与私有 OHPM/HAR（`har-2.1.0`）。文件选择改由宿主注入，未接线时取消请求；各渠道发布与精确远程消费状态以对应 Release 为准，设备验收单独记录。
+> Maven 候选版本 `2.1.1`：Android 安全 App Bridge 不可用时报告能力不足，网页继续加载。iOS Git Pod 保持 `native-2.1.0`，私有 OHPM/HAR 保持 `har-2.1.0`；本轮不重发未修改的原生渠道。发布与精确远程消费状态以对应 Release 为准，设备验收单独记录。
 
 Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。 各渠道发布与精确消费状态见对应 Release，既有验收按原 tag 保留。
 
@@ -96,6 +96,8 @@ classDiagram
 
 源码入口：[请求与安全](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt)、[导航规则](webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt)、[KuiklyCompose 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/AppWebView.kt)、[raw 入口](webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt)、[Android native](webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt)。controller 属于当前节点，命令异步返回。
 
+Android 启用 JavaScript 与可信 App Bridge 的页面，在内核不支持 `WEB_MESSAGE_LISTENER` 时报告 `CapabilityUnsupported(APP_BRIDGE)`，同一物理 WebView 一次，网页继续加载；宿主负责提示与关闭交互。升级到 Maven `2.1.1` 时，穷举 `WebViewCapability` 的 `when` 需处理新增的 `APP_BRIDGE`。普通页面和支持该能力的设备不报告此事件，来源校验保持不变。
+
 具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，既有 Maven / Git Pod / HAR `1.1.0` 的范围以对应 Tag 为准，当前通道合同如下：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
 
 ## 平台与模块
@@ -127,11 +129,11 @@ dependencyResolutionManagement {
 }
 ```
 
-本轮 Maven、Git Pod/HAR 候选统一使用 `2.1.0`；以下为精确依赖示例，实际可用性以对应渠道的 Release 与消费收据为准。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
+本轮 Maven 候选为 `2.1.1`，Git Pod/HAR 保持 `2.1.0`；以下为精确依赖示例，实际可用性以对应渠道的 Release 与消费收据为准。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.1.0")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.1.1")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖：
