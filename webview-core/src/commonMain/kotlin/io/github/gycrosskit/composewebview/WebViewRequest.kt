@@ -26,8 +26,13 @@ data class WebViewRequest(
     val permissionPresentation: WebViewPermissionPresentation = WebViewPermissionPresentation.NATIVE,
     /** 敏感页面仅记录元数据；原生实例开启后直到销毁不可恢复正文诊断。 */
     val sensitiveDiagnostics: Boolean = false,
+    /** HTTP 请求的精确来源；null 保留历史行为，空集合拒绝 HTTP。不是内核网络安全边界。 */
+    val allowedHttpOrigins: Set<String>? = null,
 ) {
     init {
+        require(allowedHttpOrigins == null || allowedHttpOrigins.all { it.toHttpOrigin()?.scheme == "http" }) {
+            "allowedHttpOrigins requires valid HTTP origins"
+        }
         require(pageMessageChannels.size <= 16 && pageMessageChannels.all(::isValidPageMessageChannel)) {
             "Invalid page message channel"
         }
@@ -35,4 +40,12 @@ data class WebViewRequest(
             "Page message channels require an initial HTTP(S) URL"
         }
     }
+}
+
+/** 仅约束可观察的 HTTP 请求；HTTPS 以及非网络地址沿用其他门禁。 */
+fun WebViewRequest.allowsHttpRequest(url: String): Boolean {
+    val origins = allowedHttpOrigins ?: return true
+    if (!url.trim().startsWith("http:", ignoreCase = true)) return true
+    val target = url.toHttpOrigin() ?: return false
+    return origins.any { it.toHttpOrigin() == target }
 }

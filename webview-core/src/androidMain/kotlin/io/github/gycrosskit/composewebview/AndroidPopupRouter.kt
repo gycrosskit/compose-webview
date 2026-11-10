@@ -43,12 +43,12 @@ class AndroidPopupRouter(
                 hasUserGesture = hasUserGesture,
                 target = WebViewNavigationTarget.NEW_WINDOW,
             )
-            val allowed = !current.shouldBlockMainFrameNavigation(target, true) &&
+            val allowed = current.allowsHttpRequest(target) && !current.shouldBlockMainFrameNavigation(target, true) &&
                 (current.navigationPolicy.navigationOrigins == null || current.allowsNavigation(navigation))
             val decision = onNavigation(navigation)
             if (popup !in popups || !parent.isActiveAppWebView() || !parent.isShown) return
             val latest = request()
-            val stillAllowed = !latest.shouldBlockMainFrameNavigation(target, true) &&
+            val stillAllowed = latest.allowsHttpRequest(target) && !latest.shouldBlockMainFrameNavigation(target, true) &&
                 (latest.navigationPolicy.navigationOrigins == null || latest.allowsNavigation(navigation))
             if (allowed && stillAllowed && decision == WebViewNavigationDecision.ALLOW && popup in popups && parent.isActiveAppWebView() && parent.isShown) {
                 parent.loadUrl(target)
