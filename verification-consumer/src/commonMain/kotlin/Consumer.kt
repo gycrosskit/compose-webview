@@ -11,6 +11,7 @@ import io.github.gycrosskit.composewebview.WebViewWire
 fun consumerRequest() = WebViewRequest(
     WebViewContent.Url("https://example.com/"),
     navigationPolicy = WebViewNavigationPolicy(allowedOrigins = setOf("https://example.com")),
+    allowedHttpOrigins = setOf("http://legacy.example:8080"),
     permissionPresentation = WebViewPermissionPresentation.HOST,
 )
 fun captureUnsupported() = WebViewEvent.CapabilityUnsupported(WebViewCapability.FILE_CAPTURE)
