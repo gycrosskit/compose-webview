@@ -1056,11 +1056,31 @@ static void Check(void) {
         Require(result.integerValue == (blocked ? 2 : 1), [NSString stringWithFormat:@"Image rule %@ data=%@ gave %@", mode, dataImage, result]);
         [images hrv_removeFromSuperview];
     }
+    for (NSNumber *allow in @[@NO, @YES]) {
+        GYWebView *http = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+        [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:http];
+        NSString *html = [NSString stringWithFormat:@"<img src='%@?http-policy-%@' onload='window.imageResult=1' onerror='window.imageResult=2'>", imageURL, allow];
+        [http hrv_setPropWithKey:@"request" propValue:RequestJSON(@{@"content": @{@"type": @"html", @"html": html, @"baseUrl": @"https://safe.example/"}, @"settings": @{@"javaScriptEnabled": @YES, @"mixedContentPolicy": @"ALWAYS_ALLOW"}, @"allowedHttpOrigins": allow.boolValue ? @[fixture] : @[]})];
+        __block NSNumber *result = nil;
+        WaitUntil(^BOOL { [http.webView evaluateJavaScript:@"window.imageResult || 0" completionHandler:^(id value, NSError *error) { if ([value integerValue]) result = value; }]; return result != nil; }, @"HTTP policy first load did not complete");
+        Require(result.integerValue == (allow.boolValue ? 1 : 2), @"HTTP resource rule first-load decision mismatch");
+        [http hrv_removeFromSuperview];
+    }
     GYWebView *view = [[GYWebView alloc] initWithFrame:CGRectZero];
     view.request = @{@"content": @{@"type": @"url", @"url": @"http://shop.example:8080/page"},
         @"security": @{@"appBridgeEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"http://shop.example:8080"], @"trustedHostSuffixes": @[]}}};
     Require([view validRequest:view.request] && [view trusted:@"http://shop.example:8080/next"] &&
         ![view trusted:@"https://shop.example:8080/next"], @"HTTP exact trust must preserve scheme and port");
+    for (NSArray *origins in @[@[], @[@"http://allowed.test:80"]]) {
+        NSDictionary *request = @{@"content": @{@"type": @"url", @"url": @"https://safe.example"}, @"allowedHttpOrigins": origins};
+        Require([view validRequest:request], @"HTTP origin array rejected");
+        Require(GYHttpRequestAllowed(request, @"http://allowed.test/a") == (origins.count > 0), @"HTTP origin default port mismatch");
+        for (NSString *url in @[@"http://other.test", @"http://allowed.test:81", @"http://user@allowed.test"])
+            Require(!GYHttpRequestAllowed(request, url), @"HTTP origin crossed authority boundary");
+        Require(GYHttpRequestAllowed(request, @"https://other.test"), @"HTTP policy restricted HTTPS");
+    }
+    for (id origins in @[@"http://allowed.test", NSNull.null, @[@"https://allowed.test"], @[@"http://user@allowed.test"]])
+        Require(![view validRequest:@{@"content": @{@"type": @"url", @"url": @"https://safe.example"}, @"allowedHttpOrigins": origins}], @"Malformed HTTP origins accepted");
     NSDictionary *chooserInput = @{@"content": @{@"type": @"url", @"url": @"https://safe.example"},
         @"security": @{@"fileChooserEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
     NSDictionary *oldSystem = GYPlatformRequest(chooserInput, NO);

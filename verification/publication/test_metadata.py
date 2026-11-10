@@ -52,12 +52,12 @@ class PublicationContracts(unittest.TestCase):
             'har': har['version'],
         }
         self.assertEqual(versions, {
-            'maven': '2.1.1',
-            'maven-package': '2.1.1',
-            'maven-consumer': '2.1.1',
-            'verify-consumer': '2.1.1',
-            'pod': '2.1.0',
-            'har': '2.1.0',
+            'maven': '2.2.0',
+            'maven-package': '2.2.0',
+            'maven-consumer': '2.2.0',
+            'verify-consumer': '2.2.0',
+            'pod': '2.2.0',
+            'har': '2.2.0',
         })
         for path, current in (('CHANGELOG.md', versions['maven']),
                               ('ohos/webview-native/CHANGELOG.md', versions['har'])):

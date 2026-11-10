@@ -134,6 +134,7 @@ export interface NavigationOrigins { exactOrigins: string[]; hostSuffixOrigins: 
  */
 export interface WebViewRequest {
   content: WebViewContent; settings: WebViewSettings; security: WebViewSecurity;
+  allowedHttpOrigins?: string[];
   scripts: WebViewScript[]; blockedResourceRules: WebViewUrlRule[]; navigationPolicy: NavigationPolicy;
   pageMessageChannels?: string[];
   permissionPresentation?: string;
@@ -193,7 +194,13 @@ export function matches(value: string, rule: WebViewUrlRule): boolean {
 }
 
 /** 同步检查主帧/子资源导航与 Bridge 来源；不启动外部 Ability。 */
+export function httpRequestAllowed(value: string, request: WebViewRequest): boolean {
+  if (request.allowedHttpOrigins === undefined || !/^http:/i.test(value.trim())) return true;
+  const target = origin(value);
+  return target !== '' && request.allowedHttpOrigins.some(item => origin(item) === target);
+}
 export function navigationAllowed(value: string, mainFrame: boolean, request: WebViewRequest): boolean {
+  if (!httpRequestAllowed(value, request)) return false;
   try {
     const parsed = new url.URL(value);
     const scheme = parsed.protocol.replace(':', '').toLowerCase();
@@ -239,6 +246,8 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
     !Array.isArray(request.navigationPolicy.blockedRules) || !Array.isArray(request.scripts) || !Array.isArray(request.blockedResourceRules)) {
     throw new Error('Invalid WebViewRequest');
   }
+  if (request.allowedHttpOrigins !== undefined && (!Array.isArray(request.allowedHttpOrigins) ||
+    request.allowedHttpOrigins.some(item => typeof item !== 'string' || !/^http:/i.test(item.trim()) || !origin(item)))) throw new Error('Invalid HTTP origins');
   if (request.permissionPresentation !== undefined && request.permissionPresentation !== 'NATIVE' && request.permissionPresentation !== 'HOST') throw new Error('Invalid permission presentation');
   if (request.pageMessageChannels !== undefined) {
     if (!Array.isArray(request.pageMessageChannels) || request.pageMessageChannels.some(item => typeof item !== 'string')) {

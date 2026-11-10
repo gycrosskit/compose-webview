@@ -7,7 +7,7 @@ import { window } from '@kit.ArkUI';
 import { common, Configuration, ConfigurationConstant } from '@kit.AbilityKit';
 import { FullscreenWindowLease, FullscreenWindowPolicy, WindowPolicyController } from '@gycrosskit/system-actions-native';
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
-import { CallbackLifetime, decodeRequest, guardedScript, matches, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings } from './WebViewWire';
+import { CallbackLifetime, decodeRequest, guardedScript, matches, httpRequestAllowed, navigationAllowed, origin, trusted, WebViewRequest, WebViewSettings } from './WebViewWire';
 import { createGYWebView } from './WebViewComponent';
 import { createWebPermissionDialog, WebPermissionDialogOptions } from './WebPermissionDialog';
 
@@ -229,6 +229,7 @@ export class GYWebView extends KuiklyRenderBaseView {
           (this.request.permissionPresentation ?? 'NATIVE') === (next.permissionPresentation ?? 'NATIVE') &&
           JSON.stringify(this.request.scripts) === JSON.stringify(next.scripts) &&
           JSON.stringify(this.request.pageMessageChannels) === JSON.stringify(next.pageMessageChannels) &&
+          JSON.stringify(this.request.allowedHttpOrigins) === JSON.stringify(next.allowedHttpOrigins) &&
           JSON.stringify(this.request.blockedResourceRules) === JSON.stringify(next.blockedResourceRules)) { this.request.navigationPolicy = next.navigationPolicy; return true; }
       } catch (_) {}
     }
@@ -362,7 +363,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     const target = request.getRequestUrl();
     const localBlocked = /^(content|resource):/i.test(target) ||
       (/^file:/i.test(target) && current.settings.allowFileAccess !== true);
-    if (!current.blockedResourceRules.some(rule => matches(target, rule)) && !localBlocked) return null!;
+    if (httpRequestAllowed(target, current) && !current.blockedResourceRules.some(rule => matches(target, rule)) && !localBlocked) return null!;
     const response = new WebResourceResponse();
     response.setResponseCode(403); response.setReasonMessage('Blocked by WebView policy'); response.setResponseData('');
     return response;
