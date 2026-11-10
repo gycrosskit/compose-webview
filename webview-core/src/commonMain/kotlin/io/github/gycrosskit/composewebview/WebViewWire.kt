@@ -18,6 +18,7 @@ object WebViewWire {
         })
         if (request.permissionPresentation != WebViewPermissionPresentation.NATIVE) put("permissionPresentation", request.permissionPresentation.name)
         put("sensitiveDiagnostics", request.sensitiveDiagnostics)
+        request.allowedHttpOrigins?.let { put("allowedHttpOrigins", strings(it)) }
         put("settings", settings(request.settings))
         put("security", buildJsonObject {
             val security = request.security
@@ -85,6 +86,7 @@ object WebViewWire {
             pageMessageChannels = value.strings("pageMessageChannels").toSet(),
             permissionPresentation = value.enum("permissionPresentation", WebViewPermissionPresentation.NATIVE),
             sensitiveDiagnostics = value.boolean("sensitiveDiagnostics", false),
+            allowedHttpOrigins = value["allowedHttpOrigins"]?.let { value.strings("allowedHttpOrigins").toSet() },
         )
     }
 

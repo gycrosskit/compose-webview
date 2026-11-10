@@ -172,6 +172,13 @@ function load(file) {
   cache[file] = exports; return exports;
 }
 const wire = load('WebViewWire.ts');
+for (const origins of [[], ['http://allowed.test:80']]) {
+  const policy = {allowedHttpOrigins: origins};
+  assert.equal(wire.httpRequestAllowed('http://allowed.test/a', policy), origins.length > 0);
+  for (const target of ['http://other.test', 'http://allowed.test:81', 'http://user@allowed.test']) assert.equal(wire.httpRequestAllowed(target, policy), false);
+  assert.equal(wire.httpRequestAllowed('https://other.test/a', policy), true);
+}
+assert.equal(wire.httpRequestAllowed('http://legacy.test', {}), true);
 for (const code of [-7, -118, -803]) assert.equal(wire.networkErrorKind(code), 'TIMEOUT');
 for (const code of [-107, -113, -148, -200, -202, -218]) assert.equal(wire.networkErrorKind(code), 'SSL');
 for (const code of [-8, -100, -105, -106, -219, -1001, 12345]) assert.equal(wire.networkErrorKind(code), 'NETWORK');
@@ -204,6 +211,13 @@ function request(overrides = {}) {
 const encoded = value => JSON.stringify(value);
 const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => value, isMainFrame: () => true, isRequestGesture: () => gesture });
 (async () => {
+  for (const invalid of [null, 'http://allowed.test', ['https://allowed.test'], ['http://user@allowed.test']])
+    assert.throws(() => wire.decodeRequest(encoded(request({allowedHttpOrigins: invalid}))), /Invalid HTTP origins/);
+  assert.equal(wire.decodeRequest(encoded(request({allowedHttpOrigins: []}))).allowedHttpOrigins.length, 0);
+  const httpPolicy = request({allowedHttpOrigins: ['http://allowed.test'], navigationPolicy: {allowedSchemes: ['http', 'https'], blockedRules: [], allowNewWindows: false}});
+  assert.equal(wire.navigationAllowed('http://allowed.test/a', true, httpPolicy), true);
+  assert.equal(wire.navigationAllowed('http://other.test/a', true, httpPolicy), false);
+
   const { OhosWebViewDataCleaner } = load('OhosWebViewDataCleaner.ets');
   OhosWebViewDataCleaner.clearResourceCache();
   assert.deepEqual(dataCleaningCalls.splice(0), [['cache', true]], 'resource cleanup preserves cookies and storage');

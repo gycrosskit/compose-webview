@@ -70,7 +70,7 @@ data class WebViewNavigationPolicy(
 
 /** 原生导航回调中同步调用，不能等待 Kotlin 异步事件再决定。 */
 fun WebViewRequest.allowsNavigation(navigation: WebViewNavigationRequest): Boolean =
-    navigationPolicy.allows(navigation) && !shouldBlockMainFrameNavigation(navigation.url, navigation.isMainFrame)
+    allowsHttpRequest(navigation.url) && navigationPolicy.allows(navigation) && !shouldBlockMainFrameNavigation(navigation.url, navigation.isMainFrame)
 
 /** 原生 loadHTML/loadData 的首航例外只能由实例的一次性状态授权，网页后续不能复用。 */
 fun WebViewNavigationRequest.isInternalHtmlInitialNavigation(): Boolean =

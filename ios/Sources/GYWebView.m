@@ -91,6 +91,14 @@ static NSDictionary *GYOrigin(NSString *value) {
     if (!host.length || (![host hasPrefix:@"["] && [[host componentsSeparatedByString:@"."] containsObject:@""])) return nil;
     return @{@"scheme": scheme, @"host": host, @"port": url.port ?: ([scheme isEqual:@"https"] ? @443 : @80)};
 }
+static BOOL GYHttpRequestAllowed(NSDictionary *request, NSString *url) {
+    NSArray *origins = request[@"allowedHttpOrigins"];
+    NSString *scheme = [NSURLComponents componentsWithString:url].scheme.lowercaseString;
+    if (!origins || ![scheme isEqual:@"http"]) return YES;
+    NSDictionary *target = GYOrigin(url);
+    for (NSString *allowed in origins) if (target && [target isEqual:GYOrigin(allowed)]) return YES;
+    return NO;
+}
 static BOOL GYNavigationOriginsAllow(NSDictionary *origins, NSString *url) {
     NSDictionary *target = GYOrigin(url);
     if (!target) return NO;
@@ -306,6 +314,11 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     NSString *type = GYString(content[@"type"]);
     if (![type isEqual:@"url"] && ![type isEqual:@"html"]) return NO;
     if (!GYString(content[[type isEqual:@"url"] ? @"url" : @"html"])) return NO;
+    id httpOrigins = request[@"allowedHttpOrigins"];
+    if (httpOrigins) {
+        if (![httpOrigins isKindOfClass:NSArray.class]) return NO;
+        for (id value in httpOrigins) if (!GYString(value) || ![GYOrigin(value)[@"scheme"] isEqual:@"http"]) return NO;
+    }
     if (![self validRules:request[@"blockedResourceRules"]] || ![self validRules:policy[@"blockedRules"]]) return NO;
     for (NSString *key in @[@"appBridgeEnabled", @"pageBridgeEnabled", @"fileChooserEnabled", @"mediaCaptureEnabled", @"geolocationEnabled"]) {
         id value = security[key];
@@ -426,7 +439,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     NSDictionary *policy = self.request[@"navigationPolicy"], *security = self.request[@"security"];
     NSString *scheme = [NSURLComponents componentsWithString:url ?: @""].scheme.lowercaseString;
     NSArray *schemes = policy[@"allowedSchemes"] ?: @[@"http", @"https"];
-    BOOL allow = [schemes containsObject:scheme ?: @""] && (!newWindow || GYBool(policy, @"allowNewWindows", NO));
+    BOOL allow = GYHttpRequestAllowed(self.request, url) && [schemes containsObject:scheme ?: @""] && (!newWindow || GYBool(policy, @"allowNewWindows", NO));
     NSArray *allowedUrls = policy[@"allowedUrls"];
     if (mainFrame && allowedUrls.count && ![allowedUrls containsObject:url ?: @""]) allow = NO;
     NSArray *allowedOrigins = policy[@"allowedOrigins"];
@@ -564,6 +577,18 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
 - (void)installResourceRulesAndLoad {
     NSArray *rules = self.request[@"blockedResourceRules"];
     NSMutableArray *encoded = [NSMutableArray array];
+    NSArray *httpOrigins = self.request[@"allowedHttpOrigins"];
+    if (httpOrigins) {
+        [encoded addObject:@{@"trigger": @{@"url-filter": @"^http://", @"url-filter-is-case-sensitive": @NO}, @"action": @{@"type": @"block"}}];
+        for (NSString *value in httpOrigins) {
+            NSDictionary *origin = GYOrigin(value);
+            NSString *host = [NSRegularExpression escapedPatternForString:origin[@"host"]];
+            NSString *port = [origin[@"port"] isEqual:@80] ? @"(:80)?" : [NSString stringWithFormat:@":%@", origin[@"port"]];
+            NSString *filter = [NSString stringWithFormat:@"^http://%@%@%@(/.*)?$", host, [origin[@"host"] hasPrefix:@"["] ? @"" : @"\\.?", port];
+            [encoded addObject:@{@"trigger": @{@"url-filter": filter, @"url-filter-is-case-sensitive": @NO}, @"action": @{@"type": @"ignore-previous-rules"}}];
+        }
+    }
+    // HTTP 例外必须放在其他拒绝规则之前，避免撤销 mixed-content 或宿主拒绝规则。
     for (NSDictionary *rule in rules) {
         NSString *type = rule[@"type"], *filter;
         if ([type isEqual:@"contains"]) filter = [NSString stringWithFormat:@".*%@.*", [NSRegularExpression escapedPatternForString:rule[@"value"]]];
