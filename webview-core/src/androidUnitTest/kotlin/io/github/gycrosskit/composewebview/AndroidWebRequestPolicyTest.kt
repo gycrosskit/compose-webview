@@ -57,4 +57,15 @@ class AndroidWebRequestPolicyTest {
         assertEquals(1, rejected.size)
     }
 
+    @Test fun `HTTP origins do not restrict HTTPS POST or allowed HTTP POST`() {
+        val request = WebViewRequest(WebViewContent.Url(allowed), allowedHttpOrigins = setOf("http://allowed.test"))
+        val rejected = mutableListOf<WebViewNavigationRequest>()
+        assertNull(request.interceptAndroidRequest(resource("https://other.test/form"), rejected::add))
+        assertNull(request.interceptAndroidRequest(resource("http://allowed.test/form"), rejected::add))
+        assertNotNull(request.interceptAndroidRequest(resource("http://other.test/form"), rejected::add))
+        assertEquals(1, rejected.size)
+        val restricted = request.copy(navigationPolicy = WebViewNavigationPolicy(allowedOrigins = setOf("https://other.test")))
+        assertNotNull(restricted.interceptAndroidRequest(resource("https://other.test/form"), rejected::add))
+    }
+
 }
