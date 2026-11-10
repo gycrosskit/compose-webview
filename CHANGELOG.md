@@ -1,5 +1,13 @@
 # 更新记录
 
+## 2.2.0
+
+状态：候选，发布与精确远程消费待各渠道回执。
+
+- 新增 `WebViewRequest.allowedHttpOrigins`：缺省保持历史行为，空集合拒绝 HTTP，非空精确匹配 HTTP 来源；三端导航与可观察资源请求同步执行。
+- iOS 首次加载前安装 HTTP 资源规则；原有 Bridge、资源拒绝及 mixed-content 门禁继续独立生效。Android 子资源重定向等内核覆盖限制见[接入指南](docs/接入指南.md#http-请求来源限制)。
+- Maven、Git Pod `native-2.2.0`、私有 OHPM/HAR `har-2.2.0` 同步候选；Renderer 范围和 SystemActions Native `1.0.2` 保持。
+
 ## 2.1.1
 
 状态：Maven 候选，发布与精确远程消费待本轮回执确认。
