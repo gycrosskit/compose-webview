@@ -1,5 +1,14 @@
 # 更新记录
 
+## 2.3.0
+
+状态：待发布，候选冻结、公开消费及设备验收分别留证。
+
+- 新增 `WebViewSettings.verifyServerCertificate=true`；三端仅在宿主显式 `false` 时兼容服务端证书错误，不扩大导航、Bridge 或系统权限。
+- 旧 wire 缺省继续验证证书；独立 Maven 消费者显式编译新设置，iOS／HAR 原生渠道分别验收。
+- Kotlin data class 字段改变构造器与 `copy` 二进制签名，升级须重编译调用模块；不承诺旧预编译调用方直接替换兼容。
+- 后端证书治理完成后由宿主统一恢复验证。Maven／Git Pod／HAR 准备同版 `2.3.0`，旧标签、制品和 checksum 不变。
+
 ## 2.2.0
 
 状态：候选，发布与精确远程消费待各渠道回执。

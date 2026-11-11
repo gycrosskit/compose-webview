@@ -1,3 +1,12 @@
+## 2.3.0
+
+状态：待发布，渠道冻结、公开消费与设备验收待实际回执。
+
+- 新增 `settings.verifyServerCertificate`，默认 `true`；宿主显式 `false` 时兼容服务端证书错误，旧 render 仍取消。
+- 三端 wire 严格校验 Boolean；导航、Bridge、文件与媒体权限合同保持独立。
+- Maven／Git Pod／HAR 同版；新增 Kotlin data class 字段后须重编译调用模块，不承诺旧预编译调用方二进制兼容。
+- 后端证书治理完成后由宿主统一恢复默认校验；Renderer 范围与 SystemActions Native `1.0.2` 保持。
+
 ## 2.2.0
 
 状态：候选，发布与精确远程消费待回执。
