@@ -26,7 +26,7 @@ data class WebViewRequest(
     val permissionPresentation: WebViewPermissionPresentation = WebViewPermissionPresentation.NATIVE,
     /** 敏感页面仅记录元数据；原生实例开启后直到销毁不可恢复正文诊断。 */
     val sensitiveDiagnostics: Boolean = false,
-    /** HTTP 请求的精确来源；null 保留历史行为，空集合拒绝 HTTP。不是内核网络安全边界。 */
+    /** HTTP 请求的精确来源；null 允许所有 HTTP 来源，空集合拒绝 HTTP。不是内核网络安全边界。 */
     val allowedHttpOrigins: Set<String>? = null,
 ) {
     init {
