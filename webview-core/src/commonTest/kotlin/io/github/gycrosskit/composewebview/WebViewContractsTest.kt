@@ -106,6 +106,7 @@ class WebViewContractsTest {
     fun baseSettingsKeepImagesAndProtocolCacheEnabled() {
         val settings = WebViewSettings()
 
+        assertTrue(settings.verifyServerCertificate)
         assertEquals(WebViewCachePolicy.DEFAULT, settings.cachePolicy)
         assertFalse(settings.acceptsThirdPartyCookies)
         assertTrue(settings.loadsImagesAutomatically)

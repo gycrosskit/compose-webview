@@ -1,5 +1,6 @@
 #import "GYWebView.h"
 #import <WebKit/WebKit.h>
+#import <Security/Security.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <AVFoundation/AVFoundation.h>
 #import <arpa/inet.h>
@@ -324,7 +325,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         id value = security[key];
         if (value && (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID())) return NO;
     }
-    for (NSString *key in @[@"javaScriptEnabled", @"domStorageEnabled", @"allowFileAccess", @"allowContentAccess", @"acceptsThirdPartyCookies", @"supportMultipleWindows", @"javaScriptCanOpenWindowsAutomatically", @"mediaPlaybackRequiresUserGesture", @"loadsImagesAutomatically", @"blockNetworkImage", @"builtInZoomControls", @"displayZoomControls", @"supportZoom", @"useWideViewPort", @"loadWithOverviewMode", @"followSystemFontScale", @"algorithmicDarkeningAllowed"]) {
+    for (NSString *key in @[@"javaScriptEnabled", @"domStorageEnabled", @"allowFileAccess", @"allowContentAccess", @"acceptsThirdPartyCookies", @"supportMultipleWindows", @"javaScriptCanOpenWindowsAutomatically", @"mediaPlaybackRequiresUserGesture", @"loadsImagesAutomatically", @"blockNetworkImage", @"builtInZoomControls", @"displayZoomControls", @"supportZoom", @"useWideViewPort", @"loadWithOverviewMode", @"followSystemFontScale", @"algorithmicDarkeningAllowed", @"verifyServerCertificate"]) {
         id value = settings[key];
         if (value && (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID())) return NO;
     }
@@ -698,6 +699,20 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     BOOL fileAllowed = GYBool(self.request[@"security"], @"fileChooserEnabled", NO) && [self trusted:view.URL.absoluteString];
     [view evaluateJavaScript:[NSString stringWithFormat:@"window.__COMPOSE_WEBVIEW_FILE_CHOOSER_ALLOWED__=%@;", fileAllowed ? @"true" : @"false"] completionHandler:nil];
     if (GYBool(self.request[@"settings"], @"javaScriptEnabled", NO)) for (NSDictionary *script in self.request[@"scripts"]) if ([script[@"injectionTime"] isEqual:@"DOCUMENT_FINISHED"] && (!GYBool(script, @"onlyForTrustedMainFrame", YES) || [self trusted:view.URL.absoluteString] || (GYBool(self.request[@"security"], @"pageBridgeEnabled", NO) && [self bridgeAllowed:view.URL.absoluteString]))) [view evaluateJavaScript:script[@"source"] completionHandler:nil];
+}
+- (void)webView:(WKWebView *)view didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
+    completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))completionHandler {
+    if (view != self.webView || self.released) {
+        completionHandler(NSURLSessionAuthChallengeCancelAuthenticationChallenge, nil);
+        return;
+    }
+    SecTrustRef trust = challenge.protectionSpace.serverTrust;
+    if (!GYBool(self.request[@"settings"], @"verifyServerCertificate", YES) &&
+        [challenge.protectionSpace.authenticationMethod isEqual:NSURLAuthenticationMethodServerTrust] && trust) {
+        completionHandler(NSURLSessionAuthChallengeUseCredential, [NSURLCredential credentialForTrust:trust]);
+    } else {
+        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
+    }
 }
 - (void)webView:(WKWebView *)view didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error { if (view == self.webView && !([error.domain isEqual:NSURLErrorDomain] && error.code == NSURLErrorCancelled)) [self fail:GYNavigationErrorKind(error) message:error.localizedDescription url:view.URL.absoluteString code:@(error.code)]; }
 - (void)webView:(WKWebView *)view didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error { [self webView:view didFailProvisionalNavigation:navigation withError:error]; }

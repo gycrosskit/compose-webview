@@ -41,6 +41,7 @@ enum class WebViewCachePolicy {
  * @property minimumTextZoomPercent 网页文字缩放下限，范围 50..500。 默认 100。
  * @property maximumTextZoomPercent 网页文字缩放上限，且不小于下限。 默认 200。
  * @property algorithmicDarkeningAllowed Android/OHOS 是否允许平台算法暗化；iOS 无等价公开 API。默认 true。
+ * @property verifyServerCertificate 是否校验 HTTPS 服务端证书；显式 false 仅用于宿主授权的兼容阶段，不改变导航或高权限来源规则。默认 true。
  * @property userAgentSuffix 追加到平台默认 User-Agent 的标识，不能包含换行；不得使用用户凭据。默认 null。
  */
 data class WebViewSettings(
@@ -66,6 +67,7 @@ data class WebViewSettings(
     val maximumTextZoomPercent: Int = 200,
     val algorithmicDarkeningAllowed: Boolean = true,
     val userAgentSuffix: String? = null,
+    val verifyServerCertificate: Boolean = true,
 ) {
     init {
         require(minimumTextZoomPercent in MIN_TEXT_ZOOM..MAX_TEXT_ZOOM)

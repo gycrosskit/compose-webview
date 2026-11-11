@@ -198,6 +198,17 @@ for (const code of [-8, -100, -105, -106, -219, -1001, 12345]) assert.equal(wire
   assert.equal(failures.length, 4, 'subresource errors never fail the main document');
 }
 
+{
+  const source = fs.readFileSync(path.join(root, 'WebViewComponent.ets'), 'utf8');
+  for (const verify of [undefined, true, false]) for (const active of [true, false]) {
+    const calls = [];
+    const view = { isRenderActive: () => active, settings: () => ({verifyServerCertificate: verify}), fail: () => calls.push('fail') };
+    const callback = vm.runInNewContext(source.match(/\.onSslErrorEventReceive\((.*)\)/)[1], {view, token: 1});
+    callback({handler: {handleConfirm: () => calls.push('confirm'), handleCancel: () => calls.push('cancel')}});
+    assert.deepEqual(calls, active && verify === false ? ['confirm'] : active ? ['cancel', 'fail'] : ['cancel']);
+  }
+}
+
   const httpTrust = { trustedOrigins: { urls: ['http://shop.test:8080'], trustedHostSuffixes: ['jd.com'] } };
   assert.equal(wire.trusted('http://shop.test:8080/page', httpTrust), true);
   assert.equal(wire.trusted('http://m.jd.com/', httpTrust), true);
@@ -209,6 +220,9 @@ function request(overrides = {}) {
     scripts: [], blockedResourceRules: [], navigationPolicy: { allowedSchemes: ['https'], blockedRules: [], allowNewWindows: false }, ...overrides };
 }
 const encoded = value => JSON.stringify(value);
+for (const value of ['false', 0, null])
+  assert.throws(() => wire.decodeRequest(encoded(request({settings: {verifyServerCertificate: value}}))), /Invalid setting/);
+assert.equal(wire.decodeRequest(encoded(request({settings: {verifyServerCertificate: false}}))).settings.verifyServerCertificate, false);
 const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => value, isMainFrame: () => true, isRequestGesture: () => gesture });
 (async () => {
   for (const invalid of [null, 'http://allowed.test', ['https://allowed.test'], ['http://user@allowed.test']])

@@ -113,7 +113,13 @@ open class AppWebViewClient(
         super.onReceivedHttpError(view, request, errorResponse)
     }
 
+    protected open val verifyServerCertificate: Boolean get() = true
+
     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+        if (view.isActiveAppWebView() && isOwner(view) && !verifyServerCertificate) {
+            handler.proceed()
+            return
+        }
         handler.cancel()
         if (!view.isActiveAppWebView() || !isOwner(view)) return
         val loadError = WebViewErrorHelper.fromSslError(error.url)

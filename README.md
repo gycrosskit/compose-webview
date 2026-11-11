@@ -168,7 +168,7 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 
 ## 能力与安全边界
 
-- JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTP(S) 来源；TLS 错误拒绝加载。
+- JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTP(S) 来源；默认拒绝服务端证书错误。宿主可显式设置 `settings.verifyServerCertificate=false` 兼容过期、自签名或其他无效证书，详见[证书兼容设置](docs/接入指南.md#https-服务端证书兼容)。
 - 标准定位使用 `security.geolocationEnabled`（默认关闭），敏感页面首次加载前设置 `sensitiveDiagnostics=true`；iOS 按版本接入用途说明和系统定位授权的差异见[平台合同](docs/功能与平台差异.md#标准网页定位与敏感实例诊断)。
 - iOS Native 候选可由宿主通过 `pictureInPicturePageActive` 保留当前视频页的系统 PiP 后台播放，默认隐藏仍停播；业务 Bridge 与采集权限继续按可见性撤销，详见[全屏视频与 PiP 边界](docs/功能与平台差异.md#h5-全屏视频控制)。
 - 导航拦截由预先下发的 `navigationPolicy` 同步判断，事件用于报告结果；`allowedOrigins` 精确匹配 scheme、host 和有效端口。

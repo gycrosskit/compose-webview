@@ -67,6 +67,7 @@ export interface WebViewContent {
  * @property loadsImagesAutomatically 默认 true。
  * @property blockNetworkImage 默认 false。
  * @property supportZoom 默认 true。
+ * @property verifyServerCertificate 默认 true；仅显式 false 放行服务端证书错误。
  * @property userAgentSuffix 可选 User-Agent 后缀，不含 CR/LF。
  */
 export interface WebViewSettings {
@@ -76,7 +77,7 @@ export interface WebViewSettings {
   mediaPlaybackRequiresUserGesture?: boolean; loadsImagesAutomatically?: boolean; blockNetworkImage?: boolean;
   supportZoom?: boolean; userAgentSuffix?: string | null;
   followSystemFontScale?: boolean; minimumTextZoomPercent?: number; maximumTextZoomPercent?: number;
-  algorithmicDarkeningAllowed?: boolean;
+  algorithmicDarkeningAllowed?: boolean; verifyServerCertificate?: boolean;
 }
 /**
  * 高权限 HTTPS 来源授权；路径、查询和 fragment 不参与匹配。
@@ -292,7 +293,7 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   const booleanKeys = ['javaScriptEnabled', 'domStorageEnabled', 'allowFileAccess', 'allowContentAccess', 'acceptsThirdPartyCookies',
     'supportMultipleWindows', 'javaScriptCanOpenWindowsAutomatically', 'mediaPlaybackRequiresUserGesture', 'loadsImagesAutomatically',
     'blockNetworkImage', 'builtInZoomControls', 'displayZoomControls', 'supportZoom', 'useWideViewPort', 'loadWithOverviewMode',
-    'followSystemFontScale', 'algorithmicDarkeningAllowed'];
+    'followSystemFontScale', 'algorithmicDarkeningAllowed', 'verifyServerCertificate'];
   booleanKeys.forEach(key => { if (settingValues[key] !== undefined && typeof settingValues[key] !== 'boolean') throw new Error('Invalid setting'); });
   const minimumZoom = request.settings.minimumTextZoomPercent === undefined ? 100 : request.settings.minimumTextZoomPercent;
   const maximumZoom = request.settings.maximumTextZoomPercent === undefined ? 200 : request.settings.maximumTextZoomPercent;

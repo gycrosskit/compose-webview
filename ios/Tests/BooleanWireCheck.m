@@ -911,6 +911,54 @@ static void CheckFullscreenWithoutContentJavaScript(void) {
     puts("PASS: Native JS-disabled real video fullscreen events, exitFullscreen and goBack preserve history; page script blocked");
 }
 
+@interface ServerTrustSpace : NSURLProtectionSpace
+@property(nonatomic, assign) SecTrustRef fixtureTrust;
+@end
+@implementation ServerTrustSpace
+- (SecTrustRef)serverTrust { return self.fixtureTrust; }
+@end
+
+static void CheckServerCertificatePolicy(void) {
+    // 本地测试证书仅构造 serverTrust，不联网、不依赖其当前有效期。
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:@"MIICIDCCAcYCCQCs5OYwh7LW6DAKBggqhkjOPQQDAjAeMRwwGgYDVQQDDBN0bHMtZml4dHVyZS5pbnZhbGlkMB4XDTI2MTExMTAzMDI0N1oXDTI2MTExMjAzMDI0N1owHjEcMBoGA1UEAwwTdGxzLWZpeHR1cmUuaW52YWxpZDCCAUswggEDBgcqhkjOPQIBMIH3AgEBMCwGByqGSM49AQECIQD/////AAAAAQAAAAAAAAAAAAAAAP///////////////zBbBCD/////AAAAAQAAAAAAAAAAAAAAAP///////////////AQgWsY12Ko6k+ez671VdpiGvGUdBrDMU7D2O848PifSYEsDFQDEnTYIhucEk2pmeOETnSa3gZ9+kARBBGsX0fLhLEJH+Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/UfUCIQD/////AAAAAP//////////vOb6racXnoTzucrC/GMlUQIBAQNCAARs8rUVFz7IEOwyRdL2WvRSpo3IpafSbkzO1Oe1zFg5F+Yt88J6ShzrVb6rZs6kXVCl0Y8p8Uos/ToQGQdUN+8rMAoGCCqGSM49BAMCA0gAMEUCIQCWm6LQ5pdblE5+Z3MIlC1PFIexz/cSRzMEfpXcwfddxgIgN1JwGxkwlaVMlhQkXqYFG5R/VthWL8KJKRTpKGprFBU=" options:0];
+    SecCertificateRef certificate = SecCertificateCreateWithData(NULL, (__bridge CFDataRef)data);
+    SecPolicyRef policy = SecPolicyCreateSSL(true, CFSTR("tls-fixture.invalid"));
+    SecTrustRef trust = NULL;
+    Require(certificate && SecTrustCreateWithCertificates(certificate, policy, &trust) == errSecSuccess, @"TLS fixture trust creation failed");
+    GYWebView *page = [GYWebView new];
+    page.webView = [WKWebView new];
+    WKWebView *old = [WKWebView new];
+    for (id verify in @[NSNull.null, @YES, @NO]) {
+        page.request = @{@"settings": verify == NSNull.null ? @{} : @{@"verifyServerCertificate": verify}};
+        for (NSString *method in @[NSURLAuthenticationMethodServerTrust, NSURLAuthenticationMethodHTTPBasic, NSURLAuthenticationMethodClientCertificate]) {
+            ServerTrustSpace *space = [[ServerTrustSpace alloc] initWithHost:@"tls-fixture.invalid" port:443 protocol:@"https" realm:nil authenticationMethod:method];
+            space.fixtureTrust = trust;
+            NSURLAuthenticationChallenge *challenge = [[NSURLAuthenticationChallenge alloc] initWithProtectionSpace:space proposedCredential:nil previousFailureCount:0 failureResponse:nil error:nil sender:nil];
+            for (WKWebView *owner in @[page.webView, old]) {
+                __block NSUInteger completions = 0;
+                [page webView:owner didReceiveAuthenticationChallenge:challenge completionHandler:^(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential) {
+                    completions++;
+                    BOOL compatibility = verify == (__bridge id)kCFBooleanFalse && [method isEqual:NSURLAuthenticationMethodServerTrust];
+                    NSURLSessionAuthChallengeDisposition expected = owner != page.webView ? NSURLSessionAuthChallengeCancelAuthenticationChallenge :
+                        compatibility ? NSURLSessionAuthChallengeUseCredential : NSURLSessionAuthChallengePerformDefaultHandling;
+                    Require(disposition == expected && (credential != nil) == (owner == page.webView && compatibility), @"Server trust opt-in or authentication-method isolation failed");
+                }];
+                Require(completions == 1, @"Authentication challenge must finish exactly once");
+            }
+        }
+    }
+    for (id value in @[@"false", @0, NSNull.null])
+        Require(![page validRequest:@{@"content": @{@"type": @"url", @"url": @"https://safe.example"}, @"settings": @{@"verifyServerCertificate": value}}], @"Certificate setting must require a JSON boolean");
+    page.released = YES;
+    NSURLProtectionSpace *space = [[NSURLProtectionSpace alloc] initWithHost:@"tls-fixture.invalid" port:443 protocol:@"https" realm:nil authenticationMethod:NSURLAuthenticationMethodHTTPBasic];
+    NSURLAuthenticationChallenge *challenge = [[NSURLAuthenticationChallenge alloc] initWithProtectionSpace:space proposedCredential:nil previousFailureCount:0 failureResponse:nil error:nil sender:nil];
+    [page webView:page.webView didReceiveAuthenticationChallenge:challenge completionHandler:^(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential) {
+        Require(disposition == NSURLSessionAuthChallengeCancelAuthenticationChallenge && !credential, @"Released owner cannot authenticate");
+    }];
+    page.webView = nil;
+    CFRelease(trust); CFRelease(policy); CFRelease(certificate);
+}
+
 static void CheckNavigationErrors(void) {
     GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectZero];
     page.webView = [[WKWebView alloc] initWithFrame:CGRectZero];
@@ -943,6 +991,7 @@ static void CheckNavigationErrors(void) {
 }
 
 static void Check(void) {
+    CheckServerCertificatePolicy();
     CheckNavigationErrors();
     CheckPermissionExplanationPresentation();
     CheckHostPermissionExplanation();
