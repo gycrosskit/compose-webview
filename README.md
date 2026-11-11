@@ -1,14 +1,14 @@
 # GY CrossKit WebView
 
-> 待发布版本 `2.3.0`：Maven、Git Pod `GYWebView`（`native-2.3.0`）与私有 OHPM/HAR（`har-2.3.0`）新增 `settings.verifyServerCertificate`，默认保留服务端证书校验，宿主显式 `false` 才进入兼容模式。当前仅发布准备，各渠道冻结、公开消费与设备验收分别留证；旧 `2.2.0` 标签、制品与 checksum 保留。升级须重编译调用模块，详见[证书兼容设置](docs/接入指南.md#https-服务端证书兼容)。
+> 已发布版本 `2.3.0`：Maven、Git Pod `GYWebView`（`native-2.3.0`）与私有 OHPM/HAR（`har-2.3.0`）新增 `settings.verifyServerCertificate`，默认保留服务端证书校验，宿主显式 `false` 才进入兼容模式。Maven 与 Git Pod 的 macOS 消费通过，Maven 的 Linux 消费待验；HAR 的 GitHub 下载及既有私库 OHPM 安装消费通过，非官方公共 OHPM 发布，设备行为另验。准确渠道证据见[发布与验证](docs/开发与验证.md)；旧 `2.2.0` 标签、制品与 checksum 保留。升级须重编译调用模块，详见[证书兼容设置](docs/接入指南.md#https-服务端证书兼容)。
 
 Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。 各渠道发布与精确消费状态见对应 Release，既有验收按原 tag 保留。
 
-上一发行基线：Maven `1.2.0`；iOS Git Pod 为 `1.2.1`（`native-1.2.1`），HAR/OHPM 为 `1.2.1`（`har-1.2.1`），精确依赖 SystemActions Native `1.0.2`。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；既有版本已删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
+历史发行基线：Maven `1.2.0`；iOS Git Pod 为 `1.2.1`（`native-1.2.1`），HAR/OHPM 为 `1.2.1`（`har-1.2.1`），精确依赖 SystemActions Native `1.0.2`。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；既有版本已删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
 
 `webview-kuikly` 保留 raw `GYWebView` 和 `io.github.gycrosskit.composewebview.kuikly.AppWebView` KuiklyCompose 入口，传递 KuiklyCompose / Compose runtime。宿主继续统一 Kuikly、compiler 与 Renderer 版本；`verifyNoCmpUi` 允许这套 runtime 并拒绝第二套 AndroidX/JetBrains CMP UI/foundation/material。
 
-上一轮新增可选 HOST 权限说明协议，默认 NATIVE 保留原生交互；修复拒绝重试、设置恢复提示及旧实例回执隔离。既有导航、生命周期、PiP 和受控文件选择继续保留。Maven 保留 `1.2.0`，Git Pod 使用 `native-1.2.1`，HAR/OHPM 使用 `har-1.2.1`，system-actions-native 精确依赖 `1.0.2`；保留既有 `1.1.0`、`har-1.1.0` 及更早标签和制品摘要。Pod、HAR、Registry 与 Maven 消费分别以该轮真实收据确认。旧版本及 CMP 验收保留在 [rc.18 发布记录](docs/0.2.0-rc.18发布验收.md)、[历史源码审查](docs/完整源码审查.md) 和旧 tag 中，不代表本版本通过验证。
+历史 1.2.x 新增可选 HOST 权限说明协议，默认 NATIVE 保留原生交互；修复拒绝重试、设置恢复提示及旧实例回执隔离。既有导航、生命周期、PiP 和受控文件选择继续保留。Maven 保留 `1.2.0`，Git Pod 使用 `native-1.2.1`，HAR/OHPM 使用 `har-1.2.1`，system-actions-native 精确依赖 `1.0.2`；保留既有 `1.1.0`、`har-1.1.0` 及更早标签和制品摘要。Pod、HAR、Registry 与 Maven 消费分别以该轮真实收据确认。旧版本及 CMP 验收保留在 [rc.18 发布记录](docs/0.2.0-rc.18发布验收.md)、[历史源码审查](docs/完整源码审查.md) 和旧 tag 中，不代表本版本通过验证。
 
 底层使用 Android WebView、iOS WKWebView 和 HarmonyOS ArkWeb。请求、安全、导航、脚本与事件由 core 共享，账号、鉴权、品牌 URL、页面状态与业务路由由宿主提供。H5 视频控制保留 core 媒体脚本/镜像、Android 原生控件与 KuiklyCompose overlay；不改系统播放器层级限制。
 
@@ -129,7 +129,7 @@ dependencyResolutionManagement {
 }
 ```
 
-本轮 Maven、Git Pod/HAR 候选为 `2.3.0`；以下为精确依赖示例，实际可用性以对应渠道的 Release 与消费收据为准。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
+当前 Maven、Git Pod/HAR 正式版本为 `2.3.0`；以下为精确依赖示例，实际可用性以对应渠道的 Release 与消费收据为准。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
@@ -145,7 +145,7 @@ pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :t
 当前源码继续使用 iOS Renderer 2.29.1；发布 Tag 与候选提交的消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS HAR `2.3.0`（`har-2.3.0`）在配置的私有 OHPM 精确安装，见[HAR 接入指南](ohos/webview-native/README.md)，Registry 可安装性须单独核验。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
+HarmonyOS HAR `2.3.0`（`har-2.3.0`）已发布到既有私有 OHPM；先配置该私库再精确安装，不能从官方公共 OHPM 推断可用性。见[HAR 接入指南](ohos/webview-native/README.md)，Registry 可安装性须单独核验。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
 
 ## 快速使用
 
