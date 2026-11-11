@@ -22,7 +22,7 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowWebView
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], shadows = [RecordingWebView::class, LegacyWebViewFeatures::class, BridgeWebViewCompat::class])
+@Config(sdk = [28], shadows = [RecordingWebView::class, LegacyWebViewFeatures::class, BridgeWebViewCompat::class, RecordingSslErrorHandler::class, TestSslCertificate::class])
 class GYWebViewNativeTest {
     private val finished = "window.finished=(window.finished||0)+1;"
     private val request = WebViewRequest(
@@ -34,6 +34,32 @@ class GYWebViewNativeTest {
             WebViewScript("finished", finished, WebViewScriptInjectionTime.DOCUMENT_FINISHED),
         ),
     )
+
+    @Test
+    fun `certificate compatibility is explicit and old owners still cancel`() {
+        for (verify in listOf(true, false)) {
+            val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+            val events = mutableListOf<Map<*, *>>()
+            native.setProp("onEvent", { raw: Any? -> events += raw as Map<*, *> } as KuiklyRenderCallback)
+            native.setProp("request", WebViewWire.encodeRequest(request.copy(settings = request.settings.copy(verifyServerCertificate = verify))))
+            val owner = native.getChildAt(0) as WebView
+            val client = Shadow.extract<RecordingWebView>(owner).webViewClient
+            val handler = Shadow.newInstanceOf(android.webkit.SslErrorHandler::class.java)
+            val recorded = Shadow.extract<RecordingSslErrorHandler>(handler)
+            val error = android.net.http.SslError(android.net.http.SslError.SSL_UNTRUSTED,
+                android.net.http.SslCertificate("test", "test", "2020", "2021"), "https://trusted.test/page")
+            client.onReceivedSslError(owner, handler, error)
+            assertEquals(if (verify) 0 else 1, recorded.proceeded)
+            assertEquals(verify, recorded.cancelled > 0)
+            assertEquals(verify, events.any { it["type"] == "loadFailed" && it["kind"] == "SSL" })
+            native.onDestroy()
+            val staleHandler = Shadow.newInstanceOf(android.webkit.SslErrorHandler::class.java)
+            client.onReceivedSslError(owner, staleHandler, error)
+            val stale = Shadow.extract<RecordingSslErrorHandler>(staleHandler)
+            assertEquals(0, stale.proceeded)
+            assertTrue(stale.cancelled > 0)
+        }
+    }
 
     @Test
     fun `unsupported app bridge reports once after load and leaves the document working`() {
@@ -349,4 +375,18 @@ class BridgeWebViewCompat {
         @JvmStatic @Implementation
         fun removeWebMessageListener(owner: WebView, name: String) = Unit
     }
+}
+
+@Implements(android.webkit.SslErrorHandler::class)
+class RecordingSslErrorHandler {
+    var proceeded = 0
+    var cancelled = 0
+    @Implementation fun proceed() { proceeded++ }
+    @Implementation fun cancel() { cancelled++ }
+}
+
+// 回调策略测试不读取证书内容，跳过 API 28 沙盒缺失的内部证书解析依赖。
+@Implements(android.net.http.SslCertificate::class)
+class TestSslCertificate {
+    @Implementation fun __constructor__(issuedTo: String, issuedBy: String, validNotBefore: java.util.Date?, validNotAfter: java.util.Date?, x509Certificate: java.security.cert.X509Certificate?) = Unit
 }

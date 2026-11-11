@@ -1,12 +1,21 @@
 # 更新记录
 
+## 2.3.0
+
+状态：已发布。Maven/Git Pod macOS 消费通过，Maven 的 Linux 消费待验；HAR GitHub 下载及既有私库 OHPM 安装消费通过，设备行为另验。渠道 SHA 与消费边界见[发布与验证](docs/开发与验证.md)。
+
+- 新增 `WebViewSettings.verifyServerCertificate=true`；三端仅在宿主显式 `false` 时兼容服务端证书错误，不扩大导航、Bridge 或系统权限。
+- 旧 wire 缺省继续验证证书；独立 Maven 消费者显式编译新设置，iOS／HAR 原生渠道分别验收。
+- Kotlin data class 字段改变构造器与 `copy` 二进制签名，升级须重编译调用模块；不承诺旧预编译调用方直接替换兼容。
+- 后端证书治理完成后由宿主统一恢复验证。Maven／Git Pod／HAR 已发行同版 `2.3.0`，旧标签、制品和 checksum 不变。
+
 ## 2.2.0
 
-状态：候选，发布与精确远程消费待各渠道回执。
+状态：历史已发布版本；原标签、归档及验收范围保持不变。
 
 - 新增 `WebViewRequest.allowedHttpOrigins`：缺省保持历史行为，空集合拒绝 HTTP，非空精确匹配 HTTP 来源；三端导航与可观察资源请求同步执行。
 - iOS 首次加载前安装 HTTP 资源规则；原有 Bridge、资源拒绝及 mixed-content 门禁继续独立生效。Android 子资源重定向等内核覆盖限制见[接入指南](docs/接入指南.md#http-请求来源限制)。
-- Maven、Git Pod `native-2.2.0`、私有 OHPM/HAR `har-2.2.0` 同步候选；Renderer 范围和 SystemActions Native `1.0.2` 保持。
+- Maven、Git Pod `native-2.2.0`、私有 OHPM/HAR `har-2.2.0` 同版发行；Renderer 范围和 SystemActions Native `1.0.2` 保持。
 
 ## 2.1.1
 

@@ -227,6 +227,8 @@ class GYWebViewNative @JvmOverloads constructor(
                 emit(WebViewEvent.LoadFailed(error))
             }
         }, isOwner = { it === owner && owner === webView && !destroyed }) {
+            override val verifyServerCertificate: Boolean
+                get() = request?.settings?.verifyServerCertificate != false
             override fun shouldOverrideUrlLoading(view: WebView, navigation: WebResourceRequest): Boolean =
                 if (view !== owner || owner !== webView || destroyed) true else route(WebViewNavigationRequest(navigation.url.toString(), navigation.isForMainFrame, navigation.hasGesture()))
             @Deprecated("Deprecated in Java")

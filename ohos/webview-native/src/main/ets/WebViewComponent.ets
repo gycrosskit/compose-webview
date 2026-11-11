@@ -37,7 +37,7 @@ function webViewAttributes(view: GYWebView, token: number) {
   .onTitleReceive(event => { if (view.isRenderActive(token)) view.emit({ type: 'titleChanged', title: event?.title || '' }); })
   .onErrorReceive(event => { if (view.isRenderActive(token) && event?.request.isMainFrame()) view.fail(networkErrorKind(event.error.getErrorCode()), event.error.getErrorInfo(), event.error.getErrorCode()); })
   .onHttpErrorReceive(event => { if (view.isRenderActive(token) && event?.request.isMainFrame()) view.fail('HTTP', 'HTTP load failed', undefined, event.response.getResponseCode()); })
-  .onSslErrorEventReceive(event => { event?.handler.handleCancel(); if (view.isRenderActive(token)) view.fail('SSL', 'TLS certificate rejected'); })
+  .onSslErrorEventReceive(event => { if (view.isRenderActive(token) && view.settings().verifyServerCertificate === false) { event?.handler.handleConfirm(); } else { event?.handler.handleCancel(); if (view.isRenderActive(token)) view.fail('SSL', 'TLS certificate rejected'); } })
   .onRenderExited(() => { if (view.isRenderActive(token)) view.renderExited(); })
   .onGeolocationShow(event => { if (event) { if (view.isRenderActive(token)) view.geolocationShow(event); else event.geolocation.invoke(event.origin, false, false); } })
   .onGeolocationHide(() => { if (view.isRenderActive(token)) view.geolocationHide(); })
