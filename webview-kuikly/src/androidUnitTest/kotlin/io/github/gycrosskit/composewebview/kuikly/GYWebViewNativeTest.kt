@@ -388,5 +388,5 @@ class RecordingSslErrorHandler {
 // 回调策略测试不读取证书内容，跳过 API 28 沙盒缺失的内部证书解析依赖。
 @Implements(android.net.http.SslCertificate::class)
 class TestSslCertificate {
-    @Implementation fun __constructor__(issuedTo: String, issuedBy: String, validNotBefore: String, validNotAfter: String) = Unit
+    @Implementation fun __constructor__(issuedTo: String, issuedBy: String, validNotBefore: java.util.Date?, validNotAfter: java.util.Date?, x509Certificate: java.security.cert.X509Certificate?) = Unit
 }
