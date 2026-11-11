@@ -22,7 +22,7 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowWebView
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], shadows = [RecordingWebView::class, LegacyWebViewFeatures::class, BridgeWebViewCompat::class, RecordingSslErrorHandler::class])
+@Config(sdk = [28], shadows = [RecordingWebView::class, LegacyWebViewFeatures::class, BridgeWebViewCompat::class, RecordingSslErrorHandler::class, TestSslCertificate::class])
 class GYWebViewNativeTest {
     private val finished = "window.finished=(window.finished||0)+1;"
     private val request = WebViewRequest(
@@ -383,4 +383,10 @@ class RecordingSslErrorHandler {
     var cancelled = 0
     @Implementation fun proceed() { proceeded++ }
     @Implementation fun cancel() { cancelled++ }
+}
+
+// 回调策略测试不读取证书内容，跳过 API 28 沙盒缺失的内部证书解析依赖。
+@Implements(android.net.http.SslCertificate::class)
+class TestSslCertificate {
+    @Implementation fun __constructor__(issuedTo: String, issuedBy: String, validNotBefore: String, validNotAfter: String) = Unit
 }
