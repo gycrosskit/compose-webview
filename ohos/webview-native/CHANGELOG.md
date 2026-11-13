@@ -8,7 +8,7 @@
 
 ## 2.3.0
 
-状态：待发布，渠道冻结、公开消费与设备验收待实际回执。
+状态：已发布。GitHub HAR 消费通过；既有私库 OHPM 独立安装及 ArkTS/assembleHar 消费为 `PRIVATE_CONSUMERS_CONFIRMED`，不代表官方公共 OHPM 发布或设备行为验收。准确证据见[开发与验证](../../docs/开发与验证.md)。
 
 - 新增 `settings.verifyServerCertificate`，默认 `true`；宿主显式 `false` 时兼容服务端证书错误，旧 render 仍取消。
 - 三端 wire 严格校验 Boolean；导航、Bridge、文件与媒体权限合同保持独立。
@@ -17,7 +17,7 @@
 
 ## 2.2.0
 
-状态：候选，发布与精确远程消费待回执。
+状态：历史已发布版本；原标签、归档及验收范围保持不变。
 
 - 接入 `allowedHttpOrigins`，同步控制主框架与可观察 HTTP 资源请求；缺省兼容，空集合拒绝 HTTP。
 - 校验 wire 来源数组；HTTPS、Bridge、权限与原资源规则继续独立执行。内核重定向覆盖与真机业务需单独验收。

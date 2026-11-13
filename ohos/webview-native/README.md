@@ -1,5 +1,6 @@
-> 待发布版本 `2.3.1`：Maven、Git Pod `GYWebView`（`native-2.3.1`）与私有 OHPM/HAR（`har-2.3.1`）。新增默认开启的服务端证书校验设置，宿主显式 `verifyServerCertificate=false` 才确认 SSL 证书错误；各渠道发布与精确远程消费状态以对应 Release 为准，设备验收单独记录。
+> 待发布版本 `2.3.1`：同文档在显式归属有效时跨暂时隐藏继续加载、JS、桥消息与已发出的系统定位授权；新 UI 操作仍要求可见。Git Pod 使用 `native-2.3.1`，私有 OHPM/HAR 使用 `har-2.3.1`，发布及正式消费另行留证。
 
+已发布的 `2.3.0` HAR 下载与既有私库 OHPM 安装消费记录保留在[开发与验证](../../docs/开发与验证.md)，非官方公共 OHPM 发布。
 # GY WebView 鸿蒙 HAR
 
 `@gycrosskit/webview` 的 **2.3.1**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
@@ -14,13 +15,13 @@ rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和
 
 ## 安装
 
-以下为本版本精确 Registry 坐标；审核通过并实际可查询、安装后使用。
+`2.3.0` 已发布到既有私有 OHPM Registry。先按组织要求配置该私库及访问身份，再执行以下精确安装；该坐标不表示官方公共 OHPM 可安装。
 
 ```bash
 ohpm install @gycrosskit/webview@2.3.1
 ```
 
-候选可从 assembleHar 输出验证；正式发布后从对应不可变 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry `1.0.2`。干净消费者核对只有一份窗口 owner。离线验证使用已核对冻结 SHA-256 的 Web HAR 和 system-actions `1.0.2` HAR，并用 root override 保证同一系统包；候选字节不得冒充公开 Release 下载或 Registry 安装。文件下载消费与 Registry 安装分开验收。
+本地候选可从 assembleHar 输出验证；正式包从[不可变 GitHub Release](https://github.com/gycrosskit/compose-webview/releases/tag/har-2.3.0) 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry `1.0.2`。干净消费者核对只有一份窗口 owner。离线验证使用已核对冻结 SHA-256 的 Web HAR 和 system-actions `1.0.2` HAR，并用 root override 保证同一系统包；候选字节不得冒充公开 Release 下载或 Registry 安装。文件下载消费与 Registry 安装分开验收。
 
 ```json
 {
