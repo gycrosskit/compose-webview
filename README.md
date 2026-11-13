@@ -1,8 +1,8 @@
 # GY CrossKit WebView
 
-当前源码目标为 `2.3.3`，Maven、Git Pod、HAR/OHPM 各渠道均未发布，包含可选[原生定位适配与 Android 旧协议兼容](docs/接入指南.md#原生定位适配未发布)。`2.3.2` / `native-2.3.2` Tag 与候选已冻结但未完成正式发行，HAR `2.3.2` 仅有私有候选、无 Tag；旧 Tag 和制品不覆盖。以下已发布渠道状态仍属于 `2.3.1`，不能据此消费新 API。
+`2.3.3` 已发布：Maven / JitPack、Git Pod `native-2.3.3`、GitHub HAR `har-2.3.3` 与私有 OHPM。包含可选[原生定位适配与 Android 旧协议兼容](docs/接入指南.md#原生定位适配)，各渠道来源与实际消费边界见[发布与验证](docs/开发与验证.md#233-发布与验证)。
 
-> `2.3.1` 的 Maven、Git Pod `GYWebView`（`native-2.3.1`）与 GitHub HAR（`har-2.3.1`）已发布。JitPack 公开文件核验、HAR 受管消费通过；Maven/Git Pod 的 macOS 消费构建成功，但末尾 Tag 核对超时，运行整体仍失败，Linux 消费 deferred。私有 OHPM `2.3.1` 尚未提交，既有 `2.3.0` 保留。各渠道准确来源与证据见[发布与验证](docs/开发与验证.md#231-发布与验证)。
+济世 Android、iOS 已使用正式远程依赖编译并安装；私库字节与真实安装已核对，鸿蒙编译和用户设备验收分别确认。通用消费者首轮失败原件保留，不将宿主通过写成所有消费报告均通过。`2.3.2` / `native-2.3.2` 仅有冻结 Tag / 候选且未完成正式发行，旧 Tag、制品和历史记录保持。
 
 `2.3.1` 修复页面归属与可见性混用，以及系统定位授权期间误取消请求。显式 `pageOwnerActive=true` 时，暂时隐藏继续同文档加载、JS 与桥消息；新 UI 交互仍要求可见。旧 `2.3.0` 标签、制品、checksum 与原验收记录保留。
 Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。 各渠道发布与精确消费状态见对应 Release，既有验收按原 tag 保留。
@@ -132,23 +132,23 @@ dependencyResolutionManagement {
 }
 ```
 
-当前 Maven、Git Pod 与 GitHub HAR 为 `2.3.1`；以下为精确依赖示例，各渠道消费状态见顶部，不能由 Release 存在推导完整消费通过。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
+当前 Maven、Git Pod、GitHub HAR 与私有 OHPM 均为 `2.3.3`；以下为精确依赖示例，各渠道消费状态见顶部。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.3.1")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.3.3")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.3.1'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.3.3'
 ```
 
-当前源码继续使用 iOS Renderer 2.29.1；发布 Tag 与候选提交的消费边界见
+原生 Pod 的 Renderer 范围为 `>= 2.29.1, < 3.0`，由宿主统一选择；消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS HAR `2.3.1` 已在 [har-2.3.1 Release](https://github.com/gycrosskit/compose-webview/releases/tag/har-2.3.1) 提供，GitHub HAR 受管消费通过；私有 OHPM `2.3.1` 尚未提交，不能按该 Registry 版本安装。接线见[HAR 接入指南](ohos/webview-native/README.md)，Registry 精确安装须另行验收。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
+HarmonyOS HAR `2.3.3` 已在 [har-2.3.3 Release](https://github.com/gycrosskit/compose-webview/releases/tag/har-2.3.3) 与既有私有 OHPM Registry 发布，两个渠道均已核对实际字节。接线与精确安装见[HAR 接入指南](ohos/webview-native/README.md)，安装、编译与设备行为分别验收。
 
 ## 快速使用
 
@@ -185,7 +185,7 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 
 Android 旧内核不支持 document-start 时仍会晚注入；需要先于 H5 启动的协议必须由宿主校验 READY/版本并在错误或超时时失败关闭。Android Bridge 的文档 nonce 在提交后安装，单次早期 READY 可由页面专属 facade 暂存，宿主收到 `FirstContentVisible` 后用已有脚本命令冲刷。协议映射、输入 JSON 编码和业务状态留在宿主，不新增业务原生通道。
 
-`navigationPolicy.allowedOrigins` 与 JS/Bridge 权限独立；未发布的 `navigationOrigins` 可进一步独立声明主文档精确来源、限定端口的域后缀和显式不限端口的协议及域后缀，省略时保留历史 Bridge 导航限制。调用方传入的 `Set` 可变且 `data class.copy` 保留引用，因此每次解析，不缓存归一化结果。Android 文件选择与媒体权限回执交付前核对当前 owner、可见生命周期和主页面信任；已进入平台的 ActivityResult 保留 in-flight 标记至真实回执，避免新请求接到旧结果；媒体请求自身 origin 也须可信，允许多个可信 origin 的合法 iframe。iOS 隐藏撤销待交付媒体授权的 generation，重新显示不恢复旧授权。
+`navigationPolicy.allowedOrigins` 与 JS/Bridge 权限独立；`navigationOrigins` 可进一步独立声明主文档精确来源、限定端口的域后缀和显式不限端口的协议及域后缀，省略时保留历史 Bridge 导航限制。调用方传入的 `Set` 可变且 `data class.copy` 保留引用，因此每次解析，不缓存归一化结果。Android 文件选择与媒体权限回执交付前核对当前 owner、可见生命周期和主页面信任；已进入平台的 ActivityResult 保留 in-flight 标记至真实回执，避免新请求接到旧结果；媒体请求自身 origin 也须可信，允许多个可信 origin 的合法 iframe。iOS 隐藏撤销待交付媒体授权的 generation，重新显示不恢复旧授权。
 
 ## 文档与反馈
 
@@ -228,11 +228,11 @@ await OhosWebViewDataCleaner.clearWebsiteData();
 
 当前源码回归使用[统一远程验证（Jenkins）](https://github.com/gycrosskit/.github/blob/main/docs/统一远程验证.md)，按已推送源码 ref/SHA 选择对应组件；平台命令与参数以受信 Jenkins recipe 为准。实际执行范围、测试数量、结果与耗时以绑定源码/CI SHA 的构建回执为准，轻量检查或跳过不算平台测试通过。
 
-候选冻结与消费按[发布流程](https://github.com/gycrosskit/.github/blob/main/docs/发布流程.md)使用独立 Job：`component-ci/package` 绑定准确 SOURCE_SHA 生成冻结候选并验证私有消费，`component-ci/release` 绑定准确 Tag/候选执行发布及独立公开消费。核对冻结归档、精确 tag/commit、完整 publication 清单和公开文件，不使用 `mavenLocal`、本库源码或 staging 替换公开依赖；各阶段证据分别记录。
+候选冻结与消费按[发布流程](https://github.com/gycrosskit/.github/blob/main/docs/发布流程.md)使用本机独立入口或已核对部署的 Job：`component-ci/package` 绑定准确 SOURCE_SHA 生成冻结候选并验证私有消费，`component-ci/release` 绑定准确 Tag/候选执行发布及独立公开消费。核对冻结归档、精确 tag/commit、完整 publication 清单和公开文件，不使用 `mavenLocal`、本库源码或 staging 替换公开依赖；各阶段证据分别记录。
 
-HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收须分别留证，不能由 Maven/KLIB 或其他平台的成功结果代算；本轮覆盖范围以实际 Jenkins 回执为准。
+HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收须分别留证，不能由 Maven/KLIB 或其他平台的成功结果代算；本轮覆盖范围以实际本机生产、发布及消费回执为准。
 
-远程 Android 消费开启 KuiklyCompose、全屏和页面通道 API probe，检查精确 core/Kuikly 版本与无第二套 CMP UI。iOS/OHOS 编译与真实 Renderer 链接分别验证；`2.3.3` Git Pod 正式发布后须单独安装 `native-2.3.3`，核对 lock、标签提交与源码摘要；当前新版本完整源码 SDK 与正式消费尚未完成，已发布 `2.3.1` 的记录仍按其原 Tag 保存。Framework 构建不代表 UIKit App 或设备运行。旧版本重验检出其旧 tag，当前 consumer 不保留 CMP API。
+远程 Android 消费核对精确 core/Kuikly 版本与无源码替换。`2.3.3` 已完成完整源码 SDK 验证；济世的 Android 14 项定向测试、APK 编译与安装，以及 iOS 正式 Git Pod 安装、Shared 链接、签名 App 构建与安装通过。鸿蒙 Registry 安装、编译与真机业务分别确认。通用消费报告和历史失败保留在[发布与验证](docs/开发与验证.md#233-发布与验证)，不以 Framework 编译或安装成功代替用户行为验收。
 
 阶段、缓存、有限网络重试、失败记录与证据边界见[共用 CI 规则](https://github.com/gycrosskit/.github/blob/main/docs/持续集成门禁.md)；本库实际平台命令以 Jenkins 的固定版本 recipe 为准。源码通过、远程消费、HAR/ohpm 与设备验收分别记录。
 
