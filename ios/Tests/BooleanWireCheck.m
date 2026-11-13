@@ -245,6 +245,46 @@ static void CheckStopLoadingCancellation(void) {
     }
 }
 
+static void CheckPageOwnershipCallbacks(void) {
+    for (id ownerActive in @[@YES, NSNull.null]) {
+        GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectZero];
+        [page hrv_setPropWithKey:@"pageOwnerActive" propValue:ownerActive];
+        StopProbeWebView *owner = [[StopProbeWebView alloc] initWithFrame:CGRectZero configuration:[WKWebViewConfiguration new]];
+        page.webView = owner;
+        page.request = @{@"settings": @{@"javaScriptEnabled": @YES}, @"security": @{@"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}, @"navigationPolicy": @{@"allowNewWindows": @YES}};
+        [page prepareDocumentScripts];
+        NSString *token = page.documentToken;
+        NSUInteger generation = page.callbackGeneration;
+        __block NSUInteger replies = 0;
+        [page hrv_callWithMethod:@"evaluateJavascript" params:@"{\"script\":\"read()\"}" callback:^(id result) { replies++; }];
+        void (^late)(id, NSError *) = owner.evaluations.lastObject;
+        [page hrv_setPropWithKey:@"visible" propValue:@NO];
+        BOOL retained = ownerActive == (__bridge id)kCFBooleanTrue;
+        Require(([token isEqual:page.documentToken] && page.callbackGeneration == generation) == retained, @"Only explicit page ownership may retain document identity in background");
+        late(@"background", nil);
+        Require(replies == (retained ? 1 : 0), @"Late JavaScript must follow effective page ownership");
+        Require(![page allows:@"https://safe.example/popup" mainFrame:YES newWindow:YES gesture:YES], @"Background ownership must not authorize a new popup");
+        [page hrv_setPropWithKey:@"visible" propValue:@YES];
+        Require([page allows:@"https://safe.example/popup" mainFrame:YES newWindow:YES gesture:YES], @"Visible owned popup lost explicit policy authorization");
+        [page hrv_callWithMethod:@"evaluateJavascript" params:@"{\"script\":\"readAgain()\"}" callback:^(id result) { replies++; }];
+        late = owner.evaluations.lastObject;
+        [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
+        NSString *revoked = page.documentToken;
+        Require(page.pageMessageRevoked && ![page pageOwned], @"Leaving page must revoke its document channel");
+        Require(![page allows:@"https://safe.example/popup" mainFrame:YES newWindow:YES gesture:YES], @"Inactive owner must not authorize a new popup");
+        [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@YES];
+        Require(![revoked isEqual:page.documentToken] && page.pageMessageRevoked, @"Returning retained DOM must rotate Bridge without restoring early channel authorization");
+        late(@"old-owner", nil);
+        Require(replies == (retained ? 1 : 0), @"An old JavaScript result crossed owner leave and return");
+        [page hrv_setPropWithKey:@"visible" propValue:@NO];
+        [page hrv_setPropWithKey:@"pageOwnerActive" propValue:NSNull.null];
+        Require(!page.pageOwnerActive && ![page pageOwned], @"Null owner must restore legacy visible fallback");
+        [owner.evaluations removeAllObjects]; page.webView = nil;
+        [page hrv_removeFromSuperview];
+    }
+    puts("PASS: Native page ownership: background late JS/identity, legacy/null visibility and leave-return generation revocation (WebKit callback probe)");
+}
+
 // 捕获生产代码传给 WebKit 的真实 JSON，随后继续调用系统编译器。
 static IMP originalRuleCompiler;
 static NSDictionary *lastTrigger;
@@ -269,6 +309,50 @@ static id Evaluate(WKWebView *owner, NSString *source) {
     Require(!failure, [NSString stringWithFormat:@"Real WebKit evaluation failed: %@", failure]);
     return result;
 }
+static NSString *RequestJSON(NSDictionary *request) {
+    return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:request options:0 error:nil] encoding:NSUTF8StringEncoding];
+}
+static void CheckOwnedBackgroundDocument(void) {
+    GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 200, 200)];
+    [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@YES];
+    [page hrv_setPropWithKey:@"visible" propValue:@NO];
+    __block NSMutableArray<NSDictionary *> *messages = [NSMutableArray array];
+    __block NSUInteger bridges = 0;
+    page.onEvent = ^(id event) {
+        if ([event[@"type"] isEqual:@"pageMessage"]) [messages addObject:event];
+        if ([event[@"type"] isEqual:@"bridgeMessage"]) bridges++;
+    };
+    [page hrv_setPropWithKey:@"request" propValue:RequestJSON(@{
+        @"content": @{@"type": @"html", @"html": @"<html><body>owned background</body></html>", @"baseUrl": @"https://safe.example/page"},
+        @"settings": @{@"javaScriptEnabled": @YES}, @"security": @{@"pageBridgeEnabled": @YES},
+        @"pageMessageChannels": @[@"NativeChannel"],
+        @"scripts": @[@{@"id": @"ready", @"injectionTime": @"DOCUMENT_START", @"onlyForTrustedMainFrame": @NO,
+            @"source": @"window.NativeChannel.onmessage=function(e){window.replyData=e.data;};window.NativeChannel.postMessage('ready');window.GYWebViewBridge.postMessage('ready','background');"}]})];
+    WKWebView *owner = page.webView;
+    WaitUntil(^BOOL { return !owner.loading && messages.count == 1 && bridges == 1; }, @"Background owned page lost early channel or Bridge initialization");
+    NSString *token = page.documentToken;
+    NSUInteger generation = page.callbackGeneration;
+    [page hrv_setPropWithKey:@"visible" propValue:@YES];
+    [page hrv_setPropWithKey:@"visible" propValue:@NO];
+    Require([token isEqual:page.documentToken] && generation == page.callbackGeneration && !page.pageMessageRevoked, @"Temporary visibility change invalidated owned document");
+    [page hrv_callWithMethod:@"replyPageMessage" params:RequestJSON(@{@"replyId": messages[0][@"replyId"], @"data": @"background reply"}) callback:^(id result) { RequireBoolean(result[@"result"], YES, @"Owned background channel reply"); }];
+    Require([Evaluate(owner, @"window.replyData") isEqual:@"background reply"], @"Background reply did not reach owned document");
+    __block BOOL evaluated = NO;
+    [page hrv_callWithMethod:@"evaluateJavascript" params:RequestJSON(@{@"script": @"'owned read'"}) callback:^(id result) { Require([result[@"result"] isEqual:@"\"owned read\""], @"Background read result changed"); evaluated = YES; }];
+    WaitUntil(^BOOL { return evaluated; }, @"Owned background read did not complete");
+    Evaluate(owner, @"window.NativeChannel.postMessage('pending');true");
+    WaitUntil(^BOOL { return messages.count == 2; }, @"Background channel stopped after ready");
+    NSString *oldReply = messages.lastObject[@"replyId"];
+    [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@NO];
+    [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@YES];
+    [page hrv_callWithMethod:@"replyPageMessage" params:RequestJSON(@{@"replyId": oldReply, @"data": @"stale"}) callback:^(id result) { RequireBoolean(result[@"result"], NO, @"Old owner reply must stay revoked"); }];
+    Evaluate(owner, [NSString stringWithFormat:@"window.NativeChannel.postMessage('old-channel');window.webkit.messageHandlers.JSAndroidBridge.postMessage({token:%@,value:'stale\\u001Fold'});window.GYWebViewBridge.postMessage('returned','fresh');true", GYQuote(token)]);
+    WaitUntil(^BOOL { return bridges >= 2; }, @"Returning owner did not restore ordinary Bridge");
+    Require(messages.count == 2 && bridges == 2 && page.pageMessageRevoked, @"Old document channel or Bridge token reopened after owner return");
+    [page hrv_removeFromSuperview];
+    puts("PASS: Real WKWebView owned background load/ready/Bridge/page reply/read and owner leave-return revocation");
+}
+
 static void CheckFileInputDOM(WKWebView *owner) {
     Evaluate(owner, IOS_FILE_CHOOSER_GATE_SCRIPT);
     // 只阻止系统 UI 默认动作；真实 DOM click、prototype 包装和 metadata script 继续执行。
@@ -343,9 +427,6 @@ static void CheckHostMediaIntegration(void) {
     puts("PASS: Actual WK DOM accept -> actual App Swift provider -> real MediaClient PhotosUI image/video/mixed or DocumentPicker: standard and production alias list, real provider output to WebKit, hidden/cancel lease preservation and document release (system result-container boundary)");
 }
 #endif
-static NSString *RequestJSON(NSDictionary *request) {
-    return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:request options:0 error:nil] encoding:NSUTF8StringEncoding];
-}
 static NSArray<NSString *> *permissionLanguages;
 static NSArray<NSString *> *PermissionLanguages(id target, SEL selector) { return permissionLanguages; }
 static UIAlertController *delayedPermissionAlert;
@@ -427,9 +508,32 @@ static BOOL CompleteHostExplanation(GYWebView *page, NSString *requestId, id acc
 - (void)selectFiles:(NSArray<NSString *> *)types multiple:(BOOL)multiple capture:(BOOL)capture presenter:(UIViewController *)presenter completion:(void (^)(NSArray<NSURL *> *, NSString *, NSArray<NSString *> *, dispatch_block_t))completion { self.selections++; self.capture = capture; self.reply = completion; }
 - (void)cancelFileSelection { self.reply = nil; }
 @end
+static void CheckBackgroundFileMetadata(void) {
+    for (NSNumber *capture in @[@NO, @YES]) {
+        PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
+        FileInputWebView *owner = [[FileInputWebView alloc] initWithFrame:CGRectZero]; page.webView = owner;
+        [page hrv_setPropWithKey:@"pageOwnerActive" propValue:@YES];
+        HostFileProvider *provider = [HostFileProvider new]; page.fileSelectionProvider = provider;
+        page.request = @{@"security": @{@"fileChooserEnabled": @YES, @"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
+        PermissionFrame *frame = [PermissionFrame new]; frame.probeWebView = owner;
+        __block NSUInteger replies = 0;
+        [page webView:owner runOpenPanelWithParameters:(WKOpenPanelParameters *)[FileInputParameters new] initiatedByFrame:(WKFrameInfo *)frame completionHandler:^(NSArray *files) { Require(!files, @"Cancelled metadata fixture returned files"); replies++; }];
+        Require(owner.metadataReply != nil, @"Production picker did not read metadata");
+        [page hrv_setPropWithKey:@"visible" propValue:@NO];
+        owner.metadataReply(RequestJSON(@{@"accept": @"image/png", @"capture": capture}), nil); owner.metadataReply = nil;
+        Require(provider.selections == 0 && replies == 0 && page.pendingFilePickerAction != nil && !page.permissionExplanation, @"Background metadata result opened new picker or cancelled owned request");
+        capturePermissionStatus = AVAuthorizationStatusAuthorized;
+        [page hrv_setPropWithKey:@"visible" propValue:@YES];
+        Require(provider.selections == 1 && provider.capture == capture.boolValue, @"Foreground did not resume the owned picker action once");
+        [page cancelFilePicker]; Require(replies == 1, @"Metadata fixture did not settle once");
+        page.webView = nil; [page hrv_removeFromSuperview];
+    }
+    puts("PASS: Native owned background metadata preserves request and defers document/capture picker UI until visible (system/provider fixtures)");
+}
 static void CheckHostFileSelection(void) {
     Method statusMethod = class_getClassMethod(AVCaptureDevice.class, @selector(authorizationStatusForMediaType:));
     IMP oldStatus = method_setImplementation(statusMethod, (IMP)CapturePermissionStatus);
+    CheckBackgroundFileMetadata();
     for (NSString *mode in @[@"selected", @"hidden", @"cancel", @"late", @"wrongType", @"oversize", @"denied", @"blocked", @"restricted", @"explanation"]) {
         PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
         page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero]; page.pageOwnerActive = @YES;
@@ -674,7 +778,7 @@ static void CheckGeolocationPermissionContinuation(void) {
 static void CheckWebRTCPermissionSettings(void) {
     Method status = class_getClassMethod(AVCaptureDevice.class, @selector(authorizationStatusForMediaType:));
     IMP original = method_setImplementation(status, (IMP)CapturePermissionStatus);
-    for (NSString *mode in @[@"camera", @"microphone", @"both", @"restricted", @"authorized", @"undetermined", @"cancel", @"hidden", @"inactive", @"oldFrame", @"oldOwner", @"childFrame", @"reentrant", @"hideExplanation", @"navigateExplanation", @"cancelReentrant", @"changedDenied"]) {
+    for (NSString *mode in @[@"camera", @"microphone", @"both", @"restricted", @"authorized", @"undetermined", @"cancel", @"hidden", @"ownedHidden", @"inactive", @"oldFrame", @"oldOwner", @"childFrame", @"reentrant", @"hideExplanation", @"navigateExplanation", @"cancelReentrant", @"changedDenied"]) {
         PermissionPage *page = [[PermissionPage alloc] initWithFrame:CGRectZero];
         WKWebView *owner = [[UploadWebView alloc] initWithFrame:CGRectZero]; page.webView = owner;
         page.request = @{@"security": @{@"mediaCaptureEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"]}}};
@@ -682,7 +786,8 @@ static void CheckWebRTCPermissionSettings(void) {
         if ([mode isEqual:@"oldFrame"]) frame.probeURL = @"https://safe.example/old";
         if ([mode isEqual:@"oldOwner"]) page.webView = [[UploadWebView alloc] initWithFrame:CGRectZero];
         if ([mode isEqual:@"childFrame"]) frame.childFrame = YES;
-        if ([mode isEqual:@"hidden"]) page.pageVisible = NO;
+        if ([mode isEqual:@"hidden"] || [mode isEqual:@"ownedHidden"]) page.pageVisible = NO;
+        if ([mode isEqual:@"ownedHidden"]) page.pageOwnerActive = @YES;
         if ([mode isEqual:@"inactive"]) page.pageOwnerActive = @NO;
         capturePermissionStatus = [mode isEqual:@"restricted"] ? AVAuthorizationStatusRestricted : [mode isEqual:@"authorized"] ? AVAuthorizationStatusAuthorized : ([@[@"undetermined", @"cancel", @"hideExplanation", @"navigateExplanation", @"cancelReentrant", @"changedDenied"] containsObject:mode] ? AVAuthorizationStatusNotDetermined : AVAuthorizationStatusDenied);
         __block NSUInteger events = 0, replies = 0, freshReplies = 0;
@@ -1022,6 +1127,8 @@ static void Check(void) {
     CheckPictureInPictureScriptWire();
     puts("PHASE: Stop-loading cancellation");
     CheckStopLoadingCancellation();
+    CheckPageOwnershipCallbacks();
+    CheckOwnedBackgroundDocument();
     if (getenv("WEBVIEW_STOP_ONLY")) {
         NSString *url = NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"];
         Require(url.length > 0, @"Stop fixture requires loopback page URL");

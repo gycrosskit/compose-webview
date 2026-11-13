@@ -1,8 +1,10 @@
 package io.github.gycrosskit.composewebview
 
-/** 脚本注入时机；不支持 document-start 的内核在页面可见/完成回调延迟注入，无法保证先于页面脚本执行。 */
+/** DOCUMENT_START 允许旧内核延后补注入；DOCUMENT_START_REQUIRED 不允许这种兜底。 */
 enum class WebViewScriptInjectionTime {
     DOCUMENT_START,
+    /** 必须先于页面脚本执行；不支持时不得在页面可见或完成后补注入。 */
+    DOCUMENT_START_REQUIRED,
     DOM_READY,
     DOCUMENT_FINISHED,
 }

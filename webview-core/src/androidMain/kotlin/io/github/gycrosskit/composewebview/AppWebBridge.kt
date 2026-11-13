@@ -8,15 +8,25 @@ import androidx.webkit.JavaScriptReplyProxy
 import java.util.UUID
 
 /** 每个物理 WebView 只服务一次页面加载；撤销后不能同名重装，旧 JS 对象会按名称路由新 listener。 */
-class AndroidPageMessageChannels(
+class AndroidPageMessageChannels private constructor(
     private val owner: WebView,
     private val request: () -> WebViewRequest,
     private val isOwner: () -> Boolean,
     private val onEvent: (WebViewEvent) -> Unit,
+    documentStartInstalled: Boolean?,
 ) {
+    /** 原通道无需早期脚本；原生定位须由下方重载确认本实例已完成注册。 */
+    constructor(owner: WebView, request: () -> WebViewRequest, isOwner: () -> Boolean, onEvent: (WebViewEvent) -> Unit) :
+        this(owner, request, isOwner, onEvent, null)
+
+    constructor(owner: WebView, request: () -> WebViewRequest, isOwner: () -> Boolean,
+        documentStartInstalled: Boolean, onEvent: (WebViewEvent) -> Unit) :
+        this(owner, request, isOwner, onEvent, documentStartInstalled)
+
     private val initialRequest = request()
     private val initialUrl = initialRequest.content.initialOrigin()
-    private val channels = initialRequest.pageMessageChannels.toSet()
+    private val requestedChannels = initialRequest.pageMessageChannels.toSet()
+    private var channels = requestedChannels
     private val proxies = mutableMapOf<String, JavaScriptReplyProxy>()
     private val replies = mutableMapOf<String, JavaScriptReplyProxy>()
     private var active = initialRequest.canUsePageMessageChannelsAt(initialUrl) ||
@@ -28,6 +38,13 @@ class AndroidPageMessageChannels(
         if (active && !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             active = false
             onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL))
+        }
+        if (active && NATIVE_GEOLOCATION_CHANNEL in channels &&
+            initialRequest.scripts.any { it.injectionTime == WebViewScriptInjectionTime.DOCUMENT_START_REQUIRED } &&
+            documentStartInstalled != true) {
+            channels = channels - NATIVE_GEOLOCATION_CHANNEL
+            onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.NATIVE_GEOLOCATION))
+            if (channels.isEmpty() || !isOwner() || !owner.isActiveAppWebView()) active = false
         }
         if (active) try {
             val origin = requireNotNull(initialUrl?.toHttpOrigin())
@@ -67,7 +84,7 @@ class AndroidPageMessageChannels(
     private fun allowed(): Boolean {
         if (!active || !isOwner() || !owner.isActiveAppWebView()) return false
         val current = request()
-        return current.content == initialRequest.content && current.pageMessageChannels == channels &&
+        return current.content == initialRequest.content && current.pageMessageChannels == requestedChannels &&
             current.canUsePageMessageChannelsAt(owner.url ?: initialUrl?.pageMessageDocumentUrl())
     }
 
