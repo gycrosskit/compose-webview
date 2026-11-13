@@ -30,16 +30,21 @@ class AndroidPageMessageChannelsTest {
 
     @Before fun resetProvider() { PageChannelProvider.listeners.clear() }
 
-    @Test fun `native geolocation refuses a provider without document start even with messages`() {
+    @Test fun `missing document start rejects only geolocation and preserves original page channels`() {
         val adapted = request.copy(security = WebViewSecurity(
             trustedOrigins = WebViewTrustPolicy(trustedHostSuffixes = setOf("page.test")),
             geolocationEnabled = true,
         )).withNativeGeolocation()
         val owner = WebView(RuntimeEnvironment.getApplication())
         val events = mutableListOf<WebViewEvent>()
-        AndroidPageMessageChannels(owner, { adapted }, { true }, events::add)
-        assertEquals(listOf(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL)), events)
-        assertTrue(PageChannelProvider.listeners[owner].isNullOrEmpty())
+        val session = AndroidPageMessageChannels(owner, { adapted }, { true }, documentStartInstalled = false, onEvent = events::add)
+        assertEquals(listOf(WebViewEvent.CapabilityUnsupported(WebViewCapability.NATIVE_GEOLOCATION)), events)
+        assertEquals(setOf("PageReady"), PageChannelProvider.listeners.getValue(owner).keys)
+        val proxy = PageChannelReply()
+        PageChannelProvider.listeners.getValue(owner).getValue("PageReady").onPostMessage(owner,
+            WebMessageCompat("ready"), Uri.parse("https://page.test"), true, proxy)
+        assertTrue(session.reply((events.last() as WebViewEvent.PageMessage).replyId, "still usable"))
+        assertEquals(listOf("still usable"), proxy.messages)
         assertNull(adapted.earlyScriptSource())
     }
 

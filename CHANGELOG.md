@@ -1,8 +1,16 @@
 # 更新记录
 
+## 2.3.3
+
+状态：发布准备，Maven、Git Pod、HAR/OHPM 均未发布；完整新源码 SDK、正式远程消费及真机验收尚未完成。
+
+- Android document-start 优先使用 AndroidX 公开 API；仅 provider 明确声明旧 feature 且 boundary 签名符合时兼容 v0 的注册和精准 remove，不按 User-Agent 猜测。旧协议依赖 AndroidX internal，不属于公开稳定合同。
+- 新增 `WebViewCapability.NATIVE_GEOLOCATION`：缺少可靠 document-start 或本实例注册失败时只禁用原生定位通道，保留其他可用的初始页面通道；不在页面可见/完成后晚注入。穷举 capability 的宿主须处理新增值。
+- 原生定位默认关闭；济世宿主接线仍沿用既有权限流程和 12 秒 / 5 分钟 / `maxAccuracy=MAX` 策略，接受大概位置并返回真实精度与采集时间。WebView 97 仅有静态可达性和 fixture 证据，未记为实际内核或真机已验收；见[验证边界](docs/开发与验证.md#233-准备与验证)。
+
 ## 2.3.2
 
-状态：待发布；原生定位适配与宿主接线正在验证，各渠道发布、远程消费及真机验收分别记录。
+状态：`2.3.2` / `native-2.3.2` Tag 与候选已冻结，未完成正式发行；HAR 仅有私有候选，未创建 `har-2.3.2` Tag。原 Tag、候选和历史验证不覆盖，也不代替 2.3.3 的验证。
 
 - 新增显式 `withNativeGeolocation()`：可信 HTTPS 初始主文档通过既有消息通道将 `navigator.geolocation` 调用交给宿主，默认请求不启用。宿主提供权限 UI、定位策略和真实精度/采集时间，组件不强制精确定位或校准坐标。
 - `DOCUMENT_START_REQUIRED` 禁止旧 Android 内核晚注入。连续定位使用可取消的串行单次采样，不承诺原生持续订阅或完整浏览器对象/Permissions API 语义。兼容边界和宿主回执见[接入指南](docs/接入指南.md#原生定位适配未发布)。

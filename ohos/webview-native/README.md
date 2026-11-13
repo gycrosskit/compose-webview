@@ -1,9 +1,9 @@
-> 当前源码候选 `2.3.2` 尚未发布：新增可选原生定位适配，由宿主提供权限流程及定位结果。已发布的 GitHub HAR `har-2.3.1` 不含新能力，其私有 OHPM 提交仍待确认；准确渠道记录见[开发与验证](../../docs/开发与验证.md)。
+> 当前源码目标 `2.3.3`，各渠道尚未发布：可选原生定位由宿主提供权限流程及真实结果。`2.3.2` 仅有冻结私有 HAR 候选、无 HAR Tag；已发布的 GitHub HAR `har-2.3.1` 不含新能力，私有 OHPM `2.3.1` 未提交；准确渠道记录见[开发与验证](../../docs/开发与验证.md)。
 
 已发布的 `2.3.0` HAR 下载与既有私库 OHPM 安装消费记录保留在[开发与验证](../../docs/开发与验证.md)，非官方公共 OHPM 发布。
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **2.3.2 候选源码**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **2.3.3 候选源码**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
 
 rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和空路径按同一文档身份匹配；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。主帧 capability、nonce、owner 与单次回复门禁保持有效。
 
@@ -11,7 +11,7 @@ rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和
 
 ## 安装与注册
 
-本轮源码目标 Maven/Git Pod/HAR `2.3.2`，正式发布后分别使用 `native-2.3.2`、`har-2.3.2`，当前不能据此推导版本可安装；配套 system-actions `1.0.2` 保持，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.2；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+本轮源码目标 Maven/Git Pod/HAR `2.3.3`，正式发布后分别使用 `native-2.3.3`、`har-2.3.3`，当前不能据此推导版本可安装；配套 system-actions `1.0.2` 保持，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.2；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 

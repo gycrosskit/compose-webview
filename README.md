@@ -1,10 +1,10 @@
 # GY CrossKit WebView
 
-当前源码候选为 `2.3.2`（尚未发布），新增可选[原生定位适配](docs/接入指南.md#原生定位适配未发布)。以下已发布渠道状态仍属于 `2.3.1`，不能据此消费新 API。
+当前源码目标为 `2.3.3`，Maven、Git Pod、HAR/OHPM 各渠道均未发布，包含可选[原生定位适配与 Android 旧协议兼容](docs/接入指南.md#原生定位适配未发布)。`2.3.2` / `native-2.3.2` Tag 与候选已冻结但未完成正式发行，HAR `2.3.2` 仅有私有候选、无 Tag；旧 Tag 和制品不覆盖。以下已发布渠道状态仍属于 `2.3.1`，不能据此消费新 API。
 
 > `2.3.1` 的 Maven、Git Pod `GYWebView`（`native-2.3.1`）与 GitHub HAR（`har-2.3.1`）已发布。JitPack 公开文件核验、HAR 受管消费通过；Maven/Git Pod 的 macOS 消费构建成功，但末尾 Tag 核对超时，运行整体仍失败，Linux 消费 deferred。私有 OHPM `2.3.1` 尚未提交，既有 `2.3.0` 保留。各渠道准确来源与证据见[发布与验证](docs/开发与验证.md#231-发布与验证)。
 
-本版修复页面归属与可见性混用，以及系统定位授权期间误取消请求。显式 `pageOwnerActive=true` 时，暂时隐藏继续同文档加载、JS 与桥消息；新 UI 交互仍要求可见。旧 `2.3.0` 标签、制品、checksum 与原验收记录保留。
+`2.3.1` 修复页面归属与可见性混用，以及系统定位授权期间误取消请求。显式 `pageOwnerActive=true` 时，暂时隐藏继续同文档加载、JS 与桥消息；新 UI 交互仍要求可见。旧 `2.3.0` 标签、制品、checksum 与原验收记录保留。
 Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。 各渠道发布与精确消费状态见对应 Release，既有验收按原 tag 保留。
 
 历史发行基线：Maven `1.2.0`；iOS Git Pod 为 `1.2.1`（`native-1.2.1`），HAR/OHPM 为 `1.2.1`（`har-1.2.1`），精确依赖 SystemActions Native `1.0.2`。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；既有版本已删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
@@ -232,7 +232,7 @@ await OhosWebViewDataCleaner.clearWebsiteData();
 
 HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收须分别留证，不能由 Maven/KLIB 或其他平台的成功结果代算；本轮覆盖范围以实际 Jenkins 回执为准。
 
-远程 Android 消费开启 KuiklyCompose、全屏和页面通道 API probe，检查精确 core/Kuikly 版本与无第二套 CMP UI。iOS/OHOS 编译与真实 Renderer 链接分别验证；本轮 Git Pod 须单独安装 `native-2.3.1`，核对 lock、标签提交与源码摘要。Framework 构建不代表 UIKit App 或设备运行。旧版本重验检出其旧 tag，当前 consumer 不保留 CMP API。
+远程 Android 消费开启 KuiklyCompose、全屏和页面通道 API probe，检查精确 core/Kuikly 版本与无第二套 CMP UI。iOS/OHOS 编译与真实 Renderer 链接分别验证；`2.3.3` Git Pod 正式发布后须单独安装 `native-2.3.3`，核对 lock、标签提交与源码摘要；当前新版本完整源码 SDK 与正式消费尚未完成，已发布 `2.3.1` 的记录仍按其原 Tag 保存。Framework 构建不代表 UIKit App 或设备运行。旧版本重验检出其旧 tag，当前 consumer 不保留 CMP API。
 
 阶段、缓存、有限网络重试、失败记录与证据边界见[共用 CI 规则](https://github.com/gycrosskit/.github/blob/main/docs/持续集成门禁.md)；本库实际平台命令以 Jenkins 的固定版本 recipe 为准。源码通过、远程消费、HAR/ohpm 与设备验收分别记录。
 

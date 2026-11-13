@@ -308,7 +308,8 @@ class GYWebViewNative @JvmOverloads constructor(
         earlyScripts.install(owner, current)
         if (current.pageMessageChannels.isNotEmpty()) {
             pageMessageChannels = AndroidPageMessageChannels(
-                owner, { requireNotNull(request) }, { owner === webView && ownerActive && !destroyed && !crashed }, ::emit,
+                owner, { requireNotNull(request) }, { owner === webView && ownerActive && !destroyed && !crashed },
+                documentStartInstalled = earlyScripts.hasDocumentStartScripts(owner), onEvent = ::emit,
             )
             if (!ownerActive) pageMessageChannels?.revoke()
         }

@@ -1,16 +1,22 @@
+## 2.3.3
+
+状态：发布准备；HAR/OHPM 均未发布，完整新源码 SDK、正式消费与真机另验。
+
+- 跟随 Maven/Git Pod 统一使用 `2.3.3` 候选版本，继续复用初始主文档通道的可选原生定位适配；宿主权限流程、真实精度/时间回执、Renderer 范围与 SystemActions Native `1.0.2` 保持。
+
 ## 2.3.2
 
-状态：待发布。
+状态：仅私有 HAR 候选冻结，未创建 `har-2.3.2` Tag，也未正式发布 HAR/OHPM；原候选保留。
 
 - 接受 `DOCUMENT_START_REQUIRED` 脚本，复用既有有序 document-start 与初始主文档通道运行可选原生定位适配；宿主提供权限 UI、定位策略与真实结果。未启用时沿用浏览器定位，不新增独立原生定位驱动。
 
 ## 2.3.1
 
-状态：待发布；Android、iOS 济世宿主已由用户完成真机验收，鸿蒙真机及各渠道正式消费另行确认。
+状态：GitHub HAR `har-2.3.1` 已发布并通过受管下载消费；私有 OHPM `2.3.1` 未提交。Android、iOS 济世此前源码试包验收与鸿蒙真机、各渠道正式消费分别记录，见[开发与验证](../../docs/开发与验证.md#231-发布与验证)。
 
 - 显式 `pageOwnerActive=true` 时，暂时不可见继续同文档加载、JavaScript、普通 Bridge 与早期页面通道；真正离页、文档替换、导航及销毁仍撤销旧操作。未传归属时保留原可见性行为。
 - Android、OHOS 已发出的系统定位授权跨暂时隐藏保留，按原文档与来源交付一次；新用途说明、权限弹窗、文件和媒体 UI 继续要求可见。
-- Maven、Git Pod `native-2.3.1`、私有 OHPM/HAR `har-2.3.1` 同版；Renderer 范围、SystemActions Native `1.0.2` 与旧制品保持。
+- Maven、Git Pod `native-2.3.1` 与 GitHub HAR `har-2.3.1` 已发行同版，私有 OHPM 未提交；Renderer 范围、SystemActions Native `1.0.2` 与旧制品保持。
 
 ## 2.3.0
 

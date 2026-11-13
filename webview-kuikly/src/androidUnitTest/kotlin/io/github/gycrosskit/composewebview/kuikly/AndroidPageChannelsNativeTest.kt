@@ -4,6 +4,7 @@ import android.net.Uri
 import android.webkit.WebView
 import androidx.webkit.JavaScriptExecutionException
 import androidx.webkit.JavaScriptReplyProxy
+import androidx.webkit.ScriptHandler
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
@@ -28,6 +29,28 @@ class AndroidPageChannelsNativeTest {
         settings = WebViewSettings(javaScriptEnabled = true),
         pageMessageChannels = setOf("PageReady"),
     )
+
+    @Test
+    @Config(shadows = [RecordingWebView::class, NativeDocumentStartFeatures::class, NativeDocumentStartFailureProvider::class])
+    fun `actual early add failure reports only native geolocation unsupported and preserves page initialization`() {
+        NativePageProvider.listeners.clear()
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        val events = mutableListOf<Map<String, Any?>>()
+        native.setProp("onEvent", { event: Any? -> @Suppress("UNCHECKED_CAST") events.add(event as Map<String, Any?>) })
+        val adapted = request.copy(security = WebViewSecurity(
+            WebViewTrustPolicy(listOf("https://page.test")), geolocationEnabled = true)).withNativeGeolocation()
+        native.setProp("request", WebViewWire.encodeRequest(adapted))
+        val owner = native.getChildAt(0) as WebView
+        assertEquals(listOf("NATIVE_GEOLOCATION"), events.filter { it["type"] == "capabilityUnsupported" }.map { it["capability"] })
+        assertEquals(setOf("PageReady"), NativePageProvider.listeners.getValue(owner).keys)
+        val proxy = NativePageReply()
+        NativePageProvider.listeners.getValue(owner).getValue("PageReady").onPostMessage(owner,
+            WebMessageCompat("initialization"), Uri.parse("https://page.test"), true, proxy)
+        val id = events.single { it["type"] == "pageMessage" }["replyId"]
+        native.call("replyPageMessage", """{"replyId":"$id","data":"ready"}""") {}
+        assertEquals(listOf("ready"), proxy.messages)
+        native.onDestroy()
+    }
 
     @Test fun `independent navigation installs bridge for later trusted document without granting other frames`() {
         NativePageProvider.listeners.clear()
@@ -174,5 +197,25 @@ class NativePageProvider {
         }
         @JvmStatic @Implementation
         fun removeWebMessageListener(owner: WebView, name: String) { listeners[owner]?.remove(name) }
+    }
+}
+
+@Implements(value = WebViewFeature::class, isInAndroidSdk = false)
+class NativeDocumentStartFeatures {
+    companion object {
+        @JvmStatic @Implementation fun isFeatureSupported(feature: String): Boolean =
+            feature == WebViewFeature.WEB_MESSAGE_LISTENER || feature == WebViewFeature.DOCUMENT_START_SCRIPT
+    }
+}
+
+@Implements(value = WebViewCompat::class, isInAndroidSdk = false)
+class NativeDocumentStartFailureProvider {
+    companion object {
+        @JvmStatic @Implementation fun addDocumentStartJavaScript(owner: WebView, source: String, origins: Set<String>): ScriptHandler =
+            error("provider failed to register document-start")
+        @JvmStatic @Implementation fun addWebMessageListener(owner: WebView, name: String, rules: Set<String>, listener: WebViewCompat.WebMessageListener) =
+            NativePageProvider.addWebMessageListener(owner, name, rules, listener)
+        @JvmStatic @Implementation fun removeWebMessageListener(owner: WebView, name: String) =
+            NativePageProvider.removeWebMessageListener(owner, name)
     }
 }
