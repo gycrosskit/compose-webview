@@ -25,7 +25,9 @@ class AndroidPageMessageChannels(
     private val installed = mutableSetOf<String>()
 
     init {
-        if (active && !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+        if (active && (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
+            initialRequest.scripts.any { it.injectionTime == WebViewScriptInjectionTime.DOCUMENT_START_REQUIRED } &&
+                !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))) {
             active = false
             onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL))
         }

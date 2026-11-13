@@ -1,8 +1,10 @@
 # GY CrossKit WebView
 
-> 待发布版本 `2.3.1`：Maven、Git Pod `GYWebView`（`native-2.3.1`）与私有 OHPM/HAR（`har-2.3.1`）修复页面归属与可见性混用，以及系统定位授权期间误取消请求。显式 `pageOwnerActive=true` 时，暂时隐藏继续同文档加载、JS 与桥消息；新 UI 交互仍要求可见。各渠道冻结及正式消费另行留证，旧 `2.3.0` 标签、制品与 checksum 保留。
+当前源码候选为 `2.3.2`（尚未发布），新增可选[原生定位适配](docs/接入指南.md#原生定位适配未发布)。以下已发布渠道状态仍属于 `2.3.1`，不能据此消费新 API。
 
-已发布的 `2.3.0` 渠道状态与消费证据保留在[开发与验证](docs/开发与验证.md)；本轮结果单独记录。
+> `2.3.1` 的 Maven、Git Pod `GYWebView`（`native-2.3.1`）与 GitHub HAR（`har-2.3.1`）已发布。JitPack 公开文件核验、HAR 受管消费通过；Maven/Git Pod 的 macOS 消费构建成功，但末尾 Tag 核对超时，运行整体仍失败，Linux 消费 deferred。私有 OHPM `2.3.1` 尚未提交，既有 `2.3.0` 保留。各渠道准确来源与证据见[发布与验证](docs/开发与验证.md#231-发布与验证)。
+
+本版修复页面归属与可见性混用，以及系统定位授权期间误取消请求。显式 `pageOwnerActive=true` 时，暂时隐藏继续同文档加载、JS 与桥消息；新 UI 交互仍要求可见。旧 `2.3.0` 标签、制品、checksum 与原验收记录保留。
 Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。 各渠道发布与精确消费状态见对应 Release，既有验收按原 tag 保留。
 
 历史发行基线：Maven `1.2.0`；iOS Git Pod 为 `1.2.1`（`native-1.2.1`），HAR/OHPM 为 `1.2.1`（`har-1.2.1`），精确依赖 SystemActions Native `1.0.2`。根目录只聚合构建，不再发布 `compose-webview` CMP UI 产物；公开 Kotlin 能力保留 `webview-core` 与 `webview-kuikly`。旧 CMP 使用方继续使用固定旧版本；既有版本已删除根包的 `AppWebView`、`AppWebViewState` 与 `WebViewCallbacks`，不提供兼容空壳。
@@ -130,7 +132,7 @@ dependencyResolutionManagement {
 }
 ```
 
-本轮 Maven、Git Pod/HAR 候选为 `2.3.1`；以下为精确依赖示例，实际可用性以对应渠道的 Release 与消费收据为准。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
+当前 Maven、Git Pod 与 GitHub HAR 为 `2.3.1`；以下为精确依赖示例，各渠道消费状态见顶部，不能由 Release 存在推导完整消费通过。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
@@ -146,7 +148,7 @@ pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :t
 当前源码继续使用 iOS Renderer 2.29.1；发布 Tag 与候选提交的消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS HAR `2.3.1`（`har-2.3.1`）在配置的私有 OHPM 精确安装，见[HAR 接入指南](ohos/webview-native/README.md)，Registry 可安装性须单独核验。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
+HarmonyOS HAR `2.3.1` 已在 [har-2.3.1 Release](https://github.com/gycrosskit/compose-webview/releases/tag/har-2.3.1) 提供，GitHub HAR 受管消费通过；私有 OHPM `2.3.1` 尚未提交，不能按该 Registry 版本安装。接线见[HAR 接入指南](ohos/webview-native/README.md)，Registry 精确安装须另行验收。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
 
 ## 快速使用
 

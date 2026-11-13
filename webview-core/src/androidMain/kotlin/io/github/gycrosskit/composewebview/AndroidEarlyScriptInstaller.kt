@@ -57,7 +57,7 @@ class AndroidEarlyScriptInstaller(
                 setOf(WILDCARD_ORIGIN_RULE),
             )
             val rules = request.earlyScriptOriginRules()
-            request.earlyScriptSource()?.takeIf { rules.isNotEmpty() }?.let { source ->
+            request.earlyScriptSource(atDocumentStart = true)?.takeIf { rules.isNotEmpty() }?.let { source ->
                 installedHandlers += WebViewCompat.addDocumentStartJavaScript(view, source, rules)
             }
         }

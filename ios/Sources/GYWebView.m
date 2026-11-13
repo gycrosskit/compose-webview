@@ -395,7 +395,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         id trustedOnly = script[@"onlyForTrustedMainFrame"];
         if (trustedOnly && (![trustedOnly isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)trustedOnly) != CFBooleanGetTypeID())) return NO;
         if (!identifier.length || !source.length || ![ids firstMatchInString:identifier options:0 range:NSMakeRange(0, identifier.length)]) return NO;
-        if (![@[@"DOCUMENT_START", @"DOM_READY", @"DOCUMENT_FINISHED"] containsObject:script[@"injectionTime"] ?: @"DOM_READY"]) return NO;
+        if (![@[@"DOCUMENT_START", @"DOCUMENT_START_REQUIRED", @"DOM_READY", @"DOCUMENT_FINISHED"] containsObject:script[@"injectionTime"] ?: @"DOM_READY"]) return NO;
     }
     return YES;
 }

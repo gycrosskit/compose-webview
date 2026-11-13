@@ -1,12 +1,19 @@
 # 更新记录
 
+## 2.3.2
+
+状态：待发布；原生定位适配与宿主接线正在验证，各渠道发布、远程消费及真机验收分别记录。
+
+- 新增显式 `withNativeGeolocation()`：可信 HTTPS 初始主文档通过既有消息通道将 `navigator.geolocation` 调用交给宿主，默认请求不启用。宿主提供权限 UI、定位策略和真实精度/采集时间，组件不强制精确定位或校准坐标。
+- `DOCUMENT_START_REQUIRED` 禁止旧 Android 内核晚注入。连续定位使用可取消的串行单次采样，不承诺原生持续订阅或完整浏览器对象/Permissions API 语义。兼容边界和宿主回执见[接入指南](docs/接入指南.md#原生定位适配未发布)。
+
 ## 2.3.1
 
-状态：待发布；Android、iOS 济世宿主已由用户完成真机验收，鸿蒙真机及各渠道正式消费另行确认。
+状态：Maven、Git Pod 与 GitHub HAR 已发布。JitPack 公开文件核验、HAR 受管消费通过；Maven/Git Pod 的 macOS 消费构建成功，但末尾 Tag 核对超时，运行整体仍失败，Linux 消费 deferred。私有 OHPM `2.3.1` 尚未提交。Android、iOS 济世源码试包此前由用户完成真机验收；正式 `2.3.1` 依赖包本地编译、安装成功，不记为用户已验收正式包。准确来源与消费边界见[发布与验证](docs/开发与验证.md#231-发布与验证)。
 
 - 显式 `pageOwnerActive=true` 时，暂时不可见继续同文档加载、JavaScript、普通 Bridge 与早期页面通道；真正离页、文档替换、导航及销毁仍撤销旧操作。未传归属时保留原可见性行为。
 - Android、OHOS 已发出的系统定位授权跨暂时隐藏保留，按原文档与来源交付一次；新用途说明、权限弹窗、文件和媒体 UI 继续要求可见。
-- Maven、Git Pod `native-2.3.1`、私有 OHPM/HAR `har-2.3.1` 同版；Renderer 范围、SystemActions Native `1.0.2` 与旧制品保持。
+- Maven、Git Pod `native-2.3.1` 与 GitHub HAR `har-2.3.1` 同版发行，私有 OHPM 待提交；Renderer 范围、SystemActions Native `1.0.2` 与旧制品保持。
 
 ## 2.3.0
 

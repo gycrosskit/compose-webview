@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 # 既有 Android unit test 编译并调用生产 generator，Gradle 将导出目录登记为测试输出。
 scripts=build/early-scripts/testDebugUnitTest
-for name in production page channels; do
+for name in production page channels native-geolocation; do
     if [[ ! -s "$scripts/$name.js" ]]; then
         echo "Missing $scripts/$name.js; run :webview-core:testDebugUnitTest first" >&2
         exit 1
@@ -12,3 +12,4 @@ done
 node verification/early-scripts/verify.cjs "$scripts/production.js"
 node verification/early-scripts/verify.cjs "$scripts/page.js" page
 node verification/early-scripts/page-messages.cjs "$scripts/channels.js"
+NATIVE_GEOLOCATION_SCRIPT_FILE="$scripts/native-geolocation.js" node --test verification/early-scripts/native-geolocation.test.cjs

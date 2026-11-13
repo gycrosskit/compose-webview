@@ -110,7 +110,7 @@ export interface WebViewUrlRule { type: string; value?: string; ignoreCase?: boo
  * 主文档脚本声明，输入不可信时应由宿主拒绝而非拼接。
  * @property id 非空稳定脚本标识。
  * @property source 非空可信脚本正文。
- * @property injectionTime DOCUMENT_START/DOM_READY/DOCUMENT_FINISHED。
+ * @property injectionTime DOCUMENT_START/DOCUMENT_START_REQUIRED/DOM_READY/DOCUMENT_FINISHED。
  * @property onlyForTrustedMainFrame 默认 true；false 仍拒绝 iframe。
  */
 export interface WebViewScript { id: string; source: string; injectionTime: string; onlyForTrustedMainFrame: boolean; }
@@ -355,7 +355,7 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   }
   request.scripts.forEach(script => {
     if ((script.onlyForTrustedMainFrame !== undefined && typeof script.onlyForTrustedMainFrame !== 'boolean') || typeof script.id !== 'string' || !/^[a-zA-Z0-9_.-]+$/.test(script.id) || typeof script.source !== 'string' || !script.source.trim() ||
-      !['DOCUMENT_START', 'DOM_READY', 'DOCUMENT_FINISHED'].includes(script.injectionTime)) throw new Error('Invalid script');
+      !['DOCUMENT_START', 'DOCUMENT_START_REQUIRED', 'DOM_READY', 'DOCUMENT_FINISHED'].includes(script.injectionTime)) throw new Error('Invalid script');
   });
   return request;
 }

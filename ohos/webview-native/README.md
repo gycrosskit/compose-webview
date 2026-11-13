@@ -1,9 +1,9 @@
-> 待发布版本 `2.3.1`：同文档在显式归属有效时跨暂时隐藏继续加载、JS、桥消息与已发出的系统定位授权；新 UI 操作仍要求可见。Git Pod 使用 `native-2.3.1`，私有 OHPM/HAR 使用 `har-2.3.1`，发布及正式消费另行留证。
+> 当前源码候选 `2.3.2` 尚未发布：新增可选原生定位适配，由宿主提供权限流程及定位结果。已发布的 GitHub HAR `har-2.3.1` 不含新能力，其私有 OHPM 提交仍待确认；准确渠道记录见[开发与验证](../../docs/开发与验证.md)。
 
 已发布的 `2.3.0` HAR 下载与既有私库 OHPM 安装消费记录保留在[开发与验证](../../docs/开发与验证.md)，非官方公共 OHPM 发布。
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **2.3.1**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **2.3.2 候选源码**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
 
 rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和空路径按同一文档身份匹配；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。主帧 capability、nonce、owner 与单次回复门禁保持有效。
 
@@ -11,14 +11,14 @@ rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和
 
 ## 安装与注册
 
-本轮 Maven/Git Pod/HAR 使用 `2.3.1`，Git Pod Tag 为 `native-2.3.1`，私有 OHPM/HAR Tag 为 `har-2.3.1`；配套 system-actions `1.0.2` 保持，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.2；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+本轮源码目标 Maven/Git Pod/HAR `2.3.2`，正式发布后分别使用 `native-2.3.2`、`har-2.3.2`，当前不能据此推导版本可安装；配套 system-actions `1.0.2` 保持，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.2；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 
 `2.3.0` 已发布到既有私有 OHPM Registry。先按组织要求配置该私库及访问身份，再执行以下精确安装；该坐标不表示官方公共 OHPM 可安装。
 
 ```bash
-ohpm install @gycrosskit/webview@2.3.1
+ohpm install @gycrosskit/webview@2.3.0
 ```
 
 本地候选可从 assembleHar 输出验证；正式包从[不可变 GitHub Release](https://github.com/gycrosskit/compose-webview/releases/tag/har-2.3.0) 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry `1.0.2`。干净消费者核对只有一份窗口 owner。离线验证使用已核对冻结 SHA-256 的 Web HAR 和 system-actions `1.0.2` HAR，并用 root override 保证同一系统包；候选字节不得冒充公开 Release 下载或 Registry 安装。文件下载消费与 Registry 安装分开验收。

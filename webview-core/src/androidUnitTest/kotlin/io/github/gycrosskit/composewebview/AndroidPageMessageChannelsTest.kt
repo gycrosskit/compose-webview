@@ -30,6 +30,19 @@ class AndroidPageMessageChannelsTest {
 
     @Before fun resetProvider() { PageChannelProvider.listeners.clear() }
 
+    @Test fun `native geolocation refuses a provider without document start even with messages`() {
+        val adapted = request.copy(security = WebViewSecurity(
+            trustedOrigins = WebViewTrustPolicy(trustedHostSuffixes = setOf("page.test")),
+            geolocationEnabled = true,
+        )).withNativeGeolocation()
+        val owner = WebView(RuntimeEnvironment.getApplication())
+        val events = mutableListOf<WebViewEvent>()
+        AndroidPageMessageChannels(owner, { adapted }, { true }, events::add)
+        assertEquals(listOf(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL)), events)
+        assertTrue(PageChannelProvider.listeners[owner].isNullOrEmpty())
+        assertNull(adapted.earlyScriptSource())
+    }
+
     @Test fun `browser normalized owner URL preserves initial inbound and reply`() {
         val request = request.copy(
             content = WebViewContent.Url("https://page.test"),
