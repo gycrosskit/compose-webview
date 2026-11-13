@@ -296,6 +296,78 @@ class GYWebViewNativeTest {
     }
 
     @Test
+    fun `explicit owner retains document token initialization and JS callbacks while hidden`() {
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        native.setProp("pageOwnerActive", true)
+        native.setProp("request", WebViewWire.encodeRequest(request.copy(
+            security = request.security.copy(appBridgeEnabled = true))))
+        val owner = native.getChildAt(0) as WebView
+        val shadow = Shadow.extract<RecordingWebView>(owner)
+        val client = shadow.webViewClient
+        client.onPageStarted(owner, owner.url, null)
+        client.onPageCommitVisible(owner, owner.url)
+        val beforeHide = shadow.scripts.last { it.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__") }
+        var delivered = 0
+        native.call("evaluateJavascript", "{\"script\":\"1+1\"}") { delivered++ }
+        val pending = shadow.lastEvaluatedJavascriptCallback
+        native.setProp("visible", false)
+        assertFalse(shadow.wasOnPauseCalled())
+        pending.onReceiveValue("2")
+        assertEquals(1, delivered)
+        client.onPageFinished(owner, owner.url)
+        assertEquals(beforeHide, shadow.scripts.last { it.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__") })
+        assertEquals(1, shadow.scripts.count { it == finished })
+        native.call("evaluateJavascript", "{\"script\":\"backgroundData()\"}") { delivered++ }
+        val revoked = shadow.lastEvaluatedJavascriptCallback
+        native.setProp("pageOwnerActive", false)
+        revoked.onReceiveValue("stale")
+        assertEquals(1, delivered)
+        assertTrue(shadow.wasOnPauseCalled())
+        assertTrue(shadow.scripts.last().contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(false)"))
+        native.setProp("visible", true)
+        assertTrue(shadow.scripts.last().contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(false)"))
+        assertEquals(0, shadow.reloadInvocations)
+        native.onDestroy()
+    }
+
+    @Test
+    fun `native geolocation system permission survives hidden owner and revoked owner rejects late result`() {
+        for (revoke in listOf(false, true)) {
+            val activityController = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+            val activity = activityController.get()
+            org.robolectric.Shadows.shadowOf(activity.application).denyPermissions(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+            val native = GYWebViewNative(activity)
+            val events = mutableListOf<Map<*, *>>()
+            native.setProp("onEvent", { raw: Any? -> events += raw as Map<*, *> } as KuiklyRenderCallback)
+            native.setProp("pageOwnerActive", true)
+            native.setProp("request", WebViewWire.encodeRequest(request.copy(
+                security = request.security.copy(geolocationEnabled = true),
+                permissionPresentation = WebViewPermissionPresentation.HOST)))
+            val owner = native.getChildAt(0) as WebView
+            val chrome = Shadow.extract<RecordingWebView>(owner).webChromeClient
+            val results = mutableListOf<Boolean>()
+            chrome.onGeolocationPermissionsShowPrompt("https://trusted.test") { _, allowed, retain ->
+                assertFalse(retain)
+                results += allowed
+            }
+            events.lastOrNull { it["type"] == "permissionExplanationRequested" }?.let { explanation ->
+                native.call("completePermissionExplanation", "{\"requestId\":\"${explanation["requestId"]}\",\"accepted\":true}", null)
+            }
+            val permission = requireNotNull(org.robolectric.Shadows.shadowOf(activity).lastRequestedPermission)
+            native.setProp("visible", false)
+            assertTrue(results.isEmpty())
+            if (revoke) native.setProp("pageOwnerActive", false)
+            org.robolectric.Shadows.shadowOf(activity.application).grantPermissions(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+            activity.activityResultRegistry.dispatchResult(permission.requestCode, mapOf(android.Manifest.permission.ACCESS_COARSE_LOCATION to true))
+            assertEquals(listOf(!revoke), results)
+            chrome.onGeolocationPermissionsShowPrompt("https://trusted.test") { _, allowed, _ -> results += allowed }
+            assertEquals(listOf(!revoke, false), results) // Hidden owner cannot begin a new permission request.
+            native.onDestroy()
+            activityController.pause().stop().destroy()
+        }
+    }
+
+    @Test
     fun `replaced and destroyed owners cannot initialize scripts`() {
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())
         native.setProp("request", WebViewWire.encodeRequest(request))

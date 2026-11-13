@@ -22,6 +22,7 @@ internal class AndroidWebPermissionController(
         val purpose: WebPermissionPurpose,
         val stillAllowed: () -> Boolean,
         val onResult: (Boolean) -> Unit,
+        val canPresentUi: () -> Boolean,
     ) {
         var cancelled = false
         // 入队后才发生的申请不能把同时到达的首次请求升级为永久拒绝。
@@ -64,10 +65,11 @@ internal class AndroidWebPermissionController(
         permissions: Collection<String>,
         purpose: WebPermissionPurpose,
         stillAllowed: () -> Boolean,
+        canPresentUi: () -> Boolean = { true },
         onResult: (Boolean) -> Unit,
     ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            activity.runOnUiThread { request(key, permissions, purpose, stillAllowed, onResult) }
+            activity.runOnUiThread { request(key, permissions, purpose, stillAllowed, canPresentUi, onResult) }
             return
         }
         if (destroyed) {
@@ -83,7 +85,7 @@ internal class AndroidWebPermissionController(
             onResult(true)
             return
         }
-        queue.addLast(PendingPermission(key, normalized, purpose, stillAllowed, onResult))
+        queue.addLast(PendingPermission(key, normalized, purpose, stillAllowed, onResult, canPresentUi))
         launchNext()
     }
 
@@ -141,6 +143,11 @@ internal class AndroidWebPermissionController(
         val missing = next.permissions.filterNot(::isGranted)
         if (missing.isEmpty()) {
             next.onResult(true)
+            launchNext()
+            return
+        }
+        if (!next.canPresentUi()) {
+            next.onResult(false)
             launchNext()
             return
         }
@@ -209,7 +216,7 @@ internal class AndroidWebPermissionController(
     private fun launchSystemPermission(next: PendingPermission, missing: List<String>) {
         if (destroyed || active !== next || next.cancelled) return
         explanation = null
-        if (!next.stillAllowed()) {
+        if (!next.stillAllowed() || !next.canPresentUi()) {
             completeExplanation(next, granted = false)
             return
         }

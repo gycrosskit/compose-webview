@@ -223,26 +223,30 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     if (self.released) return;
     NSString *key = propKey; id value = propValue;
     if ([key isEqual:@"onEvent"]) self.onEvent = value;
-    else if ([key isEqual:@"pageOwnerActive"]) {
-        self.pageOwnerActive = @([value boolValue]);
-        if (!self.pageOwnerActive.boolValue) {
-            void (^cancel)(void) = [self takePermissionExplanationResult:NO];
-            [self revokeFilePicker];
-            if (cancel) cancel();
-        }
-    } else if ([key isEqual:@"visible"]) {
-        BOOL visible = [value boolValue];
-        if (self.pageVisible != visible && self.webView) {
-            WKWebView *owner = self.webView;
-            NSUInteger generation = self.callbackGeneration + 1;
-            self.pageMessageRevoked = self.pageMessageRevoked || !visible;
-            self.pageVisible = visible;
-            [self prepareDocumentScriptsPreservingFilePicker:self.pageOwnerActive.boolValue];
+    else if ([key isEqual:@"pageOwnerActive"] || [key isEqual:@"visible"]) {
+        BOOL owned = [self pageOwned], visible = self.pageVisible;
+        if ([key isEqual:@"pageOwnerActive"]) self.pageOwnerActive = [value isKindOfClass:NSNumber.class] ? @([value boolValue]) : nil;
+        else self.pageVisible = [value boolValue];
+        WKWebView *owner = self.webView;
+        NSUInteger generation = self.callbackGeneration;
+        if (owned != [self pageOwned]) {
+            self.pageMessageRevoked = self.pageMessageRevoked || ![self pageOwned];
+            if (owner) {
+                [self prepareDocumentScripts];
+                generation++;
+                if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
+                [owner evaluateJavaScript:[self transportScript] completionHandler:nil];
+            } else if (![self pageOwned]) [self revokeFilePicker];
+        } else if (visible && !self.pageVisible) {
+            // 系统暂时 inactive 只撤销 UI 请求，保留同文档的 Bridge、读取和文件选择回执。
+            NSArray *cancellations = [self takeFullscreenCancellations];
+            void (^cancelPermission)(void) = [self takePermissionExplanationResult:NO];
+            for (void (^cancel)(void) in cancellations) cancel();
+            if (cancelPermission) cancelPermission();
             if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
-            [owner evaluateJavaScript:[self transportScript] completionHandler:nil];
-        } else self.pageVisible = visible;
+        }
         [self updateMediaVisibility];
-        if (visible && self.pendingFilePickerAction) {
+        if (self.pageVisible && self.pendingFilePickerAction) {
             void (^action)(void) = self.pendingFilePickerAction; self.pendingFilePickerAction = nil; action();
         }
     } else if ([key isEqual:@"pictureInPicturePageActive"]) {
@@ -280,6 +284,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         }
     } else { KUIKLY_SET_CSS_COMMON_PROP; }
 }
+- (BOOL)pageOwned { return self.pageOwnerActive ? self.pageOwnerActive.boolValue : self.pageVisible; }
 - (void)emit:(NSDictionary *)event { if (!self.released && self.onEvent) self.onEvent(event); }
 - (void)fail:(NSString *)kind message:(NSString *)message url:(NSString *)url code:(NSNumber *)code {
     self.navigationFailed = YES;
@@ -440,7 +445,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     NSDictionary *policy = self.request[@"navigationPolicy"], *security = self.request[@"security"];
     NSString *scheme = [NSURLComponents componentsWithString:url ?: @""].scheme.lowercaseString;
     NSArray *schemes = policy[@"allowedSchemes"] ?: @[@"http", @"https"];
-    BOOL allow = GYHttpRequestAllowed(self.request, url) && [schemes containsObject:scheme ?: @""] && (!newWindow || GYBool(policy, @"allowNewWindows", NO));
+    BOOL allow = GYHttpRequestAllowed(self.request, url) && [schemes containsObject:scheme ?: @""] && (!newWindow || (self.pageVisible && [self pageOwned] && GYBool(policy, @"allowNewWindows", NO)));
     NSArray *allowedUrls = policy[@"allowedUrls"];
     if (mainFrame && allowedUrls.count && ![allowedUrls containsObject:url ?: @""]) allow = NO;
     NSArray *allowedOrigins = policy[@"allowedOrigins"];
@@ -522,7 +527,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     [configuration.userContentController addScriptMessageHandler:handler contentWorld:WKContentWorld.defaultClientWorld name:@"ComposeWebViewMedia"];
     self.pictureInPictureDocumentToken = NSUUID.UUID.UUIDString;
     self.pageMessageInitialNavigation = YES;
-    self.pageMessageRevoked = !self.pageVisible;
+    self.pageMessageRevoked = ![self pageOwned];
     WKWebView *owner = self.webView;
     [self prepareDocumentScripts];
     if (self.released || self.webView != owner || self.callbackGeneration != generation + 1) return;
@@ -532,9 +537,6 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     [self updateMediaVisibility];
 }
 - (void)prepareDocumentScripts {
-    [self prepareDocumentScriptsPreservingFilePicker:NO];
-}
-- (void)prepareDocumentScriptsPreservingFilePicker:(BOOL)preserveFilePicker {
     WKWebView *owner = self.webView;
     WKWebViewConfiguration *configuration = owner.configuration;
     NSDictionary *settings = self.request[@"settings"], *security = self.request[@"security"];
@@ -543,9 +545,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     NSUInteger generation = ++self.callbackGeneration;
     NSArray *cancellations = [self takeFullscreenCancellations];
     void (^cancelPermission)(void) = [self takePermissionExplanationResult:NO];
-    if (preserveFilePicker) {
-        if (self.filePickerCompletion) self.filePickerGeneration = generation;
-    } else [self revokeFilePicker];
+    [self revokeFilePicker];
     for (void (^cancel)(void) in cancellations) cancel();
     if (cancelPermission) cancelPermission();
     if (self.released || self.webView != owner || self.callbackGeneration != generation) return;
@@ -573,7 +573,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
 }
 - (NSString *)transportScript {
     NSString *token = GYQuote(self.documentToken);
-    return [NSString stringWithFormat:@"if((window.__GY_WEBVIEW_TRANSPORT_REVISION__||0)<=%lu){window.__GY_WEBVIEW_TRANSPORT_REVISION__=%lu;window.__GY_WEBVIEW_BRIDGE_TRANSPORT__={postMessage:function(value){if(%@)window.webkit.messageHandlers.JSAndroidBridge.postMessage({token:%@,value:value});}};window.__GY_WEBVIEW_EVENT_TRANSPORT__={postMessage:function(value){window.webkit.messageHandlers.ComposeWebViewEvent.postMessage({token:%@,value:value});}};}", (unsigned long)self.callbackGeneration, (unsigned long)self.callbackGeneration, self.pageVisible ? @"true" : @"false", token, token];
+    return [NSString stringWithFormat:@"if((window.__GY_WEBVIEW_TRANSPORT_REVISION__||0)<=%lu){window.__GY_WEBVIEW_TRANSPORT_REVISION__=%lu;window.__GY_WEBVIEW_BRIDGE_TRANSPORT__={postMessage:function(value){if(%@)window.webkit.messageHandlers.JSAndroidBridge.postMessage({token:%@,value:value});}};window.__GY_WEBVIEW_EVENT_TRANSPORT__={postMessage:function(value){window.webkit.messageHandlers.ComposeWebViewEvent.postMessage({token:%@,value:value});}};}", (unsigned long)self.callbackGeneration, (unsigned long)self.callbackGeneration, [self pageOwned] ? @"true" : @"false", token, token];
 }
 - (void)installResourceRulesAndLoad {
     NSArray *rules = self.request[@"blockedResourceRules"];
@@ -811,7 +811,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     if (![envelope[@"token"] isEqual:self.documentToken]) return;
     if ([message.name isEqual:@"ComposeWebViewPageMessage"]) {
         NSString *channel = GYString(envelope[@"channel"]), *data = GYString(envelope[@"data"]), *source = message.frameInfo.request.URL.absoluteString;
-        if (!self.pageVisible || self.pageMessageRevoked || !channel || !data || data.length > 65536 || ![data canBeConvertedToEncoding:NSUTF8StringEncoding] || [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 65536 || self.pageMessageReplies.count >= 128 || ![self.request[@"pageMessageChannels"] containsObject:channel] || ![self pageMessageAllowed:source] || ![GYFrameOrigin(message.frameInfo) isEqual:GYOrigin(source)]) return;
+        if (![self pageOwned] || self.pageMessageRevoked || !channel || !data || data.length > 65536 || ![data canBeConvertedToEncoding:NSUTF8StringEncoding] || [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 65536 || self.pageMessageReplies.count >= 128 || ![self.request[@"pageMessageChannels"] containsObject:channel] || ![self pageMessageAllowed:source] || ![GYFrameOrigin(message.frameInfo) isEqual:GYOrigin(source)]) return;
         NSString *replyId = NSUUID.UUID.UUIDString;
         self.pageMessageReplies[replyId] = @{@"channel": channel, @"source": source};
         [self emit:@{@"type": @"pageMessage", @"channel": channel, @"data": data, @"replyId": replyId}];
@@ -819,7 +819,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     }
     NSString *raw = GYString(envelope[@"value"]);
     if ([message.name isEqual:@"JSAndroidBridge"]) {
-        if (!self.pageVisible) return;
+        if (![self pageOwned]) return;
         WKSecurityOrigin *origin = message.frameInfo.securityOrigin;
         NSString *source = GYSourceOrigin(origin);
         if (![self bridgeAllowed:source] || ![self bridgeAllowed:self.webView.URL.absoluteString]) return;
@@ -828,7 +828,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         [self emit:@{@"type": @"bridgeMessage", @"handlerName": [raw substringToIndex:separator.location], @"data": [raw substringFromIndex:separator.location + 1]}];
     } else if ([raw hasPrefix:@"fullscreen:"]) { self.fullscreen = [raw isEqual:@"fullscreen:1"]; [self emit:@{@"type": @"fullscreenChanged", @"isFullscreen": @(self.fullscreen)}]; }
     else if ([raw hasPrefix:@"perf:"]) {
-        if (!self.pageVisible) return;
+        if (![self pageOwned]) return;
         NSArray *parts = [raw componentsSeparatedByString:@":"];
         NSDictionary *names = @{@"dns": @"DNS_LOOKUP", @"tcp": @"TCP_CONNECT", @"tls": @"TLS_HANDSHAKE", @"request": @"REQUEST", @"response": @"RESPONSE", @"ttfb": @"TIME_TO_FIRST_BYTE", @"dom": @"DOM_CONTENT_LOADED", @"visible": @"FIRST_CONTENT_VISIBLE", @"fcp": @"FIRST_CONTENTFUL_PAINT", @"lcp": @"LARGEST_CONTENTFUL_PAINT"};
         if (parts.count == 3 && names[parts[1]]) {
@@ -883,7 +883,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         NSDictionary *value = GYObject(params);
         NSString *replyId = GYString(value[@"replyId"]), *data = GYString(value[@"data"]);
         NSDictionary *reply = replyId ? self.pageMessageReplies[replyId] : nil;
-        if (owner && self.pageVisible && !self.pageMessageRevoked && data && data.length <= 65536 && [data canBeConvertedToEncoding:NSUTF8StringEncoding] && [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] <= 65536 && reply && [self.request[@"pageMessageChannels"] containsObject:reply[@"channel"]] && [self pageMessageAllowed:reply[@"source"]]) {
+        if (owner && [self pageOwned] && !self.pageMessageRevoked && data && data.length <= 65536 && [data canBeConvertedToEncoding:NSUTF8StringEncoding] && [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] <= 65536 && reply && [self.request[@"pageMessageChannels"] containsObject:reply[@"channel"]] && [self pageMessageAllowed:reply[@"source"]]) {
             [self.pageMessageReplies removeObjectForKey:replyId];
             NSString *script = [NSString stringWithFormat:@"window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__ && window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__(%@,%@,%@)", GYQuote(self.documentToken), GYQuote(reply[@"channel"]), GYQuote(data)];
             [owner evaluateJavaScript:script completionHandler:nil];
@@ -892,11 +892,11 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     }
     else if ([method isEqual:@"evaluateJavascript"]) {
         NSString *script = GYString(GYObject(params)[@"script"]);
-        if (!owner || !script || !self.pageVisible || !GYBool(self.request[@"settings"], @"javaScriptEnabled", NO) || !([self trusted:owner.URL.absoluteString] || (GYBool(self.request[@"security"], @"pageBridgeEnabled", NO) && [self bridgeAllowed:owner.URL.absoluteString]))) { if (callback) callback(@{@"result": NSNull.null}); return; }
+        if (!owner || !script || ![self pageOwned] || !GYBool(self.request[@"settings"], @"javaScriptEnabled", NO) || !([self trusted:owner.URL.absoluteString] || (GYBool(self.request[@"security"], @"pageBridgeEnabled", NO) && [self bridgeAllowed:owner.URL.absoluteString]))) { if (callback) callback(@{@"result": NSNull.null}); return; }
         NSUInteger generation = self.callbackGeneration;
         __weak typeof(self) weakSelf = self;
         [owner evaluateJavaScript:script completionHandler:^(id value, NSError *error) {
-            if (!weakSelf || weakSelf.released || !weakSelf.pageVisible || weakSelf.webView != owner || weakSelf.callbackGeneration != generation) return;
+            if (!weakSelf || weakSelf.released || ![weakSelf pageOwned] || weakSelf.webView != owner || weakSelf.callbackGeneration != generation) return;
             BOOL valid = !error;
             id result = NSNull.null;
             if (valid && value) { NSData *data = [NSJSONSerialization dataWithJSONObject:value options:NSJSONWritingFragmentsAllowed error:nil]; if (data) result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]; }
@@ -950,7 +950,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     }];
 }
 - (BOOL)filePickerAllowed:(WKWebView *)owner {
-    return owner && owner == self.webView && !self.released && (self.pageVisible || self.pageOwnerActive.boolValue) && (!self.pageOwnerActive || self.pageOwnerActive.boolValue) && self.filePickerCompletion && self.filePickerGeneration == self.callbackGeneration && GYBool(self.request[@"security"], @"fileChooserEnabled", NO) && [self trusted:owner.URL.absoluteString] && [GYOrigin(self.fileOrigin) isEqual:GYOrigin(owner.URL.absoluteString)];
+    return owner && owner == self.webView && !self.released && [self pageOwned] && self.filePickerCompletion && self.filePickerGeneration == self.callbackGeneration && GYBool(self.request[@"security"], @"fileChooserEnabled", NO) && [self trusted:owner.URL.absoluteString] && [GYOrigin(self.fileOrigin) isEqual:GYOrigin(owner.URL.absoluteString)];
 }
 - (UIViewController *)filePresenter {
     UIViewController *presenter = self.window.rootViewController;
@@ -1024,6 +1024,12 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
 }
 - (void)captureFile:(WKWebView *)owner {
     if (![self filePickerAllowed:owner] || !self.fileSelectionProvider || !GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO)) { [self cancelFilePicker]; return; }
+    if (!self.pageVisible) {
+        NSUInteger revision = self.filePickerRevision;
+        __weak GYWebView *weakSelf = self;
+        self.pendingFilePickerAction = ^{ if (weakSelf.filePickerRevision == revision && weakSelf.webView == owner) [weakSelf captureFile:owner]; };
+        return;
+    }
     BOOL image = [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeJPEG conformsToType:type] || [UTTypePNG conformsToType:type]; }] != NSNotFound;
     BOOL video = [self.fileTypes indexOfObjectPassingTest:^BOOL(UTType *type, NSUInteger index, BOOL *stop) { return [UTTypeQuickTimeMovie conformsToType:type] || [UTTypeMPEG4Movie conformsToType:type]; }] != NSNotFound;
     if (image && video) { [self chooseCapturePurpose:owner]; return; }
@@ -1077,6 +1083,12 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
 }
 - (void)selectHostFiles:(BOOL)capture {
     if (![self filePickerAllowed:self.webView] || !self.fileSelectionProvider) { [self cancelFilePicker]; return; }
+    if (!self.pageVisible) {
+        NSUInteger revision = self.filePickerRevision;
+        __weak GYWebView *weakSelf = self;
+        self.pendingFilePickerAction = ^{ if (weakSelf.filePickerRevision == revision) [weakSelf selectHostFiles:capture]; };
+        return;
+    }
     UIViewController *presenter = [self filePresenter];
     if (!presenter) { [self cancelFilePicker]; return; }
     NSUInteger revision = self.filePickerRevision;

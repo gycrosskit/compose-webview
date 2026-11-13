@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-> 待发布版本 `2.3.0`：Maven、Git Pod `GYWebView`（`native-2.3.0`）与私有 OHPM/HAR（`har-2.3.0`）新增 `settings.verifyServerCertificate`，默认保留服务端证书校验，宿主显式 `false` 才进入兼容模式。当前仅发布准备，各渠道冻结、公开消费与设备验收分别留证；旧 `2.2.0` 标签、制品与 checksum 保留。升级须重编译调用模块，详见[证书兼容设置](docs/接入指南.md#https-服务端证书兼容)。
+> 待发布版本 `2.3.1`：Maven、Git Pod `GYWebView`（`native-2.3.1`）与私有 OHPM/HAR（`har-2.3.1`）修复页面归属与可见性混用，以及系统定位授权期间误取消请求。显式 `pageOwnerActive=true` 时，暂时隐藏继续同文档加载、JS 与桥消息；新 UI 交互仍要求可见。各渠道冻结及正式消费另行留证，旧 `2.3.0` 标签、制品与 checksum 保留。
 
 Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。 各渠道发布与精确消费状态见对应 Release，既有验收按原 tag 保留。
 
@@ -57,7 +57,7 @@ sequenceDiagram
     end
     Host->>View: 隐藏、切换请求或移除 View
     View->>Native: 更新属性或释放原生 View
-    Native->>Native: 撤销旧通道与未完成请求
+    Native->>Native: 真实撤权时结束旧通道与未完成请求
     Web-->>Native: 旧请求的迟到回执
     Native->>Native: 丢弃失效回执
 ```
@@ -129,23 +129,23 @@ dependencyResolutionManagement {
 }
 ```
 
-本轮 Maven、Git Pod/HAR 候选为 `2.3.0`；以下为精确依赖示例，实际可用性以对应渠道的 Release 与消费收据为准。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
+本轮 Maven、Git Pod/HAR 候选为 `2.3.1`；以下为精确依赖示例，实际可用性以对应渠道的 Release 与消费收据为准。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.3.0")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.3.1")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.3.0'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.3.1'
 ```
 
 当前源码继续使用 iOS Renderer 2.29.1；发布 Tag 与候选提交的消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS HAR `2.3.0`（`har-2.3.0`）在配置的私有 OHPM 精确安装，见[HAR 接入指南](ohos/webview-native/README.md)，Registry 可安装性须单独核验。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
+HarmonyOS HAR `2.3.1`（`har-2.3.1`）在配置的私有 OHPM 精确安装，见[HAR 接入指南](ohos/webview-native/README.md)，Registry 可安装性须单独核验。历史 HAR rc.14 的下载入口仍为[rc.16 Release](https://github.com/gycrosskit/compose-webview/releases/download/0.2.0-rc.16/WebViewNative.har)（rc.17 Release 不重复上传旧 HAR），配套实际 system-actions-native rc.4 HAR；不能把审核受理当作 Registry 可安装。
 
 ## 快速使用
 
@@ -170,13 +170,13 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 
 - JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTP(S) 来源；默认拒绝服务端证书错误。宿主可显式设置 `settings.verifyServerCertificate=false` 兼容过期、自签名或其他无效证书，详见[证书兼容设置](docs/接入指南.md#https-服务端证书兼容)。
 - 标准定位使用 `security.geolocationEnabled`（默认关闭），敏感页面首次加载前设置 `sensitiveDiagnostics=true`；iOS 按版本接入用途说明和系统定位授权的差异见[平台合同](docs/功能与平台差异.md#标准网页定位与敏感实例诊断)。
-- iOS Native 候选可由宿主通过 `pictureInPicturePageActive` 保留当前视频页的系统 PiP 后台播放，默认隐藏仍停播；业务 Bridge 与采集权限继续按可见性撤销，详见[全屏视频与 PiP 边界](docs/功能与平台差异.md#h5-全屏视频控制)。
+- iOS Native 候选可由宿主通过 `pictureInPicturePageActive` 保留当前视频页的系统 PiP 后台播放，默认隐藏仍停播；业务 Bridge 按页面归属判断，新的采集权限 UI 仍要求可见，详见[全屏视频与 PiP 边界](docs/功能与平台差异.md#h5-全屏视频控制)。
 - 导航拦截由预先下发的 `navigationPolicy` 同步判断，事件用于报告结果；`allowedOrigins` 精确匹配 scheme、host 和有效端口。
 - rc.11 增加 `allowedUrls`，按完整 URL 字符串同步限制主文档，与 scheme、来源和拒绝规则同时生效；空集合不增加限制，不归一化默认端口、路径、查询或 fragment，也不限制 iframe/子资源。
 - Android Kuikly 在 HTTP(S) 主文档非 GET 请求发送前补查导航策略。配置 `allowedUrls`、`allowedOrigins`、`blockedRules` 或限制 HTTP(S) scheme 时，即使首地址允许也保守拒绝，并在 UI 线程报告 `Navigation(blocked=true)`；默认策略 POST、iframe/XHR 不受此额外限制。原因是 [Android WebViewClient](https://developer.android.com/reference/android/webkit/WebViewClient) 不为 POST 调用 `shouldOverrideUrlLoading`，且 `shouldInterceptRequest` 仅检查 redirect 的首地址，无法保证 307/308 保留 POST 后仍符合白名单。
 - Android 临时弹窗仅解析 GET 目标并沿用当前窗口；非 GET 主文档始终拒绝并通知，不先联网，也不把 POST 改为 GET 重放。
 - iOS 18.4 以下不能开启受控原生文件选择，返回 `CapabilityUnsupported(FILE_CHOOSER)`；旧系统的 DOM 拦截不能保证原生文件隔离。iOS18.4+ 与 HarmonyOS H5 `capture` 复用系统拍摄能力，核验权限、来源、文档代次、MIME 和大小；取消/失败不回传文件，成功临时文件在文档撤销时清理。
-- 导航、隐藏、请求切换和销毁撤销旧消息端口、系统请求与迟到回调。隐藏不取消当前文档初始化：脚本仍受 JavaScript 开关与可信主文档门禁，显示不会重跑副作用脚本或重载页面。应用负责业务脚本输入编码和页面生命周期。
+- 导航、请求切换、页面归属失效和销毁撤销旧消息端口、系统请求与迟到回调。显式 `pageOwnerActive=true` 的后台切换保留文档、Bridge 和在途业务，未提供该属性时保留原有 visible 兼容行为。暂时隐藏不取消当前文档初始化：脚本仍受 JavaScript 开关与可信主文档门禁，显示不会重跑副作用脚本或重载页面。应用负责业务脚本输入编码和页面生命周期。
 
 明确开启 `pageBridgeEnabled` 的初始 HTTP(S) 页面可执行同源业务脚本，沿用手动 `evaluateJavascript` 的低权限边界；`onlyForTrustedMainFrame` 保持开启。HTTP 页面也可显式配置为可信来源，但系统或内核可能限制非安全上下文的媒体采集。仅允许一个旧页面时同时设置 `allowedUrls = setOf(pageUrl)`。Kuikly 原生背景默认透明，页面自己的 CSS 背景由 H5 控制。
 
@@ -229,7 +229,7 @@ await OhosWebViewDataCleaner.clearWebsiteData();
 
 HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收须分别留证，不能由 Maven/KLIB 或其他平台的成功结果代算；本轮覆盖范围以实际 Jenkins 回执为准。
 
-远程 Android 消费开启 KuiklyCompose、全屏和页面通道 API probe，检查精确 core/Kuikly 版本与无第二套 CMP UI。iOS/OHOS 编译与真实 Renderer 链接分别验证；本轮 Git Pod 须单独安装 `native-2.3.0`，核对 lock、标签提交与源码摘要。Framework 构建不代表 UIKit App 或设备运行。旧版本重验检出其旧 tag，当前 consumer 不保留 CMP API。
+远程 Android 消费开启 KuiklyCompose、全屏和页面通道 API probe，检查精确 core/Kuikly 版本与无第二套 CMP UI。iOS/OHOS 编译与真实 Renderer 链接分别验证；本轮 Git Pod 须单独安装 `native-2.3.1`，核对 lock、标签提交与源码摘要。Framework 构建不代表 UIKit App 或设备运行。旧版本重验检出其旧 tag，当前 consumer 不保留 CMP API。
 
 阶段、缓存、有限网络重试、失败记录与证据边界见[共用 CI 规则](https://github.com/gycrosskit/.github/blob/main/docs/持续集成门禁.md)；本库实际平台命令以 Jenkins 的固定版本 recipe 为准。源码通过、远程消费、HAR/ohpm 与设备验收分别记录。
 

@@ -65,7 +65,8 @@ class Controller {
   createWebMessagePorts() { const ports = [new Port(), new Port()]; this.ports.push(ports); return ports; }
   postMessage(name, ports, origin) { this.deliveries.push({ name, ports, origin }); }
   accessBackward() { return true; } accessForward() { return false; }
-  stop() {} stopAllMedia() {} closeAllMediaPresentations() {} onInactive() {} onActive() {} refresh() { this.refreshes++; } backward() {} forward() {}
+  stops = 0; inactiveCalls = 0; mediaStops = 0;
+  stop() { this.stops++; } stopAllMedia() { this.mediaStops++; } closeAllMediaPresentations() {} onInactive() { this.inactiveCalls++; } onActive() {} refresh() { this.refreshes++; } backward() {} forward() {}
 }
 const contexts = [];
 const environmentCallbacks = new Map(); let nextEnvironmentId = 0;
@@ -315,7 +316,8 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     { id: 'early', source: "window.earlyChannel.postMessage('first');", injectionTime: 'DOCUMENT_START', onlyForTrustedMainFrame: true }
   ] });
   function channelPage(view, parent, address = 'https://trusted.test/page') {
-    const listeners = {}; const page = { addEventListener: (name, callback) => { (listeners[name] ||= []).push(callback); } }; page.top = parent || page;
+    const listeners = {}; const page = { addEventListener: (name, callback) => { (listeners[name] ||= []).push(callback); },
+      dispatchEvent: event => { for (const listener of listeners[event.type] || []) listener(event); } }; page.top = parent || page;
     page.GYWebViewPageMessageNative = { pageMessageBootstrap: view.pageMessageBootstrap.bind(view), pageMessagePost: view.pageMessagePost.bind(view), pageMessageRevoke: view.pageMessageRevoke.bind(view) };
     const context = { window: page, URL, location: new URL(address), document: {readyState: 'loading'}, crypto: crypto.webcrypto,
       Uint8Array, TextEncoder, addEventListener: page.addEventListener, Event: class { constructor(type) { this.type = type; } } };
@@ -327,6 +329,40 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     return {view, events, ...document};
   }
   const messages = events => events.filter(event => event.type === 'pageMessage');
+  // 显式页面归属将后台与离页分开；真实首段脚本、nonce 与回复不依赖可见性。
+  for (const initialBackground of [false, true]) {
+    const view = new ChannelView(); const events = [];
+    view.setProp('onEvent', event => events.push(event)); view.setProp('pageOwnerActive', true);
+    view.setProp('visible', !initialBackground); view.setProp('request', encoded(channelRequest)); view.onControllerAttached();
+    const document = channelPage(view); view.controller.scriptContext = document.context;
+    assert.equal(messages(events).length, 1, 'owned background first script reaches native');
+    const nonce = view.pageMessageNonce; const controller = view.controller;
+    if (!initialBackground) view.setProp('visible', false);
+    document.page.earlyChannel.postMessage('background read');
+    assert.equal(messages(events).length, 2, 'owned background accepts subsequent message'); assert.equal(view.pageMessageNonce, nonce);
+    const replies = []; const received = [];
+    document.page.earlyChannel.onmessage = event => received.push(event.data);
+    const task = deferred(); task.deferExecution = true; nextJavascript = task;
+    view.call('replyPageMessage', encoded({replyId: messages(events)[0].replyId, data: 'same owner'}), value => replies.push(value.result));
+    view.setProp('visible', true); task.resolve(); await flushNativeCallbacks();
+    assert.deepEqual(replies, [true]); assert.deepEqual(received, ['same owner']);
+    assert.equal(view.controller, controller); assert.equal(controller.refreshes, 0); assert.equal(view.pageMessageNonce, nonce);
+    view.setProp('pageOwnerActive', false); document.page.earlyChannel.postMessage('left');
+    assert.equal(messages(events).length, 2); assert.equal(view.pageMessageNonce, '');
+    view.setProp('pageOwnerActive', true); document.page.earlyChannel.postMessage('reactivated');
+    assert.equal(messages(events).length, 2, 'real leave permanently revokes initial capability'); view.onDestroy();
+  }
+  for (const revoke of ['leave', 'navigation', 'request', 'destroy']) {
+    const owner = channelOwner(); owner.view.setProp('pageOwnerActive', true);
+    const received = []; owner.page.earlyChannel.onmessage = event => received.push(event.data);
+    const task = deferred(); task.deferExecution = true; nextJavascript = task;
+    owner.view.call('replyPageMessage', encoded({replyId: messages(owner.events)[0].replyId, data: 'late'}), null);
+    if (revoke === 'leave') { owner.view.setProp('pageOwnerActive', false); owner.view.setProp('pageOwnerActive', true); }
+    else if (revoke === 'navigation') { owner.view.onPageBegin('https://trusted.test/next'); owner.context.location.href = 'https://trusted.test/next'; }
+    else if (revoke === 'request') { owner.view.setProp('request', encoded(channelRequest)); owner.view.onControllerAttached(); const next = channelPage(owner.view); owner.view.controller.scriptContext = next.context; }
+    else { owner.view.onDestroy(); owner.listeners.pagehide?.forEach(listener => listener()); }
+    task.resolve(); await flushNativeCallbacks(); assert.deepEqual(received, [], `${revoke} rejects delayed reply delivery`); owner.view.onDestroy();
+  }
   for (const declared of ['https://trusted.test', 'HTTPS://TRUSTED.TEST:443?q=a%20b#part']) {
     const view = new ChannelView(); const events = [];
     view.setProp('onEvent', event => events.push(event));
@@ -606,6 +642,24 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
       { id: 'ready', source: 'window.ready=(window.ready||0)+1;', injectionTime: 'DOM_READY', onlyForTrustedMainFrame: true },
       { id: 'finished', source: 'window.finished=(window.finished||0)+1;', injectionTime: 'DOCUMENT_FINISHED', onlyForTrustedMainFrame: true },
     ] });
+  for (const leaveBeforeReady of [false, true]) {
+    const owned = new GYWebView(); owned.setProp('pageOwnerActive', true); owned.setProp('visible', false);
+    owned.setProp('request', encoded(scriptRequest)); owned.onControllerAttached(); owned.onPageBegin('https://trusted.test/page');
+    const callbacks = {}; const listeners = {}; const page = {addEventListener: (name, callback) => listeners[name] = callback}; page.top = page;
+    page.dispatchEvent = event => listeners[event.type]?.(event);
+    const document = {readyState: 'loading', addEventListener: (name, callback) => (callbacks[name] ||= []).push(callback)};
+    const context = {window: page, document, location: new URL('https://trusted.test/page'), TextEncoder, Event: class {constructor(type) {this.type = type;}}};
+    owned.controller.scriptContext = context; owned.documentStartScripts().forEach(item => vm.runInNewContext(item.script, context));
+    assert.equal(page.started, 1); assert.equal(owned.controller.loads.length, 1); assert.equal(owned.controller.inactiveCalls, 0);
+    assert.equal(page.GYWebViewBridge.postMessage('background-init', '{}'), true, 'owned hidden first script may queue a Bridge read');
+    if (leaveBeforeReady) owned.setProp('pageOwnerActive', false);
+    document.readyState = 'interactive'; callbacks.DOMContentLoaded.forEach(callback => callback());
+    document.readyState = 'complete'; owned.onPageEnd('https://trusted.test/page'); await flushNativeCallbacks();
+    assert.equal(page.ready, leaveBeforeReady ? undefined : 1); assert.equal(page.finished, leaveBeforeReady ? undefined : 1);
+    if (!leaveBeforeReady) { owned.setProp('visible', true); owned.setProp('visible', false); assert.equal(owned.controller.stops, 0); assert.equal(owned.controller.inactiveCalls, 0); }
+    else { assert.equal(owned.controller.stops, 1); assert.equal(owned.documentStartScripts().length, 0); }
+    owned.onDestroy();
+  }
   const hidden = new GYWebView(); const hiddenEvents = [];
   hidden.setProp('onEvent', event => hiddenEvents.push(event)); hidden.setProp('visible', false);
   hidden.setProp('request', encoded(scriptRequest)); hidden.onControllerAttached(); hidden.onPageBegin('https://trusted.test/page');
@@ -652,6 +706,11 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   hidden.onDestroy(); const beforeLateEnd = hidden.controller.scripts.length;
   hidden.onPageEnd('https://trusted.test/page');
   assert.equal(hidden.controller.scripts.length, beforeLateEnd, 'destroyed document cannot initialize');
+  const legacyHiddenLeave = new GYWebView(); legacyHiddenLeave.setProp('visible', false);
+  legacyHiddenLeave.setProp('request', encoded(scriptRequest)); legacyHiddenLeave.onControllerAttached();
+  legacyHiddenLeave.setProp('pageOwnerActive', false);
+  assert.equal(legacyHiddenLeave.controller.stops, 1, 'explicit leave still stops an already hidden legacy page');
+  assert.equal(legacyHiddenLeave.documentStartScripts().length, 0); legacyHiddenLeave.onDestroy();
   const noVisibleCallback = new GYWebView(); noVisibleCallback.setProp('visible', false);
   noVisibleCallback.setProp('request', encoded(scriptRequest)); noVisibleCallback.onControllerAttached();
   noVisibleCallback.onPageBegin('https://trusted.test/page'); noVisibleCallback.onPageEnd('https://trusted.test/page');
@@ -800,6 +859,37 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     applicationContext.on = originalOn;
   }
   const bridgeRequest = request({ settings: { javaScriptEnabled: true }, security: { ...standard.security, appBridgeEnabled: true } });
+  for (const initialBackground of [false, true]) {
+    const owned = new GYWebView(); const events = [];
+    owned.setProp('onEvent', event => events.push(event)); owned.setProp('pageOwnerActive', true);
+    owned.setProp('visible', !initialBackground); owned.setProp('request', encoded(bridgeRequest)); owned.onControllerAttached();
+    owned.onPageBegin('https://trusted.test/page'); owned.onPageVisible('https://trusted.test/page'); await flushNativeCallbacks();
+    const controller = owned.controller; const port = controller.ports[0][0];
+    const generation = owned.lifetime.generation;
+    const task = deferred(); nextJavascript = task; const results = [];
+    owned.call('evaluateJavascript', encoded({script: '1+1'}), value => results.push(value.result));
+    owned.setProp('visible', false); task.resolve('2'); await flushNativeCallbacks();
+    assert.deepEqual(results, ['2'], 'owned background preserves in-flight evaluation');
+    assert.equal(owned.lifetime.generation, generation); assert.equal(port.closed, false);
+    port.message(encoded({handlerName: 'background read', data: '{}'}));
+    assert.equal(events.filter(event => event.type === 'bridgeMessage').length, 1);
+    const background = []; owned.call('evaluateJavascript', encoded({script: '2+2'}), value => background.push(value.result));
+    await flushNativeCallbacks(); assert.deepEqual(background, ['null'], 'owned background can submit read reply JavaScript');
+    owned.setProp('visible', true); await flushNativeCallbacks();
+    assert.equal(controller.deliveries.length, 1); assert.equal(owned.controller, controller);
+    const lateTask = deferred(); nextJavascript = lateTask; const late = [];
+    owned.call('evaluateJavascript', encoded({script: '3+3'}), value => late.push(value.result));
+    owned.setProp('pageOwnerActive', false); lateTask.resolve('6'); await flushNativeCallbacks();
+    assert.equal(port.closed, true); assert.deepEqual(late, []);
+    port.message(encoded({handlerName: 'left', data: '{}'})); assert.equal(events.filter(event => event.type === 'bridgeMessage').length, 1);
+    const denied = []; owned.call('evaluateJavascript', encoded({script: '4+4'}), value => denied.push(value.result));
+    assert.deepEqual(denied, [null]); owned.onDestroy();
+  }
+  // null 显式恢复旧契约：后续隐藏仍撤销，而非被误解为永久 inactive。
+  const nullableOwner = new GYWebView(); nullableOwner.setProp('pageOwnerActive', false); nullableOwner.setProp('pageOwnerActive', null);
+  nullableOwner.setProp('request', encoded(bridgeRequest)); nullableOwner.onControllerAttached(); nullableOwner.onPageEnd('https://trusted.test/page');
+  await flushNativeCallbacks(); assert.equal(nullableOwner.controller.deliveries.length, 1);
+  nullableOwner.setProp('visible', false); assert.equal(nullableOwner.controller.ports[0][0].closed, true); nullableOwner.onDestroy();
   view.setProp('request', encoded(bridgeRequest));
   assert.equal(view.controller.loads.length, 0, 'new controller must wait for attachment');
   assert.equal(view.isRenderActive(view.renderToken - 1), false, 'old same-origin document cannot authorize new request');
@@ -882,6 +972,22 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
   const mediaView = new GYWebView();
   const mediaPolicy = request({ settings: { javaScriptEnabled: true }, security: { ...standard.security, mediaCaptureEnabled: true, fileChooserEnabled: true },
     navigationPolicy: { ...standard.navigationPolicy, navigationOrigins: { exactOrigins: ['https://trusted.test', 'https://other.test'], hostSuffixOrigins: [] } } });
+  for (const state of ['background', 'left']) {
+    const inactive = new GYWebView(); inactive.setProp('pageOwnerActive', true);
+    inactive.setProp('request', encoded({...mediaPolicy, navigationPolicy: {...mediaPolicy.navigationPolicy, allowNewWindows: true}}));
+    inactive.onControllerAttached(); inactive.onPageVisible('https://trusted.test/page'); await flushNativeCallbacks();
+    if (state === 'background') inactive.setProp('visible', false); else inactive.setProp('pageOwnerActive', false);
+    let denied = 0, geo = 0, exits = 0; const files = []; const calls = permissionCalls;
+    inactive.permissionRequest({getAccessibleResource: () => ['video'], getOrigin: () => 'https://trusted.test', grant: () => assert.fail('inactive capture'), deny: () => denied++});
+    inactive.geolocationShow({origin: 'https://trusted.test', geolocation: {invoke: (_origin, allowed) => {assert.equal(allowed, false); geo++;}}});
+    inactive.selectFile({fileSelector: {isCapture: () => false, getAcceptType: () => [], getMode: () => 0}, result: {handleFileList: value => files.push(Array.from(value))}});
+    inactive.enterFullscreen({exitFullScreen: () => exits++}, 1600, 900);
+    const loads = inactive.controller.loads.length;
+    inactive.rejectNewWindow({handler: {setWebController: value => assert.equal(value, null)}, targetUrl: 'https://trusted.test/next', isUserTrigger: true});
+    assert.equal(denied, 1); assert.equal(geo, 1); assert.equal(exits, 1); assert.deepEqual(files, [[]]);
+    assert.equal(inactive.controller.loads.length, loads); assert.equal(permissionCalls, calls); inactive.onDestroy();
+  }
+
   mediaView.setProp('request', encoded(mediaPolicy)); mediaView.onControllerAttached(); mediaView.onPageVisible('https://trusted.test/page');
   if (!mediaIntegration) {
     for (const mediaCaptureEnabled of [true, false, undefined]) {
@@ -982,6 +1088,35 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     geo.setProp('request', encoded({ ...geoPolicy, sensitiveDiagnostics: false }));
     assert.equal(geo.request.sensitiveDiagnostics, true, 'native privacy protection cannot downgrade');
     geo.onDestroy(); permissionStatus = 2;
+  }
+  for (const outcome of ['hidden', 'resumed', 'leave', 'navigate', 'replace', 'destroy', 'explanation', 'newHidden']) {
+    const geo = new GYWebView(), replies = [], events = [];
+    const policy = { ...mediaPolicy, permissionPresentation: 'HOST',
+      security: { ...mediaPolicy.security, geolocationEnabled: true } };
+    geo.setProp('pageOwnerActive', true); geo.setProp('request', encoded(policy));
+    geo.onControllerAttached(); geo.onPageVisible('https://trusted.test/page');
+    geo.setProp('onEvent', event => events.push(event));
+    permissionStatus = 1; permission = deferred(); const calls = permissionCalls;
+    if (outcome === 'newHidden') geo.setProp('visible', false);
+    geo.geolocationShow({ origin: 'https://trusted.test', geolocation: {
+      invoke: (...args) => replies.push(args) } }); await flushNativeCallbacks();
+    if (outcome !== 'explanation' && outcome !== 'newHidden') {
+      const explanation = events.at(-1);
+      geo.call('completePermissionExplanation', JSON.stringify({ requestId: explanation.requestId, accepted: true }), () => {});
+      await flushNativeCallbacks();
+      assert.equal(permissionCalls, calls + 1, `${outcome}: system permission request is in flight`);
+    }
+    geo.setProp('visible', false); await flushNativeCallbacks();
+    if (outcome === 'hidden' || outcome === 'resumed') assert.deepEqual(replies, [], 'temporary background preserves system request');
+    if (outcome === 'resumed') geo.setProp('visible', true);
+    if (outcome === 'leave') geo.setProp('pageOwnerActive', false);
+    if (outcome === 'navigate') geo.onPageBegin('https://trusted.test/next');
+    if (outcome === 'replace') geo.setProp('request', encoded(policy));
+    if (outcome === 'destroy') geo.onDestroy();
+    permission.resolve({ authResults: [0] }); await flushNativeCallbacks();
+    assert.deepEqual(replies, [['https://trusted.test', outcome === 'hidden' || outcome === 'resumed', false]], outcome);
+    if (outcome === 'explanation' || outcome === 'newHidden') assert.equal(permissionCalls, calls, 'hidden UI cannot launch system permission');
+    geo.onDestroy(); assert.equal(replies.length, 1); permissionStatus = 2;
   }
   // HOST 仅接管说明，确认不是授权；旧/重复/撤销回执不能启动系统或交付旧页面。
   {

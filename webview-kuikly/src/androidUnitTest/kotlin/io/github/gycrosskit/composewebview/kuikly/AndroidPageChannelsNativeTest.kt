@@ -60,6 +60,38 @@ class AndroidPageChannelsNativeTest {
         native.onDestroy()
     }
 
+    @Test fun `explicit owner preserves early page channel reply in background and revokes on departure`() {
+        NativePageProvider.listeners.clear()
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        val events = mutableListOf<Map<String, Any?>>()
+        native.setProp("onEvent", { event: Any? -> @Suppress("UNCHECKED_CAST") events.add(event as Map<String, Any?>) })
+        native.setProp("pageOwnerActive", true)
+        native.setProp("request", WebViewWire.encodeRequest(request))
+        val owner = native.getChildAt(0) as WebView
+        val listener = NativePageProvider.listeners.getValue(owner).getValue("PageReady")
+        val proxy = NativePageReply()
+        listener.onPostMessage(owner, WebMessageCompat("initial"), Uri.parse("https://page.test"), true, proxy)
+        val replyId = events.single { it["type"] == "pageMessage" }.getValue("replyId") as String
+        native.setProp("visible", false)
+        var result: Any? = null
+        native.call("replyPageMessage", "{\"replyId\":\"$replyId\",\"data\":\"background\"}") { result = (it as Map<*, *>)["result"] }
+        assertEquals(true, result)
+        assertEquals(listOf("background"), proxy.messages)
+        val pending = NativePageReply()
+        listener.onPostMessage(owner, WebMessageCompat("background"), Uri.parse("https://page.test"), true, pending)
+        val pendingId = events.last { it["type"] == "pageMessage" }.getValue("replyId") as String
+        listener.onPostMessage(owner, WebMessageCompat("cross-origin"), Uri.parse("https://other.test"), true, pending)
+        assertEquals(2, events.count { it["type"] == "pageMessage" })
+        native.setProp("pageOwnerActive", false)
+        native.call("replyPageMessage", "{\"replyId\":\"$pendingId\",\"data\":\"stale\"}") { result = (it as Map<*, *>)["result"] }
+        assertEquals(false, result)
+        assertTrue(pending.messages.isEmpty())
+        native.setProp("visible", true)
+        listener.onPostMessage(owner, WebMessageCompat("stale"), Uri.parse("https://page.test"), true, pending)
+        assertEquals(2, events.count { it["type"] == "pageMessage" })
+        native.onDestroy()
+    }
+
     @Test fun `Kuikly early message single reply hide reload and replacement stay owner scoped`() {
         NativePageProvider.listeners.clear()
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())

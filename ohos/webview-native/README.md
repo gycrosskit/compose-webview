@@ -1,8 +1,8 @@
-> 待发布版本 `2.3.0`：Maven、Git Pod `GYWebView`（`native-2.3.0`）与私有 OHPM/HAR（`har-2.3.0`）。新增默认开启的服务端证书校验设置，宿主显式 `verifyServerCertificate=false` 才确认 SSL 证书错误；各渠道发布与精确远程消费状态以对应 Release 为准，设备验收单独记录。
+> 待发布版本 `2.3.1`：Maven、Git Pod `GYWebView`（`native-2.3.1`）与私有 OHPM/HAR（`har-2.3.1`）。新增默认开启的服务端证书校验设置，宿主显式 `verifyServerCertificate=false` 才确认 SSL 证书错误；各渠道发布与精确远程消费状态以对应 Release 为准，设备验收单独记录。
 
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **2.3.0**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **2.3.1**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
 
 rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和空路径按同一文档身份匹配；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。主帧 capability、nonce、owner 与单次回复门禁保持有效。
 
@@ -10,14 +10,14 @@ rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和
 
 ## 安装与注册
 
-本轮 Maven/Git Pod/HAR 使用 `2.3.0`，Git Pod Tag 为 `native-2.3.0`，私有 OHPM/HAR Tag 为 `har-2.3.0`；配套 system-actions `1.0.2` 保持，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.2；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+本轮 Maven/Git Pod/HAR 使用 `2.3.1`，Git Pod Tag 为 `native-2.3.1`，私有 OHPM/HAR Tag 为 `har-2.3.1`；配套 system-actions `1.0.2` 保持，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.2；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
 
 ## 安装
 
 以下为本版本精确 Registry 坐标；审核通过并实际可查询、安装后使用。
 
 ```bash
-ohpm install @gycrosskit/webview@2.3.0
+ohpm install @gycrosskit/webview@2.3.1
 ```
 
 候选可从 assembleHar 输出验证；正式发布后从对应不可变 GitHub Release 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry `1.0.2`。干净消费者核对只有一份窗口 owner。离线验证使用已核对冻结 SHA-256 的 Web HAR 和 system-actions `1.0.2` HAR，并用 root override 保证同一系统包；候选字节不得冒充公开 Release 下载或 Registry 安装。文件下载消费与 Registry 安装分开验收。
@@ -115,7 +115,7 @@ GYWebViewBridge.postMessage('handlerName', { value: 'data' });
 
 载荷为 `handlerName` + 原始 `data` 字符串，组件不解释命令。保留 `JSAndroidBridge.handleJSBridgeMessage` / `WebViewJavascriptBridge.callHandler` 同义 shim；`registerHandler` 仅兼容无操作占位，不承诺原生 responseCallback。
 
-document-start 的 top-only closure 保持端口私有，端口准备前最多缓存 32 条且总计 64 KiB；单条最多 64 KiB、handlerName 最多 80 字符。原生在 firstContentVisible / page-end 校验实际当前来源，再把端口发送给精确 origin 的主文档。禁止 `'*'`，禁止全 frame JavaScriptProxy；页面伪造 MessageEvent 和 iframe 发来的握手均拒绝。导航/隐藏/释放关闭两端原生句柄，旧 generation 永久失效；隐藏初始化不入业务队列，已有队列同时撤销。恢复先完成 JS 状态同步再握手，JS revision 拒绝同文档晚执行的旧可见性更新；原生 visible/origin/generation 始终是授权门禁，页面内状态只是队列管理。同文档重新显示会建立新端口。无法在早期注入成功的环境里不承诺首航早期消息可用，HTML opaque origin 也不从 baseUrl 伪造实际 sender 来源。
+document-start 的 top-only closure 保持端口私有，端口准备前最多缓存 32 条且总计 64 KiB；单条最多 64 KiB、handlerName 最多 80 字符。原生在 firstContentVisible / page-end 校验实际当前来源，再把端口发送给精确 origin 的主文档。禁止 `'*'`，禁止全 frame JavaScriptProxy；页面伪造 MessageEvent 和 iframe 发来的握手均拒绝。导航/真实归属失效/释放关闭两端原生句柄，旧 generation 永久失效；显式 pageOwnerActive=true 的暂时隐藏保留端口、generation、初始化和在途回执，不调用 onInactive 暂停页面工作。恢复先完成 JS 状态同步再握手，JS revision 拒绝同文档晚执行的旧可见性更新；原生 pageOwnerActive（缺省回退 visible）/origin/generation 始终是授权门禁，页面内状态只是队列管理。同 owner 的后台返回复用原端口；真实归属切换后重新核验。无法在早期注入成功的环境里不承诺首航早期消息可用，HTML opaque origin 也不从 baseUrl 伪造实际 sender 来源。
 
 主文档投递证据：[OpenHarmony ArkWeb Controller API](https://github.com/openharmony/docs/blob/master/zh-cn/application-dev/reference/apis-arkweb/capi-web-arkweb-controllerapi.md) 的 postWebMessage 定义为发送端口到 HTML 主页面；[ArkTS NAPI 实现](https://github.com/openharmony/web_webview/blob/master/interfaces/kits/napi/webviewcontroller/napi_webview_controller.cpp) 的 postMessage 调用 [WebviewController::PostWebMessage](https://github.com/openharmony/web_webview/blob/master/interfaces/kits/napi/webviewcontroller/webview_controller.cpp)，最终调用同一 NWeb::PostWebMessage。生命周期要求见[华为应用与前端页面数据通道](https://developer.huawei.com/consumer/cn/doc/HarmonyOS-Guides/web-app-page-data-channel)。
 

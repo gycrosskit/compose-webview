@@ -41,6 +41,9 @@ class GYWebViewNative @JvmOverloads constructor(
     private var documentToken = UUID.randomUUID().toString()
     private var discardEarlyBridgeMessages = false
     private var pageVisible = true
+    private var pageOwnerActive: Boolean? = null
+    private val ownerActive: Boolean get() = pageOwnerActive ?: pageVisible
+    private val canPresentUi: Boolean get() = ownerActive && pageVisible
     private var appBridgeUnsupportedReported = false
     private var finishedScriptsInjected = false
     private var fullscreenHost: AndroidWebFullscreenHost? = null
@@ -85,35 +88,55 @@ class GYWebViewNative @JvmOverloads constructor(
             }
             true
         }
+        "pageOwnerActive" -> {
+            val wasActive = ownerActive
+            pageOwnerActive = propValue as? Boolean ?: false
+            updatePageState(wasActive)
+            true
+        }
         "visible" -> {
-            val visible = propValue as? Boolean ?: false
-            if (visible != pageVisible) {
-                if (!visible) discardEarlyBridgeMessages = true
-                documentToken = UUID.randomUUID().toString()
-                val owner = webView
-                if (request?.settings?.javaScriptEnabled == true && request?.canUseAppBridgeAt(owner?.url) == true) owner?.evaluateJavascript(bridgeTokenScript(visible && !discardEarlyBridgeMessages), null)
-            }
-            pageVisible = visible
-            if (!pageVisible) {
-                callbackGeneration++; pageMessageChannels?.revoke()
-                webView?.let { owner ->
-                    val activity = context.findComponentActivity()
-                    val oldCapabilities = capabilities
-                    if (activity != null && oldCapabilities?.pauseForSystemPicker(owner) == true) {
-                        // renderer.onPause 可能早于 Activity 的 ON_PAUSE；下一轮再区分真正离页。
-                        Handler(Looper.getMainLooper()).post {
-                            if (owner === webView && !pageVisible && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) capabilities?.pause(owner)
-                        }
-                    } else oldCapabilities?.pause(owner)
-                }
-                popupRouter?.release()
-            } else webView?.let { capabilities?.resume(it) }
-            visibility = if (pageVisible) View.VISIBLE else View.INVISIBLE
-            if (pageVisible) webView?.onResume() else { exitFullscreen(); webView?.onPause() }
+            val wasActive = ownerActive
+            pageVisible = propValue as? Boolean ?: false
+            updatePageState(wasActive)
             true
         }
         "onEvent" -> { onEvent = propValue as? KuiklyRenderCallback; true }
         else -> super<IKuiklyRenderViewExport>.setProp(propKey, propValue)
+    }
+
+    private fun updatePageState(wasActive: Boolean) {
+        if (wasActive != ownerActive) {
+            if (!ownerActive) discardEarlyBridgeMessages = true
+            documentToken = UUID.randomUUID().toString()
+            val owner = webView
+            if (request?.settings?.javaScriptEnabled == true && request?.canUseAppBridgeAt(owner?.url) == true) {
+                owner?.evaluateJavascript(bridgeTokenScript(ownerActive && !discardEarlyBridgeMessages), null)
+            }
+        }
+        if (!ownerActive) {
+            callbackGeneration++
+            pageMessageChannels?.revoke()
+        }
+        if (!canPresentUi) {
+            val oldPopupRouter = popupRouter
+            val oldFullscreenHost = fullscreenHost
+            webView?.let { owner ->
+                val activity = context.findComponentActivity()
+                val oldCapabilities = capabilities
+                if (pageOwnerActive == null) oldCapabilities?.cancelGeolocation(owner)
+                if (pageOwnerActive == false) oldCapabilities?.release(owner)
+                else if (activity != null && oldCapabilities?.pauseForSystemPicker(owner) == true) {
+                    // 旧调用方未声明归属时，仍按原有 Activity 时序识别真正离页。
+                    if (pageOwnerActive == null) Handler(Looper.getMainLooper()).post {
+                        if (owner === webView && !pageVisible && pageOwnerActive == null && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) capabilities?.pause(owner)
+                    }
+                } else oldCapabilities?.pause(owner)
+            }
+            oldPopupRouter?.release()
+            oldFullscreenHost?.hide()
+        } else webView?.let { capabilities?.resume(it) }
+        visibility = if (canPresentUi) View.VISIBLE else View.INVISIBLE
+        if (ownerActive) webView?.onResume() else webView?.onPause()
     }
 
     override fun call(method: String, params: String?, callback: KuiklyRenderCallback?): Any? {
@@ -143,7 +166,7 @@ class GYWebViewNative @JvmOverloads constructor(
                 val requestId = value?.opt("requestId") as? String
                 val accepted = value?.opt("accepted") as? Boolean
                 val pending = permissionExplanation
-                if (!destroyed && !crashed && pageVisible && pending != null && pending.owner === webView &&
+                if (!destroyed && !crashed && canPresentUi && pending != null && pending.owner === webView &&
                     pending.generation == callbackGeneration && requestId == pending.requestId && accepted != null) {
                     permissionExplanation = null
                     pending.resolved = true
@@ -153,10 +176,10 @@ class GYWebViewNative @JvmOverloads constructor(
             }
             "evaluateJavascript" -> {
                 val script = runCatching { JSONObject(params ?: "{}").getString("script") }.getOrNull()
-                if (owner != null && script != null && pageVisible && request?.canEvaluateJavascriptAt(owner.url) == true) {
+                if (owner != null && script != null && ownerActive && request?.canEvaluateJavascriptAt(owner.url) == true) {
                     val generation = callbackGeneration
                     owner.evaluateJavascript(script) { value ->
-                        if (owner === webView && !destroyed && !crashed && pageVisible && generation == callbackGeneration) callback?.invoke(mapOf("result" to value))
+                        if (owner === webView && !destroyed && !crashed && ownerActive && generation == callbackGeneration) callback?.invoke(mapOf("result" to value))
                     }
                 } else if (!destroyed) callback?.invoke(mapOf("result" to null))
                 return null
@@ -190,9 +213,10 @@ class GYWebViewNative @JvmOverloads constructor(
         WebViewDiagnostics.created(owner, "kuikly", sensitiveDiagnostics = sensitiveDiagnostics)
         val hostActivity = context.findComponentActivity()
         capabilities = hostActivity?.let {
-            AndroidWebCapabilities(it, { requireNotNull(request) }, { target -> target === webView && pageVisible && !destroyed && !crashed },
+            AndroidWebCapabilities(it, { requireNotNull(request) }, { target -> target === webView && canPresentUi && !destroyed && !crashed },
                 { emit(WebViewEvent.PermissionSettingsRequired(it)) },
-                if (current.permissionPresentation == WebViewPermissionPresentation.HOST) ::showPermissionExplanation else null, filePicker)
+                if (current.permissionPresentation == WebViewPermissionPresentation.HOST) ::showPermissionExplanation else null, filePicker,
+                { target -> target === webView && ownerActive && !destroyed && !crashed })
         }
         popupRouter = AndroidPopupRouter({ requireNotNull(request) }, { emit(WebViewEvent.Navigation(it, true)) }) { navigation ->
             if (route(navigation)) WebViewNavigationDecision.BLOCK else WebViewNavigationDecision.ALLOW
@@ -206,7 +230,7 @@ class GYWebViewNative @JvmOverloads constructor(
                 exitFullscreen()
                 initialHtmlNavigation = false
                 finishedScriptsInjected = false
-                discardEarlyBridgeMessages = !pageVisible
+                discardEarlyBridgeMessages = !ownerActive
                 callbackGeneration++; documentToken = UUID.randomUUID().toString()
                 val oldCapabilities = capabilities
                 val oldPopupRouter = popupRouter
@@ -248,21 +272,24 @@ class GYWebViewNative @JvmOverloads constructor(
             override fun onReceivedTitle(title: String?, url: String?) { if (owner === webView) emit(WebViewEvent.TitleChanged(title)) }
         }, isOwner = { it === owner && owner === webView && !destroyed }) {
             override fun onShowFileChooser(view: WebView?, callback: android.webkit.ValueCallback<Array<android.net.Uri>>?, params: FileChooserParams?): Boolean {
-                if (view !== owner || owner !== webView || destroyed) { callback?.onReceiveValue(null); return true }
+                if (view !== owner || owner !== webView || destroyed || !canPresentUi) { callback?.onReceiveValue(null); return true }
                 val current = capabilities
                 if (current != null) return current.showFileChooser(view, callback, params)
                 callback?.onReceiveValue(null)
                 return true
             }
             override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: android.webkit.GeolocationPermissions.Callback?) {
-                if (owner !== webView || destroyed || !pageVisible) callback?.invoke(origin.orEmpty(), false, false)
+                if (owner !== webView || destroyed || !canPresentUi) callback?.invoke(origin.orEmpty(), false, false)
                 else capabilities?.requestGeolocation(owner, origin, callback) ?: callback?.invoke(origin.orEmpty(), false, false)
             }
             override fun onGeolocationPermissionsHidePrompt() { if (owner === webView && !destroyed) capabilities?.cancelGeolocation(owner) }
-            override fun onPermissionRequest(value: PermissionRequest?) { capabilities?.requestMedia(owner, value) ?: value?.deny() }
+            override fun onPermissionRequest(value: PermissionRequest?) {
+                if (owner !== webView || destroyed || !canPresentUi) value?.deny()
+                else capabilities?.requestMedia(owner, value) ?: value?.deny()
+            }
             override fun onPermissionRequestCanceled(value: PermissionRequest?) { if (owner === webView && !destroyed) capabilities?.cancelMedia(value) }
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean =
-                view === owner && owner === webView && pageVisible && !destroyed && (popupRouter?.createWindow(view, isUserGesture, resultMsg) ?: false)
+                view === owner && owner === webView && canPresentUi && !destroyed && (popupRouter?.createWindow(view, isUserGesture, resultMsg) ?: false)
             override fun onCloseWindow(window: WebView) { popupRouter?.close(window) }
             override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
                 if (view == null || callback == null) return
@@ -274,22 +301,22 @@ class GYWebViewNative @JvmOverloads constructor(
                     }.also { fullscreenHost = it }
                 }
                 if (host == null) callback.onCustomViewHidden()
-                else host.show(owner, view, callback) { owner === webView && pageVisible && !destroyed && !crashed && generation == callbackGeneration && WebViewDiagnostics.isActive(owner) }
+                else host.show(owner, view, callback) { owner === webView && canPresentUi && !destroyed && !crashed && generation == callbackGeneration && WebViewDiagnostics.isActive(owner) }
             }
             override fun onHideCustomView() { if (owner === webView && !destroyed) exitFullscreen() }
         }
         earlyScripts.install(owner, current)
         if (current.pageMessageChannels.isNotEmpty()) {
             pageMessageChannels = AndroidPageMessageChannels(
-                owner, { requireNotNull(request) }, { owner === webView && pageVisible && !destroyed && !crashed }, ::emit,
+                owner, { requireNotNull(request) }, { owner === webView && ownerActive && !destroyed && !crashed }, ::emit,
             )
-            if (!pageVisible) pageMessageChannels?.revoke()
+            if (!ownerActive) pageMessageChannels?.revoke()
         }
         if (current.security.appBridgeEnabled || current.security.pageBridgeEnabled) owner.installAppWebBridge({ requireNotNull(request) }, { documentToken }) { handler, data ->
-            if (owner === webView && pageVisible && !destroyed && !crashed) emit(WebViewEvent.BridgeMessage(WebViewBridgeMessage(handler, data)))
+            if (owner === webView && ownerActive && !destroyed && !crashed) emit(WebViewEvent.BridgeMessage(WebViewBridgeMessage(handler, data)))
         }
         addView(owner, LayoutParams(-1, -1))
-        if (!pageVisible) owner.onPause()
+        if (!ownerActive) owner.onPause()
         when (val content = current.content) {
             is WebViewContent.Url -> owner.loadUrl(content.url, content.additionalHeaders)
             is WebViewContent.Html -> {
@@ -302,7 +329,7 @@ class GYWebViewNative @JvmOverloads constructor(
     private fun route(navigation: WebViewNavigationRequest): Boolean {
         val internalHtmlLoad = initialHtmlNavigation && navigation.isInternalHtmlInitialNavigation()
         if (navigation.isMainFrame) initialHtmlNavigation = false
-        val blocked = (!internalHtmlLoad && request?.allowsNavigation(navigation) != true) || destroyed || crashed
+        val blocked = (!internalHtmlLoad && request?.allowsNavigation(navigation) != true) || destroyed || crashed || pageOwnerActive == false
         if (!blocked && navigation.isMainFrame && !internalHtmlLoad) {
             val owner = webView
             val oldCapabilities = capabilities
@@ -315,10 +342,10 @@ class GYWebViewNative @JvmOverloads constructor(
 
     private fun inject(owner: WebView, finished: Boolean) {
         val current = request ?: return
-        if (owner !== webView || destroyed || crashed || !current.settings.javaScriptEnabled) return
-        // 初始化属于当前文档；隐藏只撤销业务消息、权限和显式 JS 的异步回执。
+        if (owner !== webView || destroyed || crashed || pageOwnerActive == false || !current.settings.javaScriptEnabled) return
+        // 当前文档可在后台初始化；只有撤销归属才丢弃旧业务消息。
         if (current.canUseAppBridgeAt(owner.url)) {
-            owner.evaluateJavascript(bridgeTokenScript(pageVisible && !discardEarlyBridgeMessages), null)
+            owner.evaluateJavascript(bridgeTokenScript(ownerActive && !discardEarlyBridgeMessages), null)
             owner.injectAppWebBridge()
         }
         owner.evaluateJavascript(WEB_VIEW_PERFORMANCE_SCRIPT, null)
@@ -343,7 +370,7 @@ class GYWebViewNative @JvmOverloads constructor(
         "window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = ${JSONObject.quote(documentToken)};" +
             "if(typeof window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__==='function')window.__GY_WEBVIEW_BRIDGE_TOKEN_READY__($deliver);"
 
-    private fun emit(event: WebViewEvent) { if (!destroyed) onEvent?.invoke(WebViewWire.eventValues(event)) }
+    private fun emit(event: WebViewEvent) { if (!destroyed && pageOwnerActive != false) onEvent?.invoke(WebViewWire.eventValues(event)) }
 
     private fun showPermissionExplanation(permissions: Set<WebViewPermission>, complete: (Boolean) -> Unit): () -> Unit {
         val pending = PendingPermissionExplanation(UUID.randomUUID().toString(), webView, callbackGeneration, complete)

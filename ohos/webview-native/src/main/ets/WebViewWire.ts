@@ -372,12 +372,12 @@ export function guardedScript(script: WebViewScript, request: WebViewRequest): s
   const pageGuard = page ? `location.protocol===${JSON.stringify(page.protocol)}&&(location.hostname===${JSON.stringify(page.hostname)}||location.hostname===${JSON.stringify(page.hostname + '.')})&&(location.port||${JSON.stringify(defaultPort)})===${JSON.stringify(page.port || defaultPort)}` : 'false';
   const guard = script.onlyForTrustedMainFrame !== false ? `(${trustedGuard})||(${pageGuard})` : 'true';
   const id = JSON.stringify(script.id);
-  const guarded = `if(window===window.top&&(${guard})){window.__GY_WEBVIEW_SCRIPT_IDS__=window.__GY_WEBVIEW_SCRIPT_IDS__||Object.create(null);if(!Object.prototype.hasOwnProperty.call(window.__GY_WEBVIEW_SCRIPT_IDS__,${id})){window.__GY_WEBVIEW_SCRIPT_IDS__[${id}]=true;${script.source}\n}}`;
+  const guarded = `if(window.__GY_WEBVIEW_PAGE_OWNER_ACTIVE__!==false&&window===window.top&&(${guard})){window.__GY_WEBVIEW_SCRIPT_IDS__=window.__GY_WEBVIEW_SCRIPT_IDS__||Object.create(null);if(!Object.prototype.hasOwnProperty.call(window.__GY_WEBVIEW_SCRIPT_IDS__,${id})){window.__GY_WEBVIEW_SCRIPT_IDS__[${id}]=true;${script.source}\n}}`;
   return script.injectionTime === 'DOM_READY' ?
     `(function(){if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',function(){${guarded}},{once:true})}else{${guarded}}})();` : guarded;
 }
 
-/** 所有异步操作用同一个 generation 校验，在导航、输入变更、隐藏和销毁时撤销。 */
+/** 文档异步操作使用 generation 校验，在导航、输入变更、失去页面归属和销毁时撤销。 */
 export class CallbackLifetime {
   /** 撤销版本，从 0 开始；调用方在发起异步工作时捕获。 */
   generation: number = 0;

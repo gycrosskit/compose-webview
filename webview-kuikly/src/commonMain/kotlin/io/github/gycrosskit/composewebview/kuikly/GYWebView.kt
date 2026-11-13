@@ -30,7 +30,7 @@ class GYWebView : DeclarativeBaseView<GYWebViewAttr, GYWebViewEvent>() {
         command("evaluateJavascript", JSONObject().put("script", script).toString()) { callback(it as? String) }
     }
 
-    /** 单次回复当前可见文档；callback 的 true 表示原生接受并提交，不能证明 H5 已处理。 */
+    /** 单次回复仍属于当前页面的原文档；callback 的 true 表示原生接受并提交，不能证明 H5 已处理。 */
     fun replyPageMessage(replyId: String, data: String, callback: (Boolean) -> Unit = {}) {
         command("replyPageMessage", JSONObject().put("replyId", replyId).put("data", data).toString()) {
             callback(it as? Boolean ?: false)

@@ -82,7 +82,7 @@ window.addEventListener('pagehide',function(){if(port)port.close();port=null;que
 
 /**
  * ArkWeb 原生 Kuikly 组件；在所属 UI 线程调用，输入变化重建 Web 节点，销毁后不可复用。
- * 所有异步授权、选择器和 JS 结果在导航、隐藏、输入变化或销毁时撤销。
+ * 文档能力随页面归属撤销；暂时隐藏仅撤销需要前台的系统交互。
  */
 @Observed
 export class GYWebView extends KuiklyRenderBaseView {
@@ -92,7 +92,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   controller: webview.WebviewController = new webview.WebviewController();
   /** 当前已验证请求；无效输入或销毁时为 null。 */
   request: WebViewRequest | null = null;
-  /** 初始 true，隐藏撤销异步操作并停媒退出全屏。 */
+  /** 初始 true，隐藏取消前台交互并停媒退出全屏。 */
   visible: boolean = true;
   /** 当前 Web 节点身份，输入变化后递增。 */
   renderToken: number = 0;
@@ -140,6 +140,8 @@ export class GYWebView extends KuiklyRenderBaseView {
   /** 返回当前声明配置；未设置输入时使用空对象的默认值。 */
   settings(): WebViewSettings { return this.request?.settings || {}; }
 
+  private pageOwned(): boolean { return this.pageOwnerActive ?? this.visible; }
+
   textZoomPercent(): number {
     const settings = this.settings();
     if (settings.followSystemFontScale === false) return 100;
@@ -178,40 +180,44 @@ export class GYWebView extends KuiklyRenderBaseView {
   setProp(key: string, value: KRAny | KuiklyRenderCallback): boolean {
     if (this.lifetime.disposed) return true;
     if (key === 'onEvent') { this.eventCallback = value as KuiklyRenderCallback; return true; }
-    if (key === 'pageOwnerActive') {
-      this.pageOwnerActive = value === true;
-      if (!this.pageOwnerActive) { const cancel = this.cancelPermissionExplanation; this.revokeFilePickers(); cancel?.(); }
-      return true;
-    }
-    if (key === 'visible') {
-      const changed = this.visible !== (value === true);
-      if (!changed) return true;
-      this.visible = value === true;
+    if (key === 'pageOwnerActive' || key === 'visible') {
+      const wasOwned = this.pageOwned();
+      const previousOwner = this.pageOwnerActive;
+      const wasVisible = this.visible;
+      if (key === 'pageOwnerActive') this.pageOwnerActive = typeof value === 'boolean' ? value : null;
+      else this.visible = value === true;
+      const owned = this.pageOwned();
+      const ownerChanged = wasOwned !== owned || (previousOwner !== false && this.pageOwnerActive === false);
+      if (!ownerChanged && wasVisible === this.visible) return true;
       const controllerOwner = this.controller;
       const ownerToken = this.renderToken;
-      this.revokePending(!this.visible, this.pageOwnerActive === true && this.fileResults.size > 0, true);
+      if (ownerChanged) this.revokePending(!owned, owned && this.fileResults.size > 0, key === 'visible');
+      else if (!this.visible) this.revokeVisibleActions(this.pageOwnerActive === true, true, true);
       if (controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
       if (this.attached) {
         try {
-          if (this.visible) this.controller.onActive();
-          else { this.exitFullscreen(); this.controller.stopAllMedia(); this.controller.onInactive(); }
-          if (this.settings().javaScriptEnabled === true) {
+          if (!this.visible || !owned) { this.exitFullscreen(); this.controller.stopAllMedia(); }
+          // 显式归属仍有效的后台页继续执行加载与 JS，避免 onInactive 暂停初始化。
+          if (owned) this.controller.onActive();
+          else this.controller.onInactive();
+          if (this.pageOwnerActive === false) this.controller.stop();
+          if (owned && !this.loadSubmitted) this.loadRequest();
+          if (ownerChanged && this.settings().javaScriptEnabled === true) {
             const controller = this.controller;
             const generation = this.lifetime.generation;
             this.bridgeVisibilityPending = true;
-            // JS 状态只丢弃隐藏队列；授权仍由 native visible/origin/generation 决定。
-            const script = this.bridgeVisibilityScript(changed);
+            const script = this.bridgeVisibilityScript(true);
             controller.runJavaScript(script).then(() => {
               if (!this.lifetime.current(generation) || controller !== this.controller) return;
               this.bridgeVisibilityPending = false;
-              if (this.visible) this.installBridge();
+              if (this.pageOwned()) this.installBridge();
             }).catch(() => {
               if (this.lifetime.current(generation) && controller === this.controller) this.fail('LOAD_EXCEPTION', 'Bridge visibility update failed');
             });
           }
         } catch (_) { this.fail('LOAD_EXCEPTION', 'ArkWeb visibility update failed'); }
       }
-      if (this.visible) this.resumeFilePickers();
+      if (this.visible && this.pageOwned()) this.resumeFilePickers();
       return true;
     }
     if (key !== 'request') return super.setProp(key, value);
@@ -261,7 +267,7 @@ export class GYWebView extends KuiklyRenderBaseView {
       if (this.request.pageMessageChannels?.length && this.request.settings.javaScriptEnabled === true) {
         const bytes = cryptoFramework.createRandom().generateRandomSync(32).data;
         this.pageMessageSecret = Array.from(bytes).map(byte => byte.toString(16).padStart(2, '0')).join('');
-        this.pageMessageActive = this.visible;
+        this.pageMessageActive = this.pageOwned();
       }
     } catch (_) {
       this.request = null; this.pageMessageSecret = '';
@@ -284,12 +290,12 @@ export class GYWebView extends KuiklyRenderBaseView {
     this.attached = true;
     this.observeConfiguration();
     this.loadRequest();
-    if (!this.visible) { try { this.controller.onInactive(); } catch (_) {} }
+    if (!this.pageOwned()) { try { this.controller.onInactive(); } catch (_) {} }
   }
 
   private loadRequest(): void {
     const request = this.request;
-    if (!this.attached || !request || this.lifetime.disposed) return;
+    if (!this.attached || !request || this.lifetime.disposed || this.pageOwnerActive === false) return;
     try {
       this.revokePending(false);
       const suffix = request.settings.userAgentSuffix;
@@ -342,15 +348,15 @@ export class GYWebView extends KuiklyRenderBaseView {
     const ownerToken = this.renderToken;
     const current = this.request;
     event.handler.setWebController(null!);
-    const allowed = this.visible && this.isRenderActive(ownerToken) && current !== null &&
+    const allowed = this.visible && this.pageOwned() && this.isRenderActive(ownerToken) && current !== null &&
       current.navigationPolicy.allowNewWindows === true &&
       (event.isUserTrigger || current.settings.javaScriptCanOpenWindowsAutomatically === true) && navigationAllowed(event.targetUrl, true, current);
     this.emit({ type: 'navigation', url: event.targetUrl, isMainFrame: true, hasUserGesture: event.isUserTrigger,
       target: 'NEW_WINDOW', blocked: !allowed });
-    if (!allowed || !this.visible || this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
+    if (!allowed || !this.visible || !this.pageOwned() || this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
     this.documentReady = false;
     this.revokePending();
-    if (!this.visible || this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
+    if (!this.visible || !this.pageOwned() || this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
     try { controllerOwner.loadUrl(event.targetUrl); }
     catch (_) { this.fail('LOAD_EXCEPTION', 'ArkWeb popup navigation failed'); }
   }
@@ -407,12 +413,12 @@ export class GYWebView extends KuiklyRenderBaseView {
   /** 返回原生首航注入脚本；JS 关闭为空，可信限定由页面内主文档门禁再次检查。 */
   documentStartScripts(): ScriptItem[] {
     const request = this.request;
-    if (!request || request.settings.javaScriptEnabled !== true) return [];
+    if (!request || this.pageOwnerActive === false || request.settings.javaScriptEnabled !== true) return [];
     const scripts: ScriptItem[] = [];
     const pageScript = this.pageMessageScript();
     if (pageScript) scripts.push({ script: pageScript, scriptRules: ['*'] });
     if (request.security.appBridgeEnabled || request.security.pageBridgeEnabled) scripts.push({
-      script: `window.__GY_WEBVIEW_VISIBILITY_REVISION__=${this.lifetime.generation};window.__GY_WEBVIEW_VISIBLE__=${this.visible};${BRIDGE_BOOTSTRAP}`,
+      script: `window.__GY_WEBVIEW_VISIBILITY_REVISION__=${this.lifetime.generation};window.__GY_WEBVIEW_VISIBLE__=${this.pageOwned()};${BRIDGE_BOOTSTRAP}`,
       scriptRules: ['*']
     });
     request.scripts.filter(script => script.injectionTime !== 'DOCUMENT_FINISHED').forEach(script =>
@@ -440,7 +446,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   }
 
   private pageMessageAllowed(): boolean {
-    return this.pageMessageActive && this.visible && this.attached && this.isRenderActive(this.renderToken) &&
+    return this.pageMessageActive && this.pageOwned() && this.attached && this.isRenderActive(this.renderToken) &&
       this.request?.settings.javaScriptEnabled === true && !!this.pageMessageSecret &&
       navigationAllowed(this.currentUrl() || this.initialPageMessageUrl(), true, this.request) &&
       (!this.currentUrl() || this.isInitialPageMessageUrl(this.currentUrl()));
@@ -475,7 +481,7 @@ export class GYWebView extends KuiklyRenderBaseView {
 
   private pageMessageScript(): string {
     if (!this.pageMessageActive || !this.pageMessageSecret || !this.request?.pageMessageChannels?.length) return '';
-    return `(function(key,channels,url){
+    return `window.__GY_WEBVIEW_VISIBILITY_REVISION__=${this.lifetime.generation};window.__GY_WEBVIEW_VISIBLE__=${this.pageOwned()};(function(key,channels,url){
 try{const parsed=new URL(url);const tail=url.substring(url.indexOf('://')+3).replace(/^[^/?#]*/,'');url=parsed.protocol+'//'+parsed.host+(tail.startsWith('/')?tail:'/'+tail);}catch(_){return;}
 if(window!==window.top||location.href!==url)return;
 const proxy=window.GYWebViewPageMessageNative;
@@ -491,6 +497,8 @@ window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__=function(expected,channel,data){
 if(!active||nonce!==expected||window!==window.top||location.href!==url||typeof data!=='string')return false;
 const entry=entries[channel];if(!entry||typeof entry.onmessage!=='function')return false;entry.onmessage({data:data});return true;
 };
+window.__GY_WEBVIEW_PAGE_MESSAGE_REVOKE__=function(){active=false;};
+listen('GYWebViewVisibility',function(){if(window.__GY_WEBVIEW_VISIBLE__!==true)active=false;});
 listen('pagehide',function(){active=false;revoke(key,nonce)});
 })(${JSON.stringify(this.pageMessageSecret)},${JSON.stringify(this.request.pageMessageChannels)},${JSON.stringify(this.initialPageMessageUrl())});`;
   }
@@ -513,8 +521,8 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
 
   private runScripts(time: string): void {
     const request = this.request;
-    if (!request || !this.attached || !this.isRenderActive(this.renderToken) || request.settings.javaScriptEnabled !== true) return;
-    // 初始化不依赖可见性；端口、权限和显式 evaluateJavascript 仍由 visible 撤销。
+    if (!request || !this.attached || this.pageOwnerActive === false || !this.isRenderActive(this.renderToken) || request.settings.javaScriptEnabled !== true) return;
+    // 兼容旧调用方的隐藏初始化；显式离页不得继续注入。
     const generation = this.lifetime.generation;
     request.scripts.filter(script => script.injectionTime === time).forEach(script => {
       this.controller.runJavaScript(guardedScript(script, request)).catch(() => {
@@ -533,22 +541,22 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
 
   private bridgeVisibilityScript(changed: boolean): string {
     return `(function(){const revision=${this.lifetime.generation};if((window.__GY_WEBVIEW_VISIBILITY_REVISION__||0)>revision)return;` +
-      `const changed=${changed}||window.__GY_WEBVIEW_VISIBLE__!==${this.visible};window.__GY_WEBVIEW_VISIBILITY_REVISION__=revision;window.__GY_WEBVIEW_VISIBLE__=${this.visible};` +
+      `window.__GY_WEBVIEW_PAGE_OWNER_ACTIVE__=${this.pageOwnerActive !== false};const changed=${changed}||window.__GY_WEBVIEW_VISIBLE__!==${this.pageOwned()};window.__GY_WEBVIEW_VISIBILITY_REVISION__=revision;window.__GY_WEBVIEW_VISIBLE__=${this.pageOwned()};` +
       `if(changed)window.dispatchEvent(new Event('GYWebViewVisibility'));})();`;
   }
 
   private installBridge(): void {
-    if (!this.attached || !this.documentReady || !this.visible || this.bridgeVisibilityPending || !this.isRenderActive(this.renderToken) || this.ports.length > 0) return;
+    if (!this.attached || !this.documentReady || !this.pageOwned() || this.bridgeVisibilityPending || !this.isRenderActive(this.renderToken) || this.ports.length > 0) return;
     const currentUrl = this.currentUrl();
     if (!this.bridgeAllowedAt(currentUrl)) return;
     const generation = this.lifetime.generation;
     this.controller.runJavaScript(this.bridgeVisibilityScript(false) + BRIDGE_BOOTSTRAP).then(() => {
-      if (!this.lifetime.current(generation) || !this.visible || !this.bridgeAllowedAt(this.currentUrl()) ||
+      if (!this.lifetime.current(generation) || !this.pageOwned() || !this.bridgeAllowedAt(this.currentUrl()) ||
         origin(currentUrl) !== origin(this.currentUrl()) || this.ports.length > 0) return;
       try {
         this.ports = this.controller.createWebMessagePorts();
         this.ports[0].onMessageEvent((message: webview.WebMessage) => {
-          if (!this.lifetime.current(generation) || !this.visible || !this.bridgeAllowedAt(this.currentUrl())) return;
+          if (!this.lifetime.current(generation) || !this.pageOwned() || !this.bridgeAllowedAt(this.currentUrl())) return;
           if (typeof message !== 'string' || message.length > 65536 || new util.TextEncoder().encodeInto(message).length > 65536) return;
           try {
             const data = JSON.parse(message) as BridgeMessage;
@@ -564,7 +572,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
 
   private async authorizeCapture(context: common.UIAbilityContext, permissions: Permissions[],
     valid: () => boolean, fileCapture: boolean): Promise<boolean> {
-    if (!valid()) return false;
+    if (!this.visible || !this.pageOwned() || !valid()) return false;
     const access = abilityAccessCtrl.createAtManager();
     const states = permissions.map(permission => access.getSelfPermissionStatus(permission));
     if (states.some(status => status === abilityAccessCtrl.PermissionStatus.RESTRICTED)) return false;
@@ -576,7 +584,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     if (states.every(status => status === abilityAccessCtrl.PermissionStatus.GRANTED)) return true;
     if (states.some(status => status === abilityAccessCtrl.PermissionStatus.NOT_DETERMINED) &&
       !await this.explainCapture(context, permissions.filter((_permission, index) => states[index] === abilityAccessCtrl.PermissionStatus.NOT_DETERMINED), valid, fileCapture)) return false;
-    if (!valid()) return false;
+    if (!this.visible || !this.pageOwned() || !valid()) return false;
     const result = await access.requestPermissionsFromUser(context, permissions);
     if (!valid()) return false;
     if (result.authResults.length === permissions.length && result.authResults.every(state => state === 0)) return true;
@@ -658,11 +666,11 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     const current = this.request;
     const generation = this.lifetime.generation;
     const valid = (): boolean => this.geolocationRequest === event && this.lifetime.current(generation) &&
-      this.visible && this.pageOwnerActive !== false && this.request === current &&
+      this.pageOwned() && this.request === current &&
       !!current?.security.geolocationEnabled && trusted(this.currentUrl(), current.security) &&
       trusted(event.origin, current.security) && !!origin(event.origin) && origin(event.origin) === origin(this.currentUrl());
     this.geolocationRequest = event;
-    if (!valid()) { this.geolocationHide(); return; }
+    if (!this.visible || !valid()) { this.geolocationHide(); return; }
     const context = (this.getUIContext() as UIContext).getHostContext() as common.UIAbilityContext;
     const previousExplanation = this.cancelPermissionExplanation;
     const authorization = this.authorizeCapture(context, ['ohos.permission.APPROXIMATELY_LOCATION'], valid, false);
@@ -773,7 +781,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
 
   /** 申请所属 Window owner，width/height 单位像素；冲突或失活立即退出原生 handler。 */
   enterFullscreen(handler: FullScreenExitHandler, width: number, height: number): void {
-    if (!this.visible || this.lifetime.disposed || this.fullscreenHandler || this.nativeExitPending) { handler.exitFullScreen(); return; }
+    if (!this.visible || !this.pageOwned() || this.lifetime.disposed || this.fullscreenHandler || this.nativeExitPending) { handler.exitFullScreen(); return; }
     this.fullscreenHandler = handler;
     const revision = ++this.fullscreenRevision;
     const lease = this.windowPolicyController().createFullscreenLease(async () => {
@@ -853,7 +861,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     try {
       if (method === 'evaluateJavascript') {
         const args = JSON.parse(typeof params === 'string' ? params : '{}') as EvalParams;
-        if (!this.visible || !this.documentReady || this.request.settings.javaScriptEnabled !== true ||
+        if (!this.pageOwned() || !this.documentReady || this.request.settings.javaScriptEnabled !== true ||
           !(trusted(this.currentUrl(), this.request.security) || this.bridgeAllowedAt(this.currentUrl())) ||
           typeof args.script !== 'string' || !args.script.trim()) {
           callback?.({ result: null }); return null;
@@ -929,18 +937,23 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     results.forEach(result => { try { result.handleFileList([]); } catch (_) {} });
   }
   private revokePending(revokePageChannels: boolean = true, preserveFilePickers: boolean = false, preserveHostFiles: boolean = false): void {
-    const cancel = this.cancelPermissionExplanation;
     if (revokePageChannels) {
       this.pageMessageActive = false; this.pageMessageSecret = ''; this.pageMessageNonce = '';
       this.pageMessageReplies.clear();
       if (this.attached && this.request?.pageMessageChannels?.length) {
+        try { this.controller.runJavaScript("if(typeof window.__GY_WEBVIEW_PAGE_MESSAGE_REVOKE__==='function')window.__GY_WEBVIEW_PAGE_MESSAGE_REVOKE__();").catch(() => {}); } catch (_) {}
         try { this.controller.deleteJavaScriptRegister('GYWebViewPageMessageNative'); } catch (_) {}
       }
     }
     this.bridgeVisibilityPending = false;
     this.lifetime.invalidate(); this.closePorts();
+    this.revokeVisibleActions(preserveFilePickers, preserveHostFiles);
+  }
+  private revokeVisibleActions(preserveFilePickers: boolean = false, preserveHostFiles: boolean = false, preserveGeolocation: boolean = false): void {
+    const cancel = this.cancelPermissionExplanation;
     const requests = Array.from(this.permissionRequests); this.permissionRequests.clear();
-    this.geolocationHide();
+    // 系统授权弹窗会暂时隐藏宿主；同文档结果按归属交付，用途说明仍由 cancel 关闭。
+    if (!preserveGeolocation) this.geolocationHide();
     if (!preserveFilePickers) this.revokeFilePickers(preserveHostFiles);
     cancel?.();
     requests.forEach(request => { try { request.deny(); } catch (_) {} });

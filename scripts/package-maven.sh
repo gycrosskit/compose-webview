@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export VERSION="${VERSION:-2.3.0}"
+export VERSION="${VERSION:-2.3.1}"
 export GROUP=com.github.gycrosskit.compose-webview
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 # staging 为本脚本生成的临时仓库，避免归档夹带旧构建版本。
