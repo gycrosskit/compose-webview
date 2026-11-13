@@ -77,17 +77,16 @@ class AndroidPageChannelsNativeTest {
         native.call("replyPageMessage", "{\"replyId\":\"$replyId\",\"data\":\"background\"}") { result = (it as Map<*, *>)["result"] }
         assertEquals(true, result)
         assertEquals(listOf("background"), proxy.messages)
-        val pending = NativePageReply()
-        listener.onPostMessage(owner, WebMessageCompat("background"), Uri.parse("https://page.test"), true, pending)
+        listener.onPostMessage(owner, WebMessageCompat("background"), Uri.parse("https://page.test"), true, proxy)
         val pendingId = events.last { it["type"] == "pageMessage" }.getValue("replyId") as String
-        listener.onPostMessage(owner, WebMessageCompat("cross-origin"), Uri.parse("https://other.test"), true, pending)
+        listener.onPostMessage(owner, WebMessageCompat("cross-origin"), Uri.parse("https://other.test"), true, proxy)
         assertEquals(2, events.count { it["type"] == "pageMessage" })
         native.setProp("pageOwnerActive", false)
         native.call("replyPageMessage", "{\"replyId\":\"$pendingId\",\"data\":\"stale\"}") { result = (it as Map<*, *>)["result"] }
         assertEquals(false, result)
-        assertTrue(pending.messages.isEmpty())
+        assertEquals(listOf("background"), proxy.messages)
         native.setProp("visible", true)
-        listener.onPostMessage(owner, WebMessageCompat("stale"), Uri.parse("https://page.test"), true, pending)
+        listener.onPostMessage(owner, WebMessageCompat("stale"), Uri.parse("https://page.test"), true, proxy)
         assertEquals(2, events.count { it["type"] == "pageMessage" })
         native.onDestroy()
     }
