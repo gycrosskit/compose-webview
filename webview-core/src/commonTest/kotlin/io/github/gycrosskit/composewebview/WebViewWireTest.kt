@@ -61,6 +61,7 @@ class WebViewWireTest {
         val content = """"content":{"type":"url","url":"https://safe.example"}"""
         for (field in listOf(
             """"settings":{"javaScriptEnabled":"true"}""",
+            """"settings":{"verifyServerCertificate":"false"}""",
             """"settings":{"minimumTextZoomPercent":"100"}""",
             """"security":{"pageBridgeEnabled":"true"}""",
             """"navigationPolicy":{"allowedSchemes":[1]}""",
@@ -78,7 +79,7 @@ class WebViewWireTest {
     @Test fun requestRoundTripAndMalformedSecurityIsRejected() {
         val request = WebViewRequest(
             WebViewContent.Html("<h1>中文</h1>", "https://safe.example/base"),
-            settings = WebViewSettings(javaScriptEnabled = true, userAgentSuffix = "test"),
+            settings = WebViewSettings(javaScriptEnabled = true, userAgentSuffix = "test", verifyServerCertificate = false),
             security = WebViewSecurity(WebViewTrustPolicy(listOf("https://safe.example/path")), appBridgeEnabled = true),
             scripts = listOf(WebViewScript("ready", "window.ready = true")),
             blockedResourceRules = listOf(WebViewUrlRule.HostSuffix("ads.example")),

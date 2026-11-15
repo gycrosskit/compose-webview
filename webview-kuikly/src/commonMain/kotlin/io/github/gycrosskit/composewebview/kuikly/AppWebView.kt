@@ -30,7 +30,7 @@ fun AppWebView(
 
 /**
  * pageOwnerActive=null 不下发归属属性，首次保留原生旧行为；启用显式归属后必须用 false 撤销，null 不重置已下发值。
- * 显式 true 可在系统选择器短暂隐藏时保留已有选择请求。
+ * 显式 true 的暂时隐藏保留文档、Bridge、初始化和在途业务；新 UI 动作仍要求可见。
  * pictureInPicturePageActive 仅在当前视频页仍拥有播放会话时为 true，不能用进程前后台状态代替归属。
  * onViewUpdate 在初始化及每次更新时先配置宿主原生扩展属性；事件、归属、可见性与 request 由本入口随后统一下发。
  * 保留旧五参数重载，使已有位置参数和尾随 onController lambda 的含义不变。

@@ -89,12 +89,12 @@ PYHOST
     cp "$WEBVIEW_HOST_MEDIA_ROOT/build/ios-picker-check/PickerCheck.app/Frameworks/libGycMedia.dylib" "$app/Frameworks/"
     xcrun --sdk iphonesimulator swiftc -parse-as-library -target "$(uname -m)-apple-ios15.0-simulator" -sdk "$sdk" \
       -I "$module" -I "$WEBVIEW_HOST_MEDIA_ROOT/build/ios-picker-check/module" -F "$WEBVIEW_IOS_SIMULATOR_RENDER_FRAMEWORK_DIR" \
-      -L "$app/Frameworks" -lGycMedia -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework AVFoundation -framework PhotosUI \
+      -L "$app/Frameworks" -lGycMedia -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework AVFoundation -framework Security -framework PhotosUI \
       -framework OpenKuiklyIOSRender -lc++ -Xlinker -ObjC -Xlinker -rpath -Xlinker @executable_path/Frameworks \
       "$output/WireCheck.o" "$module/HostProvider.swift" -o "$app/WireCheck"
 else
     rm -f "$app/Frameworks/libGycMedia.dylib"
-    "${wire_compile[@]}" ios/Tests/BooleanWireCheck.m -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework AVFoundation \
+    "${wire_compile[@]}" ios/Tests/BooleanWireCheck.m -framework UIKit -framework WebKit -framework UniformTypeIdentifiers -framework AVFoundation -framework Security \
       -framework OpenKuiklyIOSRender -framework Foundation -framework CoreFoundation -lc++ -ObjC \
       -Wl,-rpath,@executable_path/Frameworks -o "$app/WireCheck"
 fi

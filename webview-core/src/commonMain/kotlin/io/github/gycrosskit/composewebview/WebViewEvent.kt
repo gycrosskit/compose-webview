@@ -126,6 +126,8 @@ enum class WebViewCapability {
     PAGE_MESSAGE_CHANNEL,
     /** 安全 App Bridge 传输不可用；网页仍可继续加载。 */
     APP_BRIDGE,
+    /** 原生 Geolocation 适配无法在页面脚本前安装；其他具名通道仍可使用。 */
+    NATIVE_GEOLOCATION,
 }
 
 /** H5 可以申请、且需要在设置提示中向用户解释的系统能力。 */

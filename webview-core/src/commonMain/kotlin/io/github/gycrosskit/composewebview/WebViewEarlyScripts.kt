@@ -1,9 +1,10 @@
 package io.github.gycrosskit.composewebview
 
-/** 生成可重复执行的业务脚本包装；document-start 不可用时可在首次可见和完成回调安全兜底。 */
-fun WebViewRequest.earlyScriptSource(): String? {
+/** 仅真实 document-start 注册传 true；晚注入跳过要求先于页面脚本执行的声明。 */
+fun WebViewRequest.earlyScriptSource(atDocumentStart: Boolean = false): String? {
     if (!settings.javaScriptEnabled) return null
-    val scripts = scripts.filter { it.injectionTime != WebViewScriptInjectionTime.DOCUMENT_FINISHED }
+    val scripts = scripts.filter { it.injectionTime != WebViewScriptInjectionTime.DOCUMENT_FINISHED &&
+        (atDocumentStart || it.injectionTime != WebViewScriptInjectionTime.DOCUMENT_START_REQUIRED) }
     if (scripts.isEmpty()) return null
     val trusted = security.trustedOrigins.javascriptTrustExpression()
     val initial = content.initialOrigin()?.toHttpOrigin()

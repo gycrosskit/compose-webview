@@ -157,6 +157,7 @@ object WebViewWire {
             put("maximumTextZoomPercent", value.maximumTextZoomPercent)
             put("algorithmicDarkeningAllowed", value.algorithmicDarkeningAllowed)
             put("userAgentSuffix", value.userAgentSuffix)
+            put("verifyServerCertificate", value.verifyServerCertificate)
     }
 
     private fun decodeSettings(value: JsonObject): WebViewSettings {
@@ -184,6 +185,7 @@ object WebViewWire {
             maximumTextZoomPercent = value.integer("maximumTextZoomPercent", defaults.maximumTextZoomPercent),
             algorithmicDarkeningAllowed = value.boolean("algorithmicDarkeningAllowed", defaults.algorithmicDarkeningAllowed),
             userAgentSuffix = value.stringOrNull("userAgentSuffix"),
+            verifyServerCertificate = value.boolean("verifyServerCertificate", defaults.verifyServerCertificate),
         )
     }
 

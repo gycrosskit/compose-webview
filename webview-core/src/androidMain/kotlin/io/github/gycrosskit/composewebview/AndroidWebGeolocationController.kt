@@ -9,6 +9,7 @@ internal class AndroidWebGeolocationController(
     private val request: () -> WebViewRequest,
     private val isAttached: (WebView) -> Boolean,
     private val permissions: AndroidWebPermissionController,
+    private val isVisible: (WebView) -> Boolean = isAttached,
 ) {
     private class Pending(val owner: WebView, val origin: String, val callback: GeolocationPermissions.Callback)
     private var pending: Pending? = null
@@ -25,6 +26,7 @@ internal class AndroidWebGeolocationController(
         pending = next
         permissions.request(key = next, permissions = listOf(Manifest.permission.ACCESS_COARSE_LOCATION),
             purpose = WebPermissionPurpose.GEOLOCATION,
+            canPresentUi = { isVisible(owner) },
             stillAllowed = { pending === next && allowed(next) },
             onResult = { granted ->
                 if (pending === next) {
@@ -32,6 +34,14 @@ internal class AndroidWebGeolocationController(
                     next.callback.invoke(next.origin, granted && allowed(next), false)
                 }
             })
+    }
+
+    /** 系统权限弹窗导致的暂停不能提前否定仍属于当前文档的定位请求。 */
+    fun pause(owner: WebView): Boolean {
+        val current = pending?.takeIf { it.owner === owner } ?: return false
+        if (permissions.isSystemRequestInFlight(current)) return true
+        cancel(owner)
+        return false
     }
 
     fun cancel(owner: WebView) {

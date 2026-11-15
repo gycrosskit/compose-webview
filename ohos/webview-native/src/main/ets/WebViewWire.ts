@@ -67,6 +67,7 @@ export interface WebViewContent {
  * @property loadsImagesAutomatically 默认 true。
  * @property blockNetworkImage 默认 false。
  * @property supportZoom 默认 true。
+ * @property verifyServerCertificate 默认 true；仅显式 false 放行服务端证书错误。
  * @property userAgentSuffix 可选 User-Agent 后缀，不含 CR/LF。
  */
 export interface WebViewSettings {
@@ -76,7 +77,7 @@ export interface WebViewSettings {
   mediaPlaybackRequiresUserGesture?: boolean; loadsImagesAutomatically?: boolean; blockNetworkImage?: boolean;
   supportZoom?: boolean; userAgentSuffix?: string | null;
   followSystemFontScale?: boolean; minimumTextZoomPercent?: number; maximumTextZoomPercent?: number;
-  algorithmicDarkeningAllowed?: boolean;
+  algorithmicDarkeningAllowed?: boolean; verifyServerCertificate?: boolean;
 }
 /**
  * 高权限 HTTPS 来源授权；路径、查询和 fragment 不参与匹配。
@@ -109,7 +110,7 @@ export interface WebViewUrlRule { type: string; value?: string; ignoreCase?: boo
  * 主文档脚本声明，输入不可信时应由宿主拒绝而非拼接。
  * @property id 非空稳定脚本标识。
  * @property source 非空可信脚本正文。
- * @property injectionTime DOCUMENT_START/DOM_READY/DOCUMENT_FINISHED。
+ * @property injectionTime DOCUMENT_START/DOCUMENT_START_REQUIRED/DOM_READY/DOCUMENT_FINISHED。
  * @property onlyForTrustedMainFrame 默认 true；false 仍拒绝 iframe。
  */
 export interface WebViewScript { id: string; source: string; injectionTime: string; onlyForTrustedMainFrame: boolean; }
@@ -292,7 +293,7 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   const booleanKeys = ['javaScriptEnabled', 'domStorageEnabled', 'allowFileAccess', 'allowContentAccess', 'acceptsThirdPartyCookies',
     'supportMultipleWindows', 'javaScriptCanOpenWindowsAutomatically', 'mediaPlaybackRequiresUserGesture', 'loadsImagesAutomatically',
     'blockNetworkImage', 'builtInZoomControls', 'displayZoomControls', 'supportZoom', 'useWideViewPort', 'loadWithOverviewMode',
-    'followSystemFontScale', 'algorithmicDarkeningAllowed'];
+    'followSystemFontScale', 'algorithmicDarkeningAllowed', 'verifyServerCertificate'];
   booleanKeys.forEach(key => { if (settingValues[key] !== undefined && typeof settingValues[key] !== 'boolean') throw new Error('Invalid setting'); });
   const minimumZoom = request.settings.minimumTextZoomPercent === undefined ? 100 : request.settings.minimumTextZoomPercent;
   const maximumZoom = request.settings.maximumTextZoomPercent === undefined ? 200 : request.settings.maximumTextZoomPercent;
@@ -354,7 +355,7 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   }
   request.scripts.forEach(script => {
     if ((script.onlyForTrustedMainFrame !== undefined && typeof script.onlyForTrustedMainFrame !== 'boolean') || typeof script.id !== 'string' || !/^[a-zA-Z0-9_.-]+$/.test(script.id) || typeof script.source !== 'string' || !script.source.trim() ||
-      !['DOCUMENT_START', 'DOM_READY', 'DOCUMENT_FINISHED'].includes(script.injectionTime)) throw new Error('Invalid script');
+      !['DOCUMENT_START', 'DOCUMENT_START_REQUIRED', 'DOM_READY', 'DOCUMENT_FINISHED'].includes(script.injectionTime)) throw new Error('Invalid script');
   });
   return request;
 }
@@ -371,12 +372,12 @@ export function guardedScript(script: WebViewScript, request: WebViewRequest): s
   const pageGuard = page ? `location.protocol===${JSON.stringify(page.protocol)}&&(location.hostname===${JSON.stringify(page.hostname)}||location.hostname===${JSON.stringify(page.hostname + '.')})&&(location.port||${JSON.stringify(defaultPort)})===${JSON.stringify(page.port || defaultPort)}` : 'false';
   const guard = script.onlyForTrustedMainFrame !== false ? `(${trustedGuard})||(${pageGuard})` : 'true';
   const id = JSON.stringify(script.id);
-  const guarded = `if(window===window.top&&(${guard})){window.__GY_WEBVIEW_SCRIPT_IDS__=window.__GY_WEBVIEW_SCRIPT_IDS__||Object.create(null);if(!Object.prototype.hasOwnProperty.call(window.__GY_WEBVIEW_SCRIPT_IDS__,${id})){window.__GY_WEBVIEW_SCRIPT_IDS__[${id}]=true;${script.source}\n}}`;
+  const guarded = `if(window.__GY_WEBVIEW_PAGE_OWNER_ACTIVE__!==false&&window===window.top&&(${guard})){window.__GY_WEBVIEW_SCRIPT_IDS__=window.__GY_WEBVIEW_SCRIPT_IDS__||Object.create(null);if(!Object.prototype.hasOwnProperty.call(window.__GY_WEBVIEW_SCRIPT_IDS__,${id})){window.__GY_WEBVIEW_SCRIPT_IDS__[${id}]=true;${script.source}\n}}`;
   return script.injectionTime === 'DOM_READY' ?
     `(function(){if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',function(){${guarded}},{once:true})}else{${guarded}}})();` : guarded;
 }
 
-/** 所有异步操作用同一个 generation 校验，在导航、输入变更、隐藏和销毁时撤销。 */
+/** 文档异步操作使用 generation 校验，在导航、输入变更、失去页面归属和销毁时撤销。 */
 export class CallbackLifetime {
   /** 撤销版本，从 0 开始；调用方在发起异步工作时捕获。 */
   generation: number = 0;

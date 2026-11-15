@@ -8,6 +8,13 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parents[2]
 fixtures = runpy.run_path(str(Path(__file__).with_name('create-fixture.py')))['files']
 fixtures.update({
+    'Manifest.kt': '''package android
+object Manifest { object permission { const val CAMERA="camera";const val RECORD_AUDIO="microphone";const val ACCESS_COARSE_LOCATION="coarse" } }
+''',
+    'WebKit.kt': '''package android.webkit
+class WebView(var url:String?="https://safe.test/page") { var active=true }
+class GeolocationPermissions { fun interface Callback { fun invoke(origin:String,allow:Boolean,retain:Boolean) } }
+''',
     'Context.kt': '''package android.content
 open class Context { fun getString(value:Int)="resource:$value" }
 ''',
@@ -60,9 +67,15 @@ open class Contract<I,O>
 object ActivityResultContracts { class RequestMultiplePermissions:Contract<Array<String>,Map<String,Boolean>>() }
 ''',
     'ContractBoundary.kt': '''package io.github.gycrosskit.composewebview
-enum class WebViewPermission { CAMERA,MICROPHONE }
+class WebViewRequest(val security:Security=Security())
+class Security(var geolocationEnabled:Boolean=true,val trustedOrigins:Trust=Trust())
+class Trust { fun isTrusted(value:String?)=value?.toHttpOrigin()=="https://safe.test" || value?.toHttpOrigin()=="https://other.test" }
+fun String.toHttpOrigin():String? = runCatching { val uri=java.net.URI(this);if(uri.scheme !in listOf("https","http") || uri.host==null) null else uri.scheme+"://"+uri.authority }.getOrNull()
+fun android.webkit.WebView.isActiveAppWebView()=active
+enum class WebViewPermission { CAMERA,MICROPHONE,LOCATION }
 fun logWebError(message:String,error:Throwable?=null) {}
 object R { object string {
+ const val web_permission_name_location=14;const val web_permission_scenario_location=15;const val web_permission_impact_location=16
  const val web_permission_acknowledge=1;const val web_permission_explanation_title=2
  const val web_permission_name_camera_microphone=3;const val web_permission_name_microphone=4;const val web_permission_name_camera=5
  const val web_permission_scenario_upload_video=6;const val web_permission_scenario_upload_photo=7
@@ -73,7 +86,7 @@ object R { object string {
 })
 # Permission regressions need only these shared Android/AndroidX boundary fragments.
 names = ('Manifest.kt', 'Result.kt', 'Context.kt', 'PackageManager.kt', 'Looper.kt', 'Activity.kt',
-         'ComponentActivity.kt', 'ContextCompat.kt', 'Contracts.kt', 'ContractBoundary.kt', 'Intent.kt', 'Uri.kt')
+         'ComponentActivity.kt', 'ContextCompat.kt', 'Contracts.kt', 'ContractBoundary.kt', 'Intent.kt', 'Uri.kt', 'WebKit.kt')
 cache = Path(os.environ.get('GRADLE_USER_HOME', str(Path.home() / '.gradle'))) / 'caches/modules-2/files-2.1'
 version = '2.2.21-1.0.0'
 
@@ -96,9 +109,11 @@ with TemporaryDirectory(prefix='webview-permissions-') as directory:
     sources = [str(output / name) for name in names]
     sources += [str(ROOT / 'webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebPermissionController.kt'),
                 str(Path(__file__).with_name('permission-main.kt')),
-                str(Path(__file__).with_name('host-permission-main.kt'))]
+                str(Path(__file__).with_name('host-permission-main.kt')),
+                str(ROOT / 'webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebGeolocationController.kt'),
+                str(Path(__file__).with_name('geolocation-main.kt'))]
     subprocess.run(['java', '-cp', os.pathsep.join(compiler), 'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler',
                     '-no-stdlib', '-no-reflect', '-classpath', compiler[1], '-d', str(output / 'classes'), *sources], check=True)
-    for main in ('Permission_mainKt', 'Host_permission_mainKt'):
+    for main in ('Permission_mainKt', 'Host_permission_mainKt', 'Geolocation_mainKt'):
         subprocess.run(['java', '-cp', str(output / 'classes') + os.pathsep + compiler[1],
                         'io.github.gycrosskit.composewebview.' + main], check=True)

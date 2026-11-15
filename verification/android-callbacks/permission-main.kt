@@ -26,7 +26,7 @@ fun main() {
     val controller = AndroidWebPermissionController(activity) { settings += it }
     val launcher = activity.activityResultRegistry.launchers.single()
     fun request(key: Any = Any(), allowed: () -> Boolean = { true }) {
-        controller.request(key, listOf(camera), WebPermissionPurpose.MEDIA_CAPTURE, allowed, results::add)
+        controller.request(key, listOf(camera), WebPermissionPurpose.MEDIA_CAPTURE, allowed, onResult = results::add)
     }
     fun deliver(value: Map<String, Boolean>) = launcher.deliver(value)
 

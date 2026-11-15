@@ -44,5 +44,6 @@ class EarlyScriptsExportTest {
             pageMessageChannels = setOf("earlyChannel"),
         )
         output.resolve("channels.js").writeText(checkNotNull(channels.pageMessageScript("document-A")))
+        output.resolve("native-geolocation.js").writeText(WEB_VIEW_NATIVE_GEOLOCATION_SCRIPT)
     }
 }

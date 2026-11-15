@@ -1,12 +1,44 @@
 # 更新记录
 
+## 2.3.3
+
+状态：Maven、Git Pod、GitHub HAR 与私有 OHPM 已发布；完整源码 SDK 验证通过。济世 Android、iOS 正式远程依赖编译、安装通过，私库真实安装已核对；鸿蒙编译、通用消费者报告与用户真机验收分别记录，见[发布与验证](docs/开发与验证.md#233-发布与验证)。
+
+- Android document-start 优先使用 AndroidX 公开 API；仅 provider 明确声明旧 feature 且 boundary 签名符合时兼容 v0 的注册和精准 remove，不按 User-Agent 猜测。旧协议依赖 AndroidX internal，不属于公开稳定合同。
+- 新增 `WebViewCapability.NATIVE_GEOLOCATION`：缺少可靠 document-start 或本实例注册失败时只禁用原生定位通道，保留其他可用的初始页面通道；不在页面可见/完成后晚注入。穷举 capability 的宿主须处理新增值。
+- 原生定位默认关闭；济世宿主接线仍沿用既有权限流程和 12 秒 / 5 分钟 / `maxAccuracy=MAX` 策略，接受大概位置并返回真实精度与采集时间。WebView 97 仅有静态可达性和 fixture 证据，未记为实际内核或真机已验收；见[验证边界](docs/开发与验证.md#233-发布与验证)。
+
+## 2.3.2
+
+状态：`2.3.2` / `native-2.3.2` Tag 与候选已冻结，未完成正式发行；HAR 仅有私有候选，未创建 `har-2.3.2` Tag。原 Tag、候选和历史验证不覆盖，也不代替 2.3.3 的验证。
+
+- 新增显式 `withNativeGeolocation()`：可信 HTTPS 初始主文档通过既有消息通道将 `navigator.geolocation` 调用交给宿主，默认请求不启用。宿主提供权限 UI、定位策略和真实精度/采集时间，组件不强制精确定位或校准坐标。
+- `DOCUMENT_START_REQUIRED` 禁止旧 Android 内核晚注入。连续定位使用可取消的串行单次采样，不承诺原生持续订阅或完整浏览器对象/Permissions API 语义。兼容边界和宿主回执见[接入指南](docs/接入指南.md#原生定位适配)。
+
+## 2.3.1
+
+状态：Maven、Git Pod 与 GitHub HAR 已发布。JitPack 公开文件核验、HAR 受管消费通过；Maven/Git Pod 的 macOS 消费构建成功，但末尾 Tag 核对超时，运行整体仍失败，Linux 消费 deferred。私有 OHPM `2.3.1` 尚未提交。Android、iOS 济世源码试包此前由用户完成真机验收；正式 `2.3.1` 依赖包本地编译、安装成功，不记为用户已验收正式包。准确来源与消费边界见[发布与验证](docs/开发与验证.md#231-发布与验证)。
+
+- 显式 `pageOwnerActive=true` 时，暂时不可见继续同文档加载、JavaScript、普通 Bridge 与早期页面通道；真正离页、文档替换、导航及销毁仍撤销旧操作。未传归属时保留原可见性行为。
+- Android、OHOS 已发出的系统定位授权跨暂时隐藏保留，按原文档与来源交付一次；新用途说明、权限弹窗、文件和媒体 UI 继续要求可见。
+- Maven、Git Pod `native-2.3.1` 与 GitHub HAR `har-2.3.1` 同版发行，私有 OHPM 待提交；Renderer 范围、SystemActions Native `1.0.2` 与旧制品保持。
+
+## 2.3.0
+
+状态：已发布。Maven/Git Pod macOS 消费通过，Maven 的 Linux 消费待验；HAR GitHub 下载及既有私库 OHPM 安装消费通过，设备行为另验。渠道 SHA 与消费边界见[发布与验证](docs/开发与验证.md)。
+
+- 新增 `WebViewSettings.verifyServerCertificate=true`；三端仅在宿主显式 `false` 时兼容服务端证书错误，不扩大导航、Bridge 或系统权限。
+- 旧 wire 缺省继续验证证书；独立 Maven 消费者显式编译新设置，iOS／HAR 原生渠道分别验收。
+- Kotlin data class 字段改变构造器与 `copy` 二进制签名，升级须重编译调用模块；不承诺旧预编译调用方直接替换兼容。
+- 后端证书治理完成后由宿主统一恢复验证。Maven／Git Pod／HAR 已发行同版 `2.3.0`，旧标签、制品和 checksum 不变。
+
 ## 2.2.0
 
-状态：候选，发布与精确远程消费待各渠道回执。
+状态：历史已发布版本；原标签、归档及验收范围保持不变。
 
 - 新增 `WebViewRequest.allowedHttpOrigins`：缺省保持历史行为，空集合拒绝 HTTP，非空精确匹配 HTTP 来源；三端导航与可观察资源请求同步执行。
 - iOS 首次加载前安装 HTTP 资源规则；原有 Bridge、资源拒绝及 mixed-content 门禁继续独立生效。Android 子资源重定向等内核覆盖限制见[接入指南](docs/接入指南.md#http-请求来源限制)。
-- Maven、Git Pod `native-2.2.0`、私有 OHPM/HAR `har-2.2.0` 同步候选；Renderer 范围和 SystemActions Native `1.0.2` 保持。
+- Maven、Git Pod `native-2.2.0`、私有 OHPM/HAR `har-2.2.0` 同版发行；Renderer 范围和 SystemActions Native `1.0.2` 保持。
 
 ## 2.1.1
 

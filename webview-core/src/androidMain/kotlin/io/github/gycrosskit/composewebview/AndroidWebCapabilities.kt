@@ -10,10 +10,11 @@ import android.webkit.WebView
 import androidx.activity.ComponentActivity
 
 /**
- * Android WebView 能力门面；UI 线程创建和调用，原生实例释放/隐藏时撤销请求，所属页面退出时 destroy。
+ * Android WebView 能力门面；UI 线程创建和调用，原生实例释放时撤销请求，系统权限在途的暂时隐藏保留定位回执，所属页面退出时 destroy。
  * @param activity 提供权限与 ActivityResult 生命周期的 Activity，不能传 Application。
  * @param request 获取当前最新声明式请求。
- * @param isAttached 确認原生实例仍属于可见页面；异步结果交付前再次检查。
+ * @param isAttached 确认原生实例仍属于可见页面；文件与媒体 UI 的边界。
+ * @param isOwnerActive 确认原生实例仍属于有效页面；定位系统授权回执不依赖可见性。
  * @param onPermissionSettingsRequired 系统拒绝且不提供重试说明时交付设置提示；不得自动打开设置页。
  * @param showPermissionExplanation 替换用途说明 UI，返回撤销句柄；系统权限申请仍由组件执行。
  */
@@ -24,7 +25,17 @@ class AndroidWebCapabilities(
     onPermissionSettingsRequired: (Set<WebViewPermission>) -> Unit,
     showPermissionExplanation: ((Set<WebViewPermission>, (Boolean) -> Unit) -> (() -> Unit))?,
     filePicker: AndroidWebFilePicker?,
+    isOwnerActive: (WebView) -> Boolean,
 ) {
+    constructor(
+        activity: ComponentActivity,
+        request: () -> WebViewRequest,
+        isAttached: (WebView) -> Boolean,
+        onPermissionSettingsRequired: (Set<WebViewPermission>) -> Unit,
+        showPermissionExplanation: ((Set<WebViewPermission>, (Boolean) -> Unit) -> (() -> Unit))?,
+        filePicker: AndroidWebFilePicker?,
+    ) : this(activity, request, isAttached, onPermissionSettingsRequired, showPermissionExplanation, filePicker, isAttached)
+
     constructor(
         activity: ComponentActivity,
         request: () -> WebViewRequest,
@@ -59,7 +70,7 @@ class AndroidWebCapabilities(
         permissions = permissions,
     )
 
-    private val geolocation = AndroidWebGeolocationController(request, isAttached, permissions)
+    private val geolocation = AndroidWebGeolocationController(request, isOwnerActive, permissions, isAttached)
 
     fun requestGeolocation(owner: WebView, origin: String?, callback: android.webkit.GeolocationPermissions.Callback?) =
         geolocation.request(owner, origin, callback)
@@ -90,20 +101,20 @@ class AndroidWebCapabilities(
         mediaCapture.release(owner, mediaRequest)
     }
 
-    /** 仅系统选择器在途时保留文件回执；媒体授权仍随页面暂停撤销。 */
+    /** 系统选择器或定位权限在途时保留回执；新 UI 仍需可见页面。 */
     fun pauseForSystemPicker(owner: WebView): Boolean {
         val mediaRequest = mediaCapture.pendingRequest(owner)
-        geolocation.cancel(owner)
+        val locationSuspended = geolocation.pause(owner)
         val suspended = fileChooser.suspendForExternal(owner)
         if (!suspended) fileChooser.pause(owner)
         mediaCapture.release(owner, mediaRequest)
-        return suspended
+        return suspended || locationSuspended
     }
 
-    /** 暂时隐藏只撤销在途请求，已交给当前文档的文件保留至文档结束。 */
+    /** 暂时隐藏保留系统定位授权；已交给当前文档的文件保留至文档结束。 */
     fun pause(owner: WebView) {
         val mediaRequest = mediaCapture.pendingRequest(owner)
-        geolocation.cancel(owner)
+        geolocation.pause(owner)
         fileChooser.pause(owner)
         mediaCapture.release(owner, mediaRequest)
     }
