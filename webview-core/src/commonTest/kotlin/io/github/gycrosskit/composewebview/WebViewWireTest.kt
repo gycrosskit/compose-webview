@@ -57,6 +57,14 @@ class WebViewWireTest {
             }
         }
     }
+    @Test fun externalLinkRequiresAUserInitiatedMainFrameHttpTarget() {
+        val event = WebViewEvent.ExternalLinkRequested(WebViewNavigationRequest("https://outside.example", true, true, WebViewNavigationTarget.NEW_WINDOW))
+        val payload = """{"type":"externalLinkRequested","url":"https://outside.example","isMainFrame":true,"hasUserGesture":true,"target":"NEW_WINDOW"}"""
+        assertEquals(event, WebViewWire.decodeEvent(payload))
+        assertEquals("externalLinkRequested", WebViewWire.eventValues(event)["type"])
+        assertFails { WebViewWire.decodeEvent(payload.replace("\"hasUserGesture\":true", "\"hasUserGesture\":false")) }
+        assertFails { WebViewWire.decodeEvent(payload.replace("https://outside.example", "file:///outside")) }
+    }
     @Test fun wrongJsonTypesCannotEnableCapabilitiesOrChangeHeaders() {
         val content = """"content":{"type":"url","url":"https://safe.example"}"""
         for (field in listOf(

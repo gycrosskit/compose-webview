@@ -31,6 +31,13 @@ data class WebViewNavigationOrigins(
     }
 }
 
+/** 用户点开的主文档链接如何处理；无手势导航使用原有策略。 */
+enum class WebViewUserLinkPolicy {
+    DEFAULT,
+    IN_CURRENT_PAGE,
+    OPEN_SEPARATELY,
+}
+
 /**
  * Kuikly 事件没有同步返回值，导航决定必须随请求下发到原生。
  * @property allowedSchemes 允许的规范化小写 scheme，默认 HTTP/HTTPS；平台可以进一步限制。
@@ -48,6 +55,7 @@ data class WebViewNavigationPolicy(
     val allowedUrls: Set<String> = emptySet(),
     /** null 沿用历史 Bridge 导航限制；非 null 以此来源集合独立控制主文档。 */
     val navigationOrigins: WebViewNavigationOrigins? = null,
+    val userLinkPolicy: WebViewUserLinkPolicy = WebViewUserLinkPolicy.DEFAULT,
 ) {
     init {
         require(allowedSchemes.all { it.matches(Regex("[a-z][a-z0-9+.-]*")) })
@@ -71,6 +79,26 @@ data class WebViewNavigationPolicy(
 /** 原生导航回调中同步调用，不能等待 Kotlin 异步事件再决定。 */
 fun WebViewRequest.allowsNavigation(navigation: WebViewNavigationRequest): Boolean =
     allowsHttpRequest(navigation.url) && navigationPolicy.allows(navigation) && !shouldBlockMainFrameNavigation(navigation.url, navigation.isMainFrame)
+
+/** 只绕过用户新窗口的开关，当前窗口的来源、URL 和 Bridge 限制继续有效。 */
+fun WebViewRequest.allowsActiveUserLink(navigation: WebViewNavigationRequest): Boolean =
+    if (isManagedUserLink(navigation)) allowsNavigation(navigation.copy(target = WebViewNavigationTarget.CURRENT_WINDOW))
+    else allowsNavigation(navigation)
+
+/** 原实例保留业务状态；只有可安全交付给宿主的 HTTP(S) 目标才产生新页请求。 */
+fun WebViewRequest.shouldOpenSeparateUserLink(navigation: WebViewNavigationRequest, sourceUrl: String?): Boolean {
+    if (navigationPolicy.userLinkPolicy != WebViewUserLinkPolicy.OPEN_SEPARATELY || !isManagedUserLink(navigation)) return false
+    val source = sourceUrl?.toHttpOrigin() ?: return false
+    if (navigationPolicy.allowedUrls.isNotEmpty() && navigation.url !in navigationPolicy.allowedUrls) return true
+    if (source == navigation.url.toHttpOrigin()) return false
+    // 声明中的其他业务来源也可能承载当前登录或支付流程。
+    return navigationPolicy.navigationOrigins == null || !allowsActiveUserLink(navigation)
+}
+
+private fun WebViewRequest.isManagedUserLink(navigation: WebViewNavigationRequest): Boolean =
+    navigationPolicy.userLinkPolicy != WebViewUserLinkPolicy.DEFAULT && navigation.isMainFrame &&
+        navigation.hasUserGesture && navigation.url.toHttpOrigin()?.scheme in navigationPolicy.allowedSchemes &&
+        allowsHttpRequest(navigation.url)
 
 /** 原生 loadHTML/loadData 的首航例外只能由实例的一次性状态授权，网页后续不能复用。 */
 fun WebViewNavigationRequest.isInternalHtmlInitialNavigation(): Boolean =

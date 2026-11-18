@@ -336,6 +336,8 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     }
     id newWindows = policy[@"allowNewWindows"];
     if (newWindows && (![newWindows isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)newWindows) != CFBooleanGetTypeID())) return NO;
+    id userLinks = policy[@"userLinkPolicy"];
+    if (userLinks && ![@[@"DEFAULT", @"IN_CURRENT_PAGE", @"OPEN_SEPARATELY"] containsObject:userLinks]) return NO;
     NSDictionary *headers = content[@"additionalHeaders"];
     if (headers) {
         if (![headers isKindOfClass:NSDictionary.class]) return NO;
@@ -442,10 +444,20 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     return [[[WEB_VIEW_PAGE_MESSAGE_SCRIPT stringByReplacingOccurrencesOfString:@"__GY_PAGE_TOKEN_JSON__" withString:GYQuote(self.documentToken)] stringByReplacingOccurrencesOfString:@"__GY_PAGE_CHANNELS_JSON__" withString:channels] stringByReplacingOccurrencesOfString:@"__GY_PAGE_URL_JSON__" withString:GYQuote(initial)];
 }
 - (BOOL)allows:(NSString *)url mainFrame:(BOOL)mainFrame newWindow:(BOOL)newWindow gesture:(BOOL)gesture {
+    return [self allows:url mainFrame:mainFrame newWindow:newWindow gesture:gesture activeUserLink:NO];
+}
+- (BOOL)allows:(NSString *)url mainFrame:(BOOL)mainFrame newWindow:(BOOL)newWindow gesture:(BOOL)gesture activeUserLink:(BOOL)userLink {
+    BOOL allow = [self navigationAllowed:url mainFrame:mainFrame newWindow:newWindow activeUserLink:userLink];
+    // Objective-C 的 ! / && / 比较表达式是 int，直接 @() 会生成 JSON 0/1，而 wire 要求真正的 Boolean。
+    [self emit:@{@"type": @"navigation", @"url": url ?: @"", @"isMainFrame": @(mainFrame), @"hasUserGesture": @(gesture), @"target": newWindow ? @"NEW_WINDOW" : @"CURRENT_WINDOW", @"blocked": allow ? @NO : @YES}];
+    return allow && !self.released;
+}
+- (BOOL)navigationAllowed:(NSString *)url mainFrame:(BOOL)mainFrame newWindow:(BOOL)newWindow activeUserLink:(BOOL)userLink {
     NSDictionary *policy = self.request[@"navigationPolicy"], *security = self.request[@"security"];
     NSString *scheme = [NSURLComponents componentsWithString:url ?: @""].scheme.lowercaseString;
     NSArray *schemes = policy[@"allowedSchemes"] ?: @[@"http", @"https"];
-    BOOL allow = GYHttpRequestAllowed(self.request, url) && [schemes containsObject:scheme ?: @""] && (!newWindow || (self.pageVisible && [self pageOwned] && GYBool(policy, @"allowNewWindows", NO)));
+    BOOL allow = GYHttpRequestAllowed(self.request, url) && [schemes containsObject:scheme ?: @""] &&
+        (!newWindow || (self.pageVisible && [self pageOwned] && (userLink || GYBool(policy, @"allowNewWindows", NO))));
     NSArray *allowedUrls = policy[@"allowedUrls"];
     if (mainFrame && allowedUrls.count && ![allowedUrls containsObject:url ?: @""]) allow = NO;
     NSArray *allowedOrigins = policy[@"allowedOrigins"];
@@ -458,9 +470,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     if (mainFrame && policy[@"navigationOrigins"] && !GYNavigationOriginsAllow(policy[@"navigationOrigins"], url)) allow = NO;
     if (mainFrame) for (NSDictionary *rule in policy[@"blockedRules"]) if (GYRuleMatches(rule, url)) allow = NO;
     if (mainFrame && !policy[@"navigationOrigins"] && (GYBool(security, @"appBridgeEnabled", NO) || GYBool(security, @"pageBridgeEnabled", NO)) && ![self bridgeAllowed:url]) allow = NO;
-    // Objective-C 的 ! / && / 比较表达式是 int，直接 @() 会生成 JSON 0/1，而 wire 要求真正的 Boolean。
-    [self emit:@{@"type": @"navigation", @"url": url ?: @"", @"isMainFrame": @(mainFrame), @"hasUserGesture": @(gesture), @"target": newWindow ? @"NEW_WINDOW" : @"CURRENT_WINDOW", @"blocked": allow ? @NO : @YES}];
-    return allow && !self.released;
+    return allow;
 }
 - (NSString *)trustExpression {
     NSDictionary *trust = self.request[@"security"][@"trustedOrigins"];
@@ -656,14 +666,40 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
 - (void)webView:(WKWebView *)view decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:(void (^)(WKNavigationActionPolicy))decision {
     if (view != self.webView || self.released) { decision(WKNavigationActionPolicyCancel); return; }
     NSUInteger generation = self.callbackGeneration;
+    NSDictionary *request = self.request;
     BOOL popup = action.targetFrame == nil, mainFrame = popup || action.targetFrame.isMainFrame;
     NSString *url = action.request.URL.absoluteString;
     BOOL internalHtmlLoad = self.initialHtmlNavigation && mainFrame && !popup && action.navigationType == WKNavigationTypeOther &&
         ([url.lowercaseString hasPrefix:@"data:text/html"] || [url isEqual:@"about:blank"]);
     if (mainFrame) self.initialHtmlNavigation = NO;
-    BOOL allow = view == self.webView && !self.released && (internalHtmlLoad || [self allows:url mainFrame:mainFrame newWindow:popup gesture:action.navigationType == WKNavigationTypeLinkActivated]);
+    BOOL gesture = action.navigationType == WKNavigationTypeLinkActivated;
+    NSDictionary *policy = self.request[@"navigationPolicy"];
+    NSString *linkPolicy = policy[@"userLinkPolicy"];
+    NSDictionary *targetOrigin = GYOrigin(url);
+    BOOL activeUserLink = mainFrame && gesture && [action.request.HTTPMethod isEqual:@"GET"] &&
+        self.pageVisible && [self pageOwned] && targetOrigin && GYHttpRequestAllowed(self.request, url) &&
+        [(policy[@"allowedSchemes"] ?: @[@"http", @"https"]) containsObject:targetOrigin[@"scheme"]] &&
+        ([@[@"IN_CURRENT_PAGE", @"OPEN_SEPARATELY"] containsObject:linkPolicy ?: @""]);
+    if (activeUserLink && [linkPolicy isEqual:@"OPEN_SEPARATELY"]) {
+        NSDictionary *sourceOrigin = GYOrigin(view.URL.absoluteString);
+        NSArray *allowedUrls = policy[@"allowedUrls"];
+        BOOL deniedUrl = allowedUrls.count && ![allowedUrls containsObject:url];
+        BOOL outsideBusinessOrigins = ![sourceOrigin isEqual:targetOrigin] &&
+            (!policy[@"navigationOrigins"] || ![self navigationAllowed:url mainFrame:YES newWindow:NO activeUserLink:NO]);
+        if (sourceOrigin && (deniedUrl || outsideBusinessOrigins)) {
+            decision(WKNavigationActionPolicyCancel);
+            if (view == self.webView && !self.released && self.callbackGeneration == generation && self.request == request &&
+                self.pageVisible && [self pageOwned]) {
+                [self emit:@{@"type": @"externalLinkRequested", @"url": url, @"isMainFrame": @YES,
+                    @"hasUserGesture": @YES, @"target": popup ? @"NEW_WINDOW" : @"CURRENT_WINDOW"}];
+            }
+            return;
+        }
+    }
+    BOOL allow = view == self.webView && !self.released &&
+        (internalHtmlLoad || [self allows:url mainFrame:mainFrame newWindow:popup gesture:gesture activeUserLink:activeUserLink]);
     if (internalHtmlLoad && allow) [self emit:@{@"type": @"navigation", @"url": url, @"isMainFrame": @YES, @"hasUserGesture": @NO, @"target": @"CURRENT_WINDOW", @"blocked": @NO}];
-    allow = allow && view == self.webView && !self.released && self.callbackGeneration == generation;
+    allow = allow && view == self.webView && !self.released && self.callbackGeneration == generation && self.request == request;
     if (allow && !popup && mainFrame) {
         if (self.pictureInPictureFrameId) [view closeAllMediaPresentationsWithCompletionHandler:nil];
         self.pictureInPictureFrameId = nil;
@@ -671,10 +707,11 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         if (!self.pageMessageInitialNavigation) self.pageMessageRevoked = YES;
         self.pageMessageInitialNavigation = NO;
         [self prepareDocumentScripts];
-        allow = view == self.webView && !self.released && self.callbackGeneration == generation + 1;
+        allow = view == self.webView && !self.released && self.callbackGeneration == generation + 1 && self.request == request;
     }
     decision(allow && !popup ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
-    if (allow && popup && view == self.webView && !self.released) [view loadRequest:action.request];
+    if (allow && popup && view == self.webView && !self.released && self.callbackGeneration == generation && self.request == request &&
+        self.pageVisible && [self pageOwned]) [view loadRequest:action.request];
 }
 - (WKWebView *)webView:(WKWebView *)view createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)action windowFeatures:(WKWindowFeatures *)features { return nil; }
 - (void)webView:(WKWebView *)view didStartProvisionalNavigation:(WKNavigation *)navigation {

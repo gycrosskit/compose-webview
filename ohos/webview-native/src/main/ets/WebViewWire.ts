@@ -121,8 +121,9 @@ export interface WebViewScript { id: string; source: string; injectionTime: stri
  * @property allowedUrls 可选完整 URL 字符串白名单，只限制主文档；空时不限制，不归一化路径或查询。
  * @property blockedRules 主文档拒绝规则。
  * @property allowNewWindows 默认 false；允许目标复用当前窗口导航。
+ * @property userLinkPolicy 用户主动点开的主文档链接处理方式。
  */
-export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; allowedUrls?: string[]; navigationOrigins?: NavigationOrigins; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; }
+export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; allowedUrls?: string[]; navigationOrigins?: NavigationOrigins; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; userLinkPolicy?: string; }
 export interface NavigationOrigins { exactOrigins: string[]; hostSuffixOrigins: string[]; hostSuffixAnyPortOrigins?: string[]; }
 /**
  * 单个原生实例的完整 JSON 输入；变化重建 Controller 并撤销旧异步操作。
@@ -303,6 +304,8 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   const securityFlags = [request.security.appBridgeEnabled, request.security.pageBridgeEnabled, request.security.fileChooserEnabled, request.security.mediaCaptureEnabled, request.security.geolocationEnabled];
   securityFlags.forEach(flag => { if (flag !== undefined && typeof flag !== 'boolean') throw new Error('Invalid security flag'); });
   if (request.navigationPolicy.allowNewWindows !== undefined && typeof request.navigationPolicy.allowNewWindows !== 'boolean') throw new Error('Invalid navigation policy');
+  const userLinkPolicy = request.navigationPolicy.userLinkPolicy;
+  if (userLinkPolicy !== undefined && !['DEFAULT', 'IN_CURRENT_PAGE', 'OPEN_SEPARATELY'].includes(userLinkPolicy)) throw new Error('Invalid user link policy');
   if (request.settings.mixedContentPolicy && !['NEVER_ALLOW', 'COMPATIBILITY', 'ALWAYS_ALLOW'].includes(request.settings.mixedContentPolicy)) throw new Error('Invalid mixed content policy');
   if (request.settings.cachePolicy && !['DEFAULT', 'NO_CACHE', 'CACHE_ELSE_NETWORK', 'CACHE_ONLY'].includes(request.settings.cachePolicy)) throw new Error('Invalid cache policy');
   if (request.settings.userAgentSuffix !== undefined && request.settings.userAgentSuffix !== null &&

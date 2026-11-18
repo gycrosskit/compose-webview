@@ -32,10 +32,9 @@ class AndroidPopupRouter(
         val transport = resultMessage.obj as? WebView.WebViewTransport ?: return false
         lateinit var popup: WebView
         var routed = false
-        fun route(url: String?) {
+        fun route(url: String?, method: String?) {
             val target = url?.takeUnless { it.isBlank() || it == "about:blank" } ?: return
             if (routed || popup !in popups || !parent.isActiveAppWebView() || !parent.isShown) return
-            routed = true
             val current = request()
             val navigation = WebViewNavigationRequest(
                 url = target,
@@ -43,16 +42,24 @@ class AndroidPopupRouter(
                 hasUserGesture = hasUserGesture,
                 target = WebViewNavigationTarget.NEW_WINDOW,
             )
-            val allowed = current.allowsHttpRequest(target) && !current.shouldBlockMainFrameNavigation(target, true) &&
-                (current.navigationPolicy.navigationOrigins == null || current.allowsNavigation(navigation))
+            // 旧回调未提供方法，等待 IO 回调确认后再处理启用新策略的弹窗。
+            if (method == null && current.navigationPolicy.userLinkPolicy != WebViewUserLinkPolicy.DEFAULT) return
+            routed = true
+            if (method != null && method != "GET") {
+                onNavigationBlocked(navigation)
+                close(popup)
+                return
+            }
+            fun allowsPopup(request: WebViewRequest): Boolean =
+                request.allowsHttpRequest(target) && !request.shouldBlockMainFrameNavigation(target, true) &&
+                    (request.navigationPolicy.navigationOrigins == null || request.allowsActiveUserLink(navigation))
+            val allowed = allowsPopup(current)
             val decision = onNavigation(navigation)
-            if (popup !in popups || !parent.isActiveAppWebView() || !parent.isShown) return
-            val latest = request()
-            val stillAllowed = latest.allowsHttpRequest(target) && !latest.shouldBlockMainFrameNavigation(target, true) &&
-                (latest.navigationPolicy.navigationOrigins == null || latest.allowsNavigation(navigation))
-            if (allowed && stillAllowed && decision == WebViewNavigationDecision.ALLOW && popup in popups && parent.isActiveAppWebView() && parent.isShown) {
+            if (popup in popups && parent.isActiveAppWebView() && parent.isShown && allowed &&
+                allowsPopup(request()) && decision == WebViewNavigationDecision.ALLOW) {
                 parent.loadUrl(target)
             }
+            // 宿主打开新页时可能同步隐藏父页，临时 WebView 仍由本次请求释放。
             close(popup)
         }
         popup = WebView(parent.context).apply {
@@ -62,13 +69,13 @@ class AndroidPopupRouter(
             settings.allowContentAccess = false
             webViewClient = object : android.webkit.WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    route(request.url.toString())
+                    route(request.url.toString(), request.method)
                     return true
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                    route(url)
+                    route(url, null)
                     return true
                 }
 
@@ -79,11 +86,7 @@ class AndroidPopupRouter(
                     // 临时窗口只解析目标；POST body 不可取得，不能先联网或偷换成 parent GET。
                     mainHandler.post {
                         if (popup !in popups || routed || !parent.isActiveAppWebView() || !parent.isShown) return@post
-                        if (method == "GET") route(url) else {
-                            routed = true
-                            onNavigationBlocked(WebViewNavigationRequest(url, true, hasUserGesture, WebViewNavigationTarget.NEW_WINDOW))
-                            close(popup)
-                        }
+                        route(url, method)
                     }
                     return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
                 }

@@ -27,6 +27,10 @@ sealed interface WebViewEvent {
      * @property blocked 是否被来源、平台或宿主路由拒绝。
      */
     data class Navigation(val request: WebViewNavigationRequest, val blocked: Boolean) : WebViewEvent
+    /** 原页面导航已取消，宿主可在独立页面处理这个用户点击的链接。 */
+    data class ExternalLinkRequested(val request: WebViewNavigationRequest) : WebViewEvent {
+        init { require(request.isMainFrame && request.hasUserGesture && request.url.toHttpOrigin() != null) }
+    }
     /**
      * 原生历史状态变化。
      * @property canGoBack 是否可以返回。
