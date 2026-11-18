@@ -2,7 +2,7 @@
 
 ## 2.4.0
 
-计划通过 Jenkins 发布 Maven、Git Pod 和私有 OHPM。
+已发布 Maven/JitPack `2.4.0`、Git Pod `native-2.4.0` 和私有 OHPM `@gycrosskit/webview@2.4.0`。Maven 归档、源码回执和 SHA-256 清单见 [2.4.0 Release](https://github.com/gycrosskit/compose-webview/releases/tag/2.4.0)。Git Pod 源码见 [native-2.4.0 标签](https://github.com/gycrosskit/compose-webview/tree/native-2.4.0)。
 
 - 新增 `WebViewUserLinkPolicy`，普通 H5 可在原 WebView 打开用户点击的新窗口，受保护 H5 可通过 `ExternalLinkRequested` 交由宿主打开独立网页。已有业务来源和原页面权限继续沿用既有策略。
 - 更新到本版本时需重新编译依赖 WebView 导航策略的模块，并处理 `WebViewEvent` 新增事件。

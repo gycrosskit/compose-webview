@@ -228,7 +228,7 @@ await OhosWebViewDataCleaner.clearWebsiteData();
 
 当前源码回归使用[统一远程验证（Jenkins）](https://github.com/gycrosskit/.github/blob/main/docs/统一远程验证.md)，按已推送源码 ref/SHA 选择对应组件；平台命令与参数以受信 Jenkins recipe 为准。实际执行范围、测试数量、结果与耗时以绑定源码/CI SHA 的构建回执为准，轻量检查或跳过不算平台测试通过。
 
-Jenkins `component-ci/release` 按不可变 Tag 和源码 SHA 构建、冻结并发布 Maven、Git Pod 或私有 OHPM。JitPack 安装和 Maven 发布验收共用 Jenkins 附带的 `source-receipt.json` 与 `SHA256SUMS`，校验源码身份和归档字节后再消费。宿主随后按精确版本独立编译、打包。
+Jenkins `component-ci/release` 按准确的版本和源码 SHA 构建、冻结并发布 Maven 和私有 OHPM。Maven 发布绑定不可变 Tag，Git Pod 渠道确认已有 Tag 指向该源码。JitPack 安装和 Maven 发布验收共用 Jenkins 附带的 `source-receipt.json` 与 `SHA256SUMS`，校验源码身份和归档字节后再消费。宿主随后按精确版本独立编译、打包。
 
 HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收须分别留证，不能由 Maven/KLIB 或其他平台的成功结果代算；本轮覆盖范围以实际本机生产、发布及消费回执为准。
 
