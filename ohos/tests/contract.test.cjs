@@ -224,7 +224,10 @@ const encoded = value => JSON.stringify(value);
 for (const value of ['false', 0, null])
   assert.throws(() => wire.decodeRequest(encoded(request({settings: {verifyServerCertificate: value}}))), /Invalid setting/);
 assert.equal(wire.decodeRequest(encoded(request({settings: {verifyServerCertificate: false}}))).settings.verifyServerCertificate, false);
-const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => value, isMainFrame: () => true, isRequestGesture: () => gesture });
+const requestForNavigation = (value, gesture = true, method = 'GET', redirect = false) => ({
+  getRequestUrl: () => value, isMainFrame: () => true, isRequestGesture: () => gesture,
+  getRequestMethod: () => method, isRedirect: () => redirect
+});
 (async () => {
   for (const invalid of [null, 'http://allowed.test', ['https://allowed.test'], ['http://user@allowed.test']])
     assert.throws(() => wire.decodeRequest(encoded(request({allowedHttpOrigins: invalid}))), /Invalid HTTP origins/);
@@ -821,6 +824,48 @@ const requestForNavigation = (value, gesture = true) => ({ getRequestUrl: () => 
     popup.rejectNewWindow({targetUrl: 'https://trusted.test/automatic', isUserTrigger: false, handler: {setWebController: () => {}}});
     assert.equal(popupEvents[0].blocked, !automatic);
     assert.equal(popup.controller.loads.length, before + (automatic ? 1 : 0)); popup.onDestroy();
+  }
+  {
+    const ordinary = new GYWebView(); const events = [];
+    ordinary.setProp('request', encoded(request({ navigationPolicy: {...standard.navigationPolicy, userLinkPolicy: 'IN_CURRENT_PAGE'} })));
+    ordinary.onControllerAttached(); ordinary.setProp('onEvent', event => events.push(event));
+    const outside = 'https://external.test/guide';
+    const popup = (view, targetUrl, isUserTrigger = true) =>
+      view.rejectNewWindow({targetUrl, isUserTrigger, handler: {setWebController: controller => assert.equal(controller, null)}});
+    popup(ordinary, outside, false);
+    assert.equal(events.pop().blocked, true);
+    popup(ordinary, outside);
+    assert.equal(events.pop().blocked, false);
+    assert.equal(ordinary.controller.loads.at(-1).url, outside);
+    ordinary.onDestroy();
+
+    const protectedPage = new GYWebView();
+    const source = 'https://trusted.test/page';
+    protectedPage.setProp('request', encoded(request({ navigationPolicy: {...standard.navigationPolicy,
+      allowedUrls: [source], allowedSchemes: ['https'], userLinkPolicy: 'OPEN_SEPARATELY'} })));
+    protectedPage.onControllerAttached(); protectedPage.setProp('onEvent', event => events.push(event));
+    assert.equal(protectedPage.interceptNavigation(requestForNavigation(outside, true, 'POST')), true);
+    assert.equal(events.pop().type, 'navigation');
+    assert.equal(protectedPage.interceptNavigation(requestForNavigation(outside, true, 'GET', true)), true);
+    assert.equal(events.pop().type, 'navigation');
+    assert.equal(protectedPage.interceptNavigation(requestForNavigation(outside)), true);
+    assert.equal(events.length, 1);
+    assert.equal(events.pop().type, 'externalLinkRequested');
+    assert.equal(protectedPage.interceptNavigation(requestForNavigation('https://trusted.test/help')), true);
+    assert.equal(events.pop().type, 'externalLinkRequested');
+    popup(protectedPage, outside);
+    assert.equal(events.length, 1);
+    assert.equal(events.pop().target, 'NEW_WINDOW');
+    assert.equal(protectedPage.controller.getUrl(), source);
+    protectedPage.setProp('request', encoded(request({ navigationPolicy: {...standard.navigationPolicy,
+      userLinkPolicy: 'OPEN_SEPARATELY', navigationOrigins: {exactOrigins: [source, outside], hostSuffixOrigins: []} } })));
+    assert.equal(protectedPage.interceptNavigation(requestForNavigation(outside)), false);
+    assert.equal(events.pop().type, 'navigation');
+    popup(protectedPage, outside);
+    assert.equal(events.length, 1);
+    assert.equal(events.pop().type, 'navigation');
+    assert.equal(protectedPage.controller.getUrl(), outside);
+    protectedPage.onDestroy();
   }
   {
     const configured = new GYWebView();

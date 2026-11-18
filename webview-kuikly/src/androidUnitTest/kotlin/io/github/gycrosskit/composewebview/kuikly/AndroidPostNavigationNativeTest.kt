@@ -5,6 +5,7 @@ import android.app.Activity
 import android.os.Handler
 import android.os.Message
 import android.os.Looper
+import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import io.github.gycrosskit.composewebview.*
@@ -24,13 +25,79 @@ import org.robolectric.shadow.api.Shadow
 @LooperMode(LooperMode.Mode.PAUSED)
 class AndroidPostNavigationNativeTest {
     private val allowed = "https://page.test/form"
-    private fun resource(url: String, main: Boolean = true, method: String = "POST") = object : WebResourceRequest {
+    private fun resource(url: String, main: Boolean = true, method: String = "POST", redirect: Boolean = false) = object : WebResourceRequest {
         override fun getUrl() = Uri.parse(url)
         override fun isForMainFrame() = main
-        override fun isRedirect() = false
+        override fun isRedirect() = redirect
         override fun hasGesture() = true
         override fun getMethod() = method
         override fun getRequestHeaders() = emptyMap<String, String>()
+    }
+
+    @Test fun `protected user GET is handed off once and does not load into the current owner`() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val native = GYWebViewNative(activity)
+        activity.setContentView(native)
+        val events = mutableListOf<Map<String, Any?>>()
+        var hideDuringHandoff = false
+        native.setProp("onEvent", { event: Any? ->
+            @Suppress("UNCHECKED_CAST") events.add(event as Map<String, Any?>)
+            if (hideDuringHandoff && events.last()["type"] == "externalLinkRequested") native.visibility = View.GONE
+        })
+        val protectedRequest = WebViewRequest(
+            WebViewContent.Url(allowed),
+            settings = WebViewSettings(supportMultipleWindows = true),
+            navigationPolicy = WebViewNavigationPolicy(
+                allowedUrls = setOf(allowed),
+                userLinkPolicy = WebViewUserLinkPolicy.OPEN_SEPARATELY,
+            ),
+        )
+        native.setProp("request", WebViewWire.encodeRequest(protectedRequest))
+        val owner = native.getChildAt(0) as WebView
+        val shadow = Shadow.extract<RecordingWebView>(owner)
+        val client = shadow.webViewClient
+        val outside = "https://external.test/guide"
+        assertTrue(client.shouldOverrideUrlLoading(owner, resource(outside, method = "GET", redirect = true)))
+        assertEquals("navigation", events.last()["type"])
+        events.clear()
+        assertTrue(client.shouldOverrideUrlLoading(owner, resource(outside, method = "GET")))
+        assertEquals("externalLinkRequested", events.single()["type"])
+        events.clear()
+        assertTrue(client.shouldOverrideUrlLoading(owner, resource("https://page.test/help", method = "GET")))
+        assertEquals("externalLinkRequested", events.single()["type"])
+        events.clear()
+        fun clickPopup(): WebView {
+            val transport = owner.WebViewTransport()
+            val message = Message.obtain(Handler(Looper.getMainLooper())).apply { obj = transport }
+            assertTrue(shadow.webChromeClient.onCreateWindow(owner, false, true, message))
+            val popup = requireNotNull(transport.webView)
+            val popupClient = Shadow.extract<RecordingWebView>(popup).webViewClient
+            assertTrue(popupClient.shouldOverrideUrlLoading(popup, resource(outside, method = "GET")))
+            return popup
+        }
+        hideDuringHandoff = true
+        assertFalse(clickPopup().isActiveAppWebView())
+        hideDuringHandoff = false
+        native.visibility = View.VISIBLE
+        assertEquals("externalLinkRequested", events.single()["type"])
+        assertEquals("NEW_WINDOW", events.single()["target"])
+        assertEquals(allowed, shadow.lastLoadedUrl)
+        native.setProp("request", WebViewWire.encodeRequest(protectedRequest.copy(
+            navigationPolicy = protectedRequest.navigationPolicy.copy(
+                allowedUrls = emptySet(),
+                navigationOrigins = WebViewNavigationOrigins(exactOrigins = setOf(allowed, outside)),
+            ),
+        )))
+        events.clear()
+        assertFalse(client.shouldOverrideUrlLoading(owner, resource(outside, method = "GET")))
+        assertEquals("navigation", events.single()["type"])
+        events.clear()
+        clickPopup()
+        assertEquals("navigation", events.single()["type"])
+        assertEquals(false, events.single()["blocked"])
+        assertEquals(outside, shadow.lastLoadedUrl)
+        native.onDestroy()
+        activity.finish()
     }
 
     @Test fun `popup cannot bypass explicit navigation origins even when callback allows`() {

@@ -35,4 +35,6 @@ if [[ "$platform" == maven ]]; then exec bash scripts/package-maven.sh "$@"; fi
 module=WebViewNative
 cd ohos
 if [[ "${HARMONY_DEPENDENCIES_READY:-false}" != true ]]; then "${HARMONY_OHPM:-ohpm}" install --all; fi
-exec bash "${HARMONY_HVIGOR:-hvigorw}" --mode module -p "module=$module@default" -p product=default -p buildMode=release assembleHar --no-daemon
+# CLT 的包装器通过自身路径定位 Hvigor，传入裸命令会把项目目录当成 SDK。
+hvigor="$(command -v "${HARMONY_HVIGOR:-hvigorw}")"
+exec bash "$hvigor" --mode module -p "module=$module@default" -p product=default -p buildMode=release assembleHar --no-daemon

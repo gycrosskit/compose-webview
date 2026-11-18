@@ -45,6 +45,9 @@ object WebViewWire {
             }) }
             put("blockedRules", rules(request.navigationPolicy.blockedRules))
             put("allowNewWindows", request.navigationPolicy.allowNewWindows)
+            if (request.navigationPolicy.userLinkPolicy != WebViewUserLinkPolicy.DEFAULT) {
+                put("userLinkPolicy", request.navigationPolicy.userLinkPolicy.name)
+            }
         })
     }.toString()
 
@@ -82,6 +85,7 @@ object WebViewWire {
                     require("exactOrigins" in it && "hostSuffixOrigins" in it)
                     WebViewNavigationOrigins(it.strings("exactOrigins").toSet(), it.strings("hostSuffixOrigins").toSet(), it.strings("hostSuffixAnyPortOrigins").toSet())
                 },
+                policy.enum("userLinkPolicy", WebViewUserLinkPolicy.DEFAULT),
             ),
             pageMessageChannels = value.strings("pageMessageChannels").toSet(),
             permissionPresentation = value.enum("permissionPresentation", WebViewPermissionPresentation.NATIVE),
@@ -107,6 +111,7 @@ object WebViewWire {
         is WebViewEvent.PermissionSettingsRequired -> mapOf("type" to "permissionSettingsRequired", "permissions" to event.permissions.map { it.name })
         is WebViewEvent.PerformanceMetric -> mapOf("type" to "performanceMetric", "name" to event.name.name, "navigationDurationMillis" to event.navigationDurationMillis)
         is WebViewEvent.Navigation -> with(event.request) { mapOf("type" to "navigation", "url" to url, "isMainFrame" to isMainFrame, "hasUserGesture" to hasUserGesture, "target" to target.name, "blocked" to event.blocked) }
+        is WebViewEvent.ExternalLinkRequested -> with(event.request) { mapOf("type" to "externalLinkRequested", "url" to url, "isMainFrame" to isMainFrame, "hasUserGesture" to hasUserGesture, "target" to target.name) }
         is WebViewEvent.HistoryChanged -> mapOf("type" to "historyChanged", "canGoBack" to event.canGoBack, "canGoForward" to event.canGoForward, "url" to event.url)
     }
 
@@ -129,6 +134,7 @@ object WebViewWire {
             "permissionSettingsRequired" -> WebViewEvent.PermissionSettingsRequired(value.strings("permissions").map { enumValueOf<WebViewPermission>(it) }.toSet())
             "performanceMetric" -> WebViewEvent.PerformanceMetric(enumValueOf(value.requiredString("name")), value.getValue("navigationDurationMillis").jsonPrimitive.long)
             "navigation" -> WebViewEvent.Navigation(WebViewNavigationRequest(value.requiredString("url"), value.boolean("isMainFrame", true), value.boolean("hasUserGesture", false), value.enum("target", WebViewNavigationTarget.CURRENT_WINDOW)), value.boolean("blocked", true))
+            "externalLinkRequested" -> WebViewEvent.ExternalLinkRequested(WebViewNavigationRequest(value.requiredString("url"), value.boolean("isMainFrame", false), value.boolean("hasUserGesture", false), value.enum("target", WebViewNavigationTarget.CURRENT_WINDOW)))
             "historyChanged" -> WebViewEvent.HistoryChanged(value.boolean("canGoBack", false), value.boolean("canGoForward", false), value.stringOrNull("url"))
             else -> error("Unsupported WebView event")
         }

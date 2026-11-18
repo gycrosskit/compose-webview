@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-`2.3.3` 已发布：Maven / JitPack、Git Pod `native-2.3.3`、GitHub HAR `har-2.3.3` 与私有 OHPM。包含可选[原生定位适配与 Android 旧协议兼容](docs/接入指南.md#原生定位适配)，各渠道来源与实际消费边界见[发布与验证](docs/开发与验证.md#233-发布与验证)。
+`2.4.0` 的发行渠道为 Maven/JitPack、Git Pod 与私有 OHPM。新增用户链接导航策略，接入方式见下文。
 
 济世三端已使用正式远程依赖编译，Android、iOS 已安装；私库字节与真实安装已核对，用户设备行为另行验收。通用 HAR 消费及 macOS 上的正式 Maven / Git Pod 完整消费通过，旧网络失败记录保留；Linux 公开消费仍 deferred。`2.3.2` / `native-2.3.2` 仅有冻结 Tag / 候选且未完成正式发行，旧 Tag、制品和历史记录保持。
 
@@ -132,23 +132,23 @@ dependencyResolutionManagement {
 }
 ```
 
-当前 Maven、Git Pod、GitHub HAR 与私有 OHPM 均为 `2.3.3`；以下为精确依赖示例，各渠道消费状态见顶部。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
+以下为 Maven、Git Pod 与私有 OHPM 的 `2.4.0` 精确依赖示例。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.3.3")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.4.0")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.3.3'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.4.0'
 ```
 
 原生 Pod 的 Renderer 范围为 `>= 2.29.1, < 3.0`，由宿主统一选择；消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS HAR `2.3.3` 已在 [har-2.3.3 Release](https://github.com/gycrosskit/compose-webview/releases/tag/har-2.3.3) 与既有私有 OHPM Registry 发布，两个渠道均已核对实际字节。接线与精确安装见[HAR 接入指南](ohos/webview-native/README.md)，安装、编译与设备行为分别验收。
+HarmonyOS 通过私有 OHPM 安装 `@gycrosskit/webview@2.4.0`。接线见[鸿蒙接入指南](ohos/webview-native/README.md)。
 
 ## 快速使用
 
@@ -228,7 +228,7 @@ await OhosWebViewDataCleaner.clearWebsiteData();
 
 当前源码回归使用[统一远程验证（Jenkins）](https://github.com/gycrosskit/.github/blob/main/docs/统一远程验证.md)，按已推送源码 ref/SHA 选择对应组件；平台命令与参数以受信 Jenkins recipe 为准。实际执行范围、测试数量、结果与耗时以绑定源码/CI SHA 的构建回执为准，轻量检查或跳过不算平台测试通过。
 
-候选冻结与消费按[发布流程](https://github.com/gycrosskit/.github/blob/main/docs/发布流程.md)使用本机独立入口或已核对部署的 Job：`component-ci/package` 绑定准确 SOURCE_SHA 生成冻结候选并验证私有消费，`component-ci/release` 绑定准确 Tag/候选执行发布及独立公开消费。核对冻结归档、精确 tag/commit、完整 publication 清单和公开文件，不使用 `mavenLocal`、本库源码或 staging 替换公开依赖；各阶段证据分别记录。
+Jenkins `component-ci/release` 按不可变 Tag 和源码 SHA 构建、冻结并发布 Maven、Git Pod 或私有 OHPM。JitPack 安装和 Maven 发布验收共用 Jenkins 附带的 `source-receipt.json` 与 `SHA256SUMS`，校验源码身份和归档字节后再消费。宿主随后按精确版本独立编译、打包。
 
 HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收须分别留证，不能由 Maven/KLIB 或其他平台的成功结果代算；本轮覆盖范围以实际本机生产、发布及消费回执为准。
 

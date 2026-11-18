@@ -44,6 +44,85 @@ static NSDictionary *JSONRoundTrip(NSDictionary *value) {
 }
 @end
 
+@interface UserLinkFrame : NSObject
+- (BOOL)isMainFrame;
+@end
+@implementation UserLinkFrame
+- (BOOL)isMainFrame { return YES; }
+@end
+
+@interface UserLinkAction : NSObject
+@property(nonatomic, strong) NSURLRequest *request;
+@property(nonatomic, strong) NSObject *targetFrame;
+@property(nonatomic) WKNavigationType navigationType;
+@end
+@implementation UserLinkAction
+@end
+
+@interface UserLinkView : WKWebView
+@property(nonatomic, copy) NSURL *loadedURL;
+@end
+@implementation UserLinkView
+- (NSURL *)URL { return [NSURL URLWithString:@"https://safe.example/start"]; }
+- (WKNavigation *)loadRequest:(NSURLRequest *)request { self.loadedURL = request.URL; return nil; }
+@end
+
+static void CheckUserLinkRouting(void) {
+    GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+    UserLinkView *webView = [[UserLinkView alloc] initWithFrame:page.bounds configuration:[WKWebViewConfiguration new]];
+    page.webView = webView;
+    NSDictionary *content = @{@"type": @"url", @"url": webView.URL.absoluteString};
+    NSMutableArray *events = [NSMutableArray new];
+    page.onEvent = ^(id event) { [events addObject:event]; };
+    UserLinkAction *action = [UserLinkAction new];
+    NSMutableURLRequest *outside = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://outside.example/guide"]];
+    action.request = outside;
+    action.navigationType = WKNavigationTypeLinkActivated;
+    WKNavigationActionPolicy (^dispatch)(void) = ^WKNavigationActionPolicy {
+        __block BOOL completed = NO;
+        __block WKNavigationActionPolicy result = WKNavigationActionPolicyAllow;
+        [page webView:webView decidePolicyForNavigationAction:(WKNavigationAction *)(id)action decisionHandler:^(WKNavigationActionPolicy value) {
+            Require(!completed, @"User link navigation callback completed twice");
+            completed = YES; result = value;
+        }];
+        Require(completed, @"User link navigation callback not completed");
+        return result;
+    };
+    page.request = @{@"content": content, @"navigationPolicy": @{@"userLinkPolicy": @"IN_CURRENT_PAGE"}};
+    Require(dispatch() == WKNavigationActionPolicyCancel && [webView.loadedURL isEqual:outside.URL],
+        @"Ordinary user popup must be loaded by the current WebView");
+    action.targetFrame = [UserLinkFrame new];
+    Require(dispatch() == WKNavigationActionPolicyAllow, @"Ordinary main-frame cross-origin link must be allowed");
+    [events removeAllObjects];
+    webView.loadedURL = nil;
+    page.request = @{@"content": content, @"navigationPolicy": @{@"userLinkPolicy": @"OPEN_SEPARATELY",
+        @"allowedUrls": @[webView.URL.absoluteString]}};
+    Require(dispatch() == WKNavigationActionPolicyCancel && events.count == 1 &&
+        [events.lastObject[@"type"] isEqual:@"externalLinkRequested"] && webView.loadedURL == nil,
+        @"Protected cross-origin navigation must be handled once without loading into the original");
+    [events removeAllObjects];
+    action.targetFrame = nil;
+    Require(dispatch() == WKNavigationActionPolicyCancel && events.count == 1 &&
+        [events.lastObject[@"target"] isEqual:@"NEW_WINDOW"], @"Protected popup must retain its window target");
+    [events removeAllObjects];
+    outside.HTTPMethod = @"POST"; action.request = outside;
+    Require(dispatch() == WKNavigationActionPolicyCancel && events.count == 1 && [events.lastObject[@"type"] isEqual:@"navigation"],
+        @"Popup POST must not be handed off as GET");
+    page.request = @{@"content": content, @"navigationPolicy": @{@"userLinkPolicy": @"OPEN_SEPARATELY",
+        @"navigationOrigins": @{@"exactOrigins": @[webView.URL.absoluteString, outside.URL.absoluteString], @"hostSuffixOrigins": @[]}}};
+    outside.HTTPMethod = @"GET"; action.request = outside;
+    action.targetFrame = [UserLinkFrame new];
+    [events removeAllObjects];
+    Require(dispatch() == WKNavigationActionPolicyAllow && events.count == 1 && [events.lastObject[@"type"] isEqual:@"navigation"],
+        @"Cross-origin navigation explicitly allowed by the business must stay in its owner");
+    action.targetFrame = nil;
+    [events removeAllObjects];
+    Require(dispatch() == WKNavigationActionPolicyCancel && [webView.loadedURL isEqual:outside.URL] && events.count == 1 &&
+        [events.lastObject[@"type"] isEqual:@"navigation"], @"Explicit business origin popup must stay in its owner");
+    page.onEvent = nil;
+    page.webView = nil;
+}
+
 @interface MediaMessage : WKScriptMessage
 @property(nonatomic, strong) WKWebView *webView;
 @property(nonatomic, copy) NSString *name;
@@ -1524,6 +1603,7 @@ static void Check(void) {
     [historyPage hrv_removeFromSuperview];
     CheckNativeCommandCancellation(historyRequest, otherHistoryURL);
     CheckNavigationOwnerReplacement(pageRequest);
+    CheckUserLinkRouting();
     [page hrv_removeFromSuperview];
     __block BOOL destroyedReply = NO;
     [page hrv_callWithMethod:@"replyPageMessage" params:hiddenReply callback:^(id value) { RequireBoolean(value[@"result"], NO, @"Destroyed owner reply"); destroyedReply = YES; }];

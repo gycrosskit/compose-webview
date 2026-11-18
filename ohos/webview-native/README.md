@@ -1,8 +1,6 @@
-> `2.3.3` 已在 GitHub HAR `har-2.3.3` 与既有私有 OHPM Registry 发布，两个渠道的真实字节均已核对。原生定位由宿主提供权限流程和真实结果；消费与设备边界见[开发与验证](../../docs/开发与验证.md#233-发布与验证)。旧 `2.3.2` 仅有冻结私有候选、无 HAR Tag，历史记录和制品保持。
-
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **2.3.3**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **2.4.0**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
 
 rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和空路径按同一文档身份匹配；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。主帧 capability、nonce、owner 与单次回复门禁保持有效。
 
@@ -10,17 +8,17 @@ rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和
 
 ## 安装与注册
 
-本轮 Maven / Git Pod / HAR / 私有 OHPM 均为 `2.3.3`，分别固定 `native-2.3.3` 与 `har-2.3.3`；配套 system-actions `1.0.2` 保持，不覆盖旧标签或归档。宿主直接使用系统组件时也选择 1.0.2；默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例，不得同时加载两个版本。Release HAR 与 Registry 分别验收。
+本组件依赖 `@gycrosskit/system-actions-native:1.0.2`。默认使用 `WindowPolicyController.shared`，多 WindowStage 宿主覆写 `windowPolicyController()`，与所属窗口的其他能力共用同一实例。
 
 ## 安装
 
-`2.3.3` 已发布到既有私有 OHPM Registry。先按组织要求配置该私库及访问身份，再执行以下精确安装；该坐标不表示官方公共 OHPM 可安装。
+先按组织要求配置私有 OHPM Registry 和访问身份，再安装精确版本。
 
 ```bash
-ohpm install @gycrosskit/webview@2.3.3
+ohpm install @gycrosskit/webview@2.4.0
 ```
 
-本地候选可从 assembleHar 输出验证；正式包从[不可变 GitHub Release](https://github.com/gycrosskit/compose-webview/releases/tag/har-2.3.3) 下载 Web HAR 并校验 SHA-256，system-actions 固定 Registry `1.0.2`。干净消费者核对只有一份窗口 owner。离线验证使用已核对冻结 SHA-256 的 Web HAR 和 system-actions `1.0.2` HAR，并用 root override 保证同一系统包；候选字节不得冒充公开 Release 下载或 Registry 安装。文件下载消费与 Registry 安装分开验收。
+本地候选消费使用 `assembleHar` 输出并核对 SHA-256。干净消费者的 WebView 和宿主直接依赖共用同一个 system-actions `1.0.2`。本地候选消费与私库正式安装分别验收。
 
 ```json
 {
