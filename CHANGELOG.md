@@ -1,5 +1,12 @@
 # 更新记录
 
+## 2.4.0
+
+计划通过 Jenkins 发布 Maven、Git Pod 和私有 OHPM。
+
+- 新增 `WebViewUserLinkPolicy`，普通 H5 可在原 WebView 打开用户点击的新窗口，受保护 H5 可通过 `ExternalLinkRequested` 交由宿主打开独立网页。已有业务来源和原页面权限继续沿用既有策略。
+- 更新到本版本时需重新编译依赖 WebView 导航策略的模块，并处理 `WebViewEvent` 新增事件。
+
 ## 2.3.3
 
 状态：Maven、Git Pod、GitHub HAR 与私有 OHPM 已发布；完整源码 SDK 验证通过。济世 Android、iOS 正式远程依赖编译、安装通过，私库真实安装已核对；鸿蒙编译、通用消费者报告与用户真机验收分别记录，见[发布与验证](docs/开发与验证.md#233-发布与验证)。

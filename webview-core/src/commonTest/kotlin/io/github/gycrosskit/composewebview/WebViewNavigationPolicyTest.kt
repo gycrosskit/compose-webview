@@ -6,6 +6,38 @@ import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 
 class WebViewNavigationPolicyTest {
+    @Test fun optingIntoUserLinksRetainsWindowAndTrustBoundaries() {
+        val initial = "https://safe.example/start"
+        val popup = WebViewNavigationRequest("https://outside.example", true, true, WebViewNavigationTarget.NEW_WINDOW)
+        val ordinary = WebViewRequest(WebViewContent.Url(initial),
+            navigationPolicy = WebViewNavigationPolicy(userLinkPolicy = WebViewUserLinkPolicy.IN_CURRENT_PAGE))
+        assertTrue(ordinary.allowsActiveUserLink(popup))
+        assertFalse(ordinary.allowsActiveUserLink(popup.copy(hasUserGesture = false)))
+        assertFalse(ordinary.allowsActiveUserLink(popup.copy(isMainFrame = false)))
+        assertFalse(ordinary.copy(allowedHttpOrigins = emptySet()).allowsActiveUserLink(popup.copy(url = "http://outside.example")))
+        val protected = ordinary.copy(
+            security = WebViewSecurity(WebViewTrustPolicy(listOf(initial)), appBridgeEnabled = true),
+            navigationPolicy = WebViewNavigationPolicy(
+                allowedUrls = setOf(initial),
+                userLinkPolicy = WebViewUserLinkPolicy.OPEN_SEPARATELY,
+            ),
+        )
+        assertFalse(protected.allowsActiveUserLink(popup))
+        assertTrue(protected.shouldOpenSeparateUserLink(popup, initial))
+        assertTrue(protected.shouldOpenSeparateUserLink(popup.copy(url = "https://safe.example/help"), initial))
+        assertFalse(protected.shouldOpenSeparateUserLink(popup.copy(url = initial), initial))
+        assertFalse(protected.shouldOpenSeparateUserLink(popup.copy(url = "https://user@outside.example"), initial))
+        assertFalse(protected.shouldOpenSeparateUserLink(popup.copy(hasUserGesture = false), initial))
+        assertEquals(protected, WebViewWire.decodeRequest(WebViewWire.encodeRequest(protected)))
+        val allowed = protected.copy(navigationPolicy = protected.navigationPolicy.copy(
+            allowedUrls = emptySet(),
+            navigationOrigins = WebViewNavigationOrigins(exactOrigins = setOf(initial, popup.url)),
+        ))
+        assertFalse(allowed.shouldOpenSeparateUserLink(popup, initial))
+        assertTrue(allowed.allowsActiveUserLink(popup))
+        assertTrue(allowed.shouldOpenSeparateUserLink(popup.copy(url = "https://third.example/help"), initial))
+    }
+
     @Test fun explicitAnyPortSuffixRetainsSchemeHostAndBridgeBoundaries() {
         val origins = WebViewNavigationOrigins(hostSuffixAnyPortOrigins = setOf("http://shop.example", "https://shop.example"))
         val request = WebViewRequest(WebViewContent.Url("https://safe.example"), security = WebViewSecurity(

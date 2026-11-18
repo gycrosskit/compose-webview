@@ -219,7 +219,7 @@ class GYWebViewNative @JvmOverloads constructor(
                 { target -> target === webView && ownerActive && !destroyed && !crashed })
         }
         popupRouter = AndroidPopupRouter({ requireNotNull(request) }, { emit(WebViewEvent.Navigation(it, true)) }) { navigation ->
-            if (route(navigation)) WebViewNavigationDecision.BLOCK else WebViewNavigationDecision.ALLOW
+            if (route(navigation, eligibleUserLink = true)) WebViewNavigationDecision.BLOCK else WebViewNavigationDecision.ALLOW
         }
         owner.applyWebViewConfig(current.settings, owner.settings.userAgentString, resources.configuration.fontScale,
             resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES, Color.TRANSPARENT)
@@ -254,7 +254,10 @@ class GYWebViewNative @JvmOverloads constructor(
             override val verifyServerCertificate: Boolean
                 get() = request?.settings?.verifyServerCertificate != false
             override fun shouldOverrideUrlLoading(view: WebView, navigation: WebResourceRequest): Boolean =
-                if (view !== owner || owner !== webView || destroyed) true else route(WebViewNavigationRequest(navigation.url.toString(), navigation.isForMainFrame, navigation.hasGesture()))
+                if (view !== owner || owner !== webView || destroyed) true else route(
+                    WebViewNavigationRequest(navigation.url.toString(), navigation.isForMainFrame, navigation.hasGesture()),
+                    eligibleUserLink = navigation.method == "GET" && !navigation.isRedirect,
+                )
             @Deprecated("Deprecated in Java")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean = if (view !== owner || owner !== webView || destroyed) true else route(WebViewNavigationRequest(url, true, false))
             private val mainHandler = Handler(Looper.getMainLooper())
@@ -327,18 +330,26 @@ class GYWebViewNative @JvmOverloads constructor(
         }
     }
 
-    private fun route(navigation: WebViewNavigationRequest): Boolean {
+    private fun route(navigation: WebViewNavigationRequest, eligibleUserLink: Boolean = false): Boolean {
         val internalHtmlLoad = initialHtmlNavigation && navigation.isInternalHtmlInitialNavigation()
         if (navigation.isMainFrame) initialHtmlNavigation = false
-        val blocked = (!internalHtmlLoad && request?.allowsNavigation(navigation) != true) || destroyed || crashed || pageOwnerActive == false
+        val current = request
+        val owner = webView
+        val generation = callbackGeneration
+        val userLink = eligibleUserLink && canPresentUi
+        if (userLink && !destroyed && !crashed && current?.shouldOpenSeparateUserLink(navigation, owner?.url) == true) {
+            emit(WebViewEvent.ExternalLinkRequested(navigation))
+            return true
+        }
+        val allowed = if (userLink) current?.allowsActiveUserLink(navigation) else current?.allowsNavigation(navigation)
+        val blocked = (!internalHtmlLoad && allowed != true) || destroyed || crashed || pageOwnerActive == false
         if (!blocked && navigation.isMainFrame && !internalHtmlLoad) {
-            val owner = webView
             val oldCapabilities = capabilities
             pageMessageChannels?.revoke()
             if (owner != null) oldCapabilities?.release(owner)
         }
         emit(WebViewEvent.Navigation(navigation, blocked))
-        return blocked
+        return blocked || webView !== owner || callbackGeneration != generation || request !== current
     }
 
     private fun inject(owner: WebView, finished: Boolean) {
