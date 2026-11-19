@@ -1,0 +1,1352 @@
+{
+  "version": 1,
+  "created_at": "2026-11-19T08:49:25Z",
+  "updated_at": "2026-11-19T09:20:27Z",
+  "files": {
+    ".gitattributes": {
+      "role": "index",
+      "sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476",
+      "size": 291,
+      "normalized_sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476"
+    },
+    ".gitignore": {
+      "role": "index",
+      "sha256": "c3e53b697f9114e7b8a41a6976e8ae990e6a09dac10d7052966a82bf8f96206b",
+      "size": 341,
+      "normalized_sha256": "c3e53b697f9114e7b8a41a6976e8ae990e6a09dac10d7052966a82bf8f96206b"
+    },
+    "AGENTS.md": {
+      "role": "index",
+      "sha256": "b6a02c9e483fe94395260ad51859b6baa70c82e5af16b8f1bdbfc1c0fafa3701",
+      "size": 14872,
+      "normalized_sha256": "b6a02c9e483fe94395260ad51859b6baa70c82e5af16b8f1bdbfc1c0fafa3701"
+    },
+    "CHANGELOG.md": {
+      "role": "index",
+      "sha256": "957ebbe2b5033afcd370daaadc93b5c5d53ed40b161a9e5506735d371b928ab1",
+      "size": 11153,
+      "normalized_sha256": "957ebbe2b5033afcd370daaadc93b5c5d53ed40b161a9e5506735d371b928ab1"
+    },
+    "GYWebView.podspec": {
+      "role": "index",
+      "sha256": "24aea6fa823980586b40e04bec1c5fe9b39b3e6e54ba93c447ddaef9bf3e573f",
+      "size": 771,
+      "normalized_sha256": "24aea6fa823980586b40e04bec1c5fe9b39b3e6e54ba93c447ddaef9bf3e573f"
+    },
+    "LICENSE": {
+      "role": "index",
+      "sha256": "c69e86da3fc2081768d5839c99bf63ee397a308f78e6f61cd2babc530a36f9cc",
+      "size": 11356,
+      "normalized_sha256": "c69e86da3fc2081768d5839c99bf63ee397a308f78e6f61cd2babc530a36f9cc"
+    },
+    "README.md": {
+      "role": "index",
+      "sha256": "f8b144fbb81127897d932fac691fa239d0be85d76d08ba3e584abae9e63132d5",
+      "size": 20275,
+      "normalized_sha256": "f8b144fbb81127897d932fac691fa239d0be85d76d08ba3e584abae9e63132d5"
+    },
+    "VALIDATION.md": {
+      "role": "index",
+      "sha256": "2b968a57fe95dec51e6a471ea66ca793fb72b1ffd4e49be423b4741debd63014",
+      "size": 8162,
+      "normalized_sha256": "2b968a57fe95dec51e6a471ea66ca793fb72b1ffd4e49be423b4741debd63014"
+    },
+    "aoci.code.txt": {
+      "role": "index",
+      "sha256": "d95f92db5f67d6d11942a6b0c90fdc207b44516c89dc301309c814a0733846d5",
+      "size": 55280,
+      "normalized_sha256": "d95f92db5f67d6d11942a6b0c90fdc207b44516c89dc301309c814a0733846d5"
+    },
+    "aoci.meta.txt": {
+      "role": "index",
+      "sha256": "fbc304fa05182547e96f1f8404c7c30ad6c366bba9589523f1019c2c1da0427c",
+      "size": 1989,
+      "normalized_sha256": "fbc304fa05182547e96f1f8404c7c30ad6c366bba9589523f1019c2c1da0427c"
+    },
+    "aoci.txt": {
+      "role": "index",
+      "sha256": "8af2b5c58399fbbde20cee068d6e7ad4443df4a16de50d01f7978211986815d6",
+      "size": 304,
+      "normalized_sha256": "8af2b5c58399fbbde20cee068d6e7ad4443df4a16de50d01f7978211986815d6"
+    },
+    "build.gradle.kts": {
+      "role": "index",
+      "sha256": "b8dd7ac7cd937efd2637c2173d29a8ba3056230098547261893f41b77715be0e",
+      "size": 1082,
+      "normalized_sha256": "b8dd7ac7cd937efd2637c2173d29a8ba3056230098547261893f41b77715be0e"
+    },
+    "docs/0.2.0-rc.11发布验收.md": {
+      "role": "index",
+      "sha256": "08f0038351f0a8f53932af2506265896d35900c10214d73e16969d56f47d6cfb",
+      "size": 2334,
+      "normalized_sha256": "08f0038351f0a8f53932af2506265896d35900c10214d73e16969d56f47d6cfb"
+    },
+    "docs/0.2.0-rc.12候选验收.md": {
+      "role": "index",
+      "sha256": "2463df7bbcc961c991a07f73703cb668a913e205368eeb98955f7b5f8bedc23a",
+      "size": 3550,
+      "normalized_sha256": "2463df7bbcc961c991a07f73703cb668a913e205368eeb98955f7b5f8bedc23a"
+    },
+    "docs/0.2.0-rc.16发布验收.md": {
+      "role": "index",
+      "sha256": "89fd5a8c3b04e61e34de10429ecf4091679cff5bcc6292efa31ab72e3c4d88d4",
+      "size": 3228,
+      "normalized_sha256": "89fd5a8c3b04e61e34de10429ecf4091679cff5bcc6292efa31ab72e3c4d88d4"
+    },
+    "docs/0.2.0-rc.17发布验收.md": {
+      "role": "index",
+      "sha256": "7554c8509ed6e368ca09e482c2be80b78dcd98e948ce36ad31a56f6fd31920fd",
+      "size": 4096,
+      "normalized_sha256": "7554c8509ed6e368ca09e482c2be80b78dcd98e948ce36ad31a56f6fd31920fd"
+    },
+    "docs/0.2.0-rc.18发布验收.md": {
+      "role": "index",
+      "sha256": "9ad553fbbb2eebea4219d955708bdaffda0ce2d62859004429ec230139e0ad22",
+      "size": 3375,
+      "normalized_sha256": "9ad553fbbb2eebea4219d955708bdaffda0ce2d62859004429ec230139e0ad22"
+    },
+    "docs/0.2.0-rc.8远程发布验收.md": {
+      "role": "index",
+      "sha256": "d9df787f52928f5db178698290413e947ac3f9775a4ab21d035b44ab71af802f",
+      "size": 4215,
+      "normalized_sha256": "d9df787f52928f5db178698290413e947ac3f9775a4ab21d035b44ab71af802f"
+    },
+    "docs/0.2.0-rc.9候选验收.md": {
+      "role": "index",
+      "sha256": "4da60c12721b3c6139972df7089d621ec7d94f84e2ec8875355bc736a914915e",
+      "size": 7824,
+      "normalized_sha256": "4da60c12721b3c6139972df7089d621ec7d94f84e2ec8875355bc736a914915e"
+    },
+    "docs/0.2.0-rc.9远程发布验收.md": {
+      "role": "index",
+      "sha256": "e9e594dba1cee143a186e10bde362547a8f1417435ef12c1c330326492a41d0d",
+      "size": 3499,
+      "normalized_sha256": "e9e594dba1cee143a186e10bde362547a8f1417435ef12c1c330326492a41d0d"
+    },
+    "docs/RC迁移说明.md": {
+      "role": "index",
+      "sha256": "6c25e87f4bbc88507847e3f1854cbb28ad6e96ce7800c27f8eecbd81a1c570d3",
+      "size": 1980,
+      "normalized_sha256": "6c25e87f4bbc88507847e3f1854cbb28ad6e96ce7800c27f8eecbd81a1c570d3"
+    },
+    "docs/功能与平台差异.md": {
+      "role": "index",
+      "sha256": "6075c7aff612c221861faba47d92b346460b3641fffcaded9d00327180d81b61",
+      "size": 35990,
+      "normalized_sha256": "6075c7aff612c221861faba47d92b346460b3641fffcaded9d00327180d81b61"
+    },
+    "docs/完整源码审查.md": {
+      "role": "index",
+      "sha256": "c6fec506ed2752294bdab4f9f143c3ea9684590cd71bc711c5da851470ac768a",
+      "size": 15054,
+      "normalized_sha256": "c6fec506ed2752294bdab4f9f143c3ea9684590cd71bc711c5da851470ac768a"
+    },
+    "docs/开发与验证.md": {
+      "role": "index",
+      "sha256": "0559d8fe7f286badd3598e524da86264a9ab7a316284e16efd9432eddce8fb62",
+      "size": 31721,
+      "normalized_sha256": "0559d8fe7f286badd3598e524da86264a9ab7a316284e16efd9432eddce8fb62"
+    },
+    "docs/接入指南.md": {
+      "role": "index",
+      "sha256": "57355b9e7f395b8b43662d95defb5cd84dc8e21dcaf5fc7be01c1407d17885c8",
+      "size": 27661,
+      "normalized_sha256": "57355b9e7f395b8b43662d95defb5cd84dc8e21dcaf5fc7be01c1407d17885c8"
+    },
+    "docs/早期页面通道候选验收.md": {
+      "role": "index",
+      "sha256": "9e726f7c5e74f56a3033183c590965bb00f6914d43ba849c6b00a08004554e40",
+      "size": 6943,
+      "normalized_sha256": "9e726f7c5e74f56a3033183c590965bb00f6914d43ba849c6b00a08004554e40"
+    },
+    "docs/远程闭合验收.md": {
+      "role": "index",
+      "sha256": "d71b0284e109d411fdcf3ddc34820b6d7d632fd35930c477770e58e69ad05229",
+      "size": 13340,
+      "normalized_sha256": "d71b0284e109d411fdcf3ddc34820b6d7d632fd35930c477770e58e69ad05229"
+    },
+    "gradle.properties": {
+      "role": "index",
+      "sha256": "b829807b6121c698c715d698c4cb67d1d8a290ac0320a68b578898991fc330ea",
+      "size": 109,
+      "normalized_sha256": "b829807b6121c698c715d698c4cb67d1d8a290ac0320a68b578898991fc330ea"
+    },
+    "gradle/libs.versions.toml": {
+      "role": "index",
+      "sha256": "23ae91b1c936de1e8819a4e2bede507889f798f4d3babb3c094f599878e141ea",
+      "size": 1144,
+      "normalized_sha256": "23ae91b1c936de1e8819a4e2bede507889f798f4d3babb3c094f599878e141ea"
+    },
+    "gradle/native-toolchain.properties": {
+      "role": "index",
+      "sha256": "ca6881c69ac4b9eefa1654e378ac43f080d73e0ed853efcfc965c28b0a71ec9d",
+      "size": 88,
+      "normalized_sha256": "ca6881c69ac4b9eefa1654e378ac43f080d73e0ed853efcfc965c28b0a71ec9d"
+    },
+    "gradle/wrapper/gradle-wrapper.jar": {
+      "role": "index",
+      "sha256": "e996d452d2645e70c01c11143ca2d3742734a28da2bf61f25c82bdc288c9e637",
+      "size": 59203
+    },
+    "gradle/wrapper/gradle-wrapper.properties": {
+      "role": "index",
+      "sha256": "dcb542328654fb670759f0cbf4710c873c585bbb52896f0c836b7b3c69d472ac",
+      "size": 203,
+      "normalized_sha256": "dcb542328654fb670759f0cbf4710c873c585bbb52896f0c836b7b3c69d472ac"
+    },
+    "gradlew": {
+      "role": "index",
+      "sha256": "63135287117a1e6d12c84580f1f49c61d1ba02218ecd28660605e97f976e7d65",
+      "size": 5766,
+      "normalized_sha256": "63135287117a1e6d12c84580f1f49c61d1ba02218ecd28660605e97f976e7d65"
+    },
+    "gradlew.bat": {
+      "role": "index",
+      "sha256": "c46a27c79007746de5922b17abb6230d64ad8b1ba3ad1585ee5c6543c2a9b129",
+      "size": 2674,
+      "normalized_sha256": "c46a27c79007746de5922b17abb6230d64ad8b1ba3ad1585ee5c6543c2a9b129"
+    },
+    "ios/Sources/GYWebView.h": {
+      "role": "index",
+      "sha256": "e71151c18c5564b9bd90316d782cdebf00a5e481fc45b5048e4799826a9e7490",
+      "size": 2039,
+      "normalized_sha256": "e71151c18c5564b9bd90316d782cdebf00a5e481fc45b5048e4799826a9e7490"
+    },
+    "ios/Sources/GYWebView.m": {
+      "role": "index",
+      "sha256": "2229b02d924d61587ada30bc40299c40940704bf5b7812b1bc5b46f3709d648d",
+      "size": 97442,
+      "normalized_sha256": "2229b02d924d61587ada30bc40299c40940704bf5b7812b1bc5b46f3709d648d"
+    },
+    "ios/Sources/GYWebViewScripts.inc": {
+      "role": "index",
+      "sha256": "3ab25149d7202f7e90194f1766368305c8695d3b6d2ced7bb257a1ec6e11e7c7",
+      "size": 12750,
+      "normalized_sha256": "3ab25149d7202f7e90194f1766368305c8695d3b6d2ced7bb257a1ec6e11e7c7"
+    },
+    "ios/Tests/BooleanWireCheck.m": {
+      "role": "index",
+      "sha256": "80e770379fcae8001b41191d03df059c238571ddfc256b09ebfa0afdc67c1aa8",
+      "size": 140823,
+      "normalized_sha256": "80e770379fcae8001b41191d03df059c238571ddfc256b09ebfa0afdc67c1aa8"
+    },
+    "ios/Tests/page-channel-server.py": {
+      "role": "index",
+      "sha256": "6d8c3a394e9672b79efa8252f8fa53d57706b37a0d3faa3cb1a7c4d50445e02c",
+      "size": 1508,
+      "normalized_sha256": "6d8c3a394e9672b79efa8252f8fa53d57706b37a0d3faa3cb1a7c4d50445e02c"
+    },
+    "ios/generate-scripts.py": {
+      "role": "index",
+      "sha256": "2767417062c26ee41368d46f6f19c0e0662004a65143784f891a6db13017fc8f",
+      "size": 1857,
+      "normalized_sha256": "2767417062c26ee41368d46f6f19c0e0662004a65143784f891a6db13017fc8f"
+    },
+    "jitpack-install.sh": {
+      "role": "index",
+      "sha256": "68d6af4d63edfb1e01eb61f49ed2ed4bb094978875a29238d29bf3ad1cc80315",
+      "size": 4709,
+      "normalized_sha256": "68d6af4d63edfb1e01eb61f49ed2ed4bb094978875a29238d29bf3ad1cc80315"
+    },
+    "jitpack-metadata.py": {
+      "role": "index",
+      "sha256": "9d6becda7241ba10df34fe335e17fb93904be772868cc9ad4ffae4a8bc74a448",
+      "size": 2999,
+      "normalized_sha256": "9d6becda7241ba10df34fe335e17fb93904be772868cc9ad4ffae4a8bc74a448"
+    },
+    "jitpack.yml": {
+      "role": "index",
+      "sha256": "e646541180eb3c34f273465a7e782c1c9e1a6fc993a2e0bfef3158ca8c7840ed",
+      "size": 72,
+      "normalized_sha256": "e646541180eb3c34f273465a7e782c1c9e1a6fc993a2e0bfef3158ca8c7840ed"
+    },
+    "ohos/.gitignore": {
+      "role": "index",
+      "sha256": "d7d7da6355edb41900afb4166eb37f7883521e8ea086a2ba60b1d046a7ba2312",
+      "size": 73,
+      "normalized_sha256": "d7d7da6355edb41900afb4166eb37f7883521e8ea086a2ba60b1d046a7ba2312"
+    },
+    "ohos/AppScope/app.json5": {
+      "role": "index",
+      "sha256": "19f5904b571e212276bb171f7c31e35a4938da29d11b981dd5b2ef9f00eceb33",
+      "size": 214,
+      "normalized_sha256": "19f5904b571e212276bb171f7c31e35a4938da29d11b981dd5b2ef9f00eceb33"
+    },
+    "ohos/README.md": {
+      "role": "index",
+      "sha256": "92e78561484a609fba9977c325e24109bc16dd78077d7e6fb055600fedc55c41",
+      "size": 1012,
+      "normalized_sha256": "92e78561484a609fba9977c325e24109bc16dd78077d7e6fb055600fedc55c41"
+    },
+    "ohos/VERIFICATION.md": {
+      "role": "index",
+      "sha256": "57afdad3d589aa1876ed069299288de6149223feaac4b20c36b66622cf97113b",
+      "size": 3686,
+      "normalized_sha256": "57afdad3d589aa1876ed069299288de6149223feaac4b20c36b66622cf97113b"
+    },
+    "ohos/build-profile.json5": {
+      "role": "index",
+      "sha256": "23c0a36c1cca3c59bc6cdfe475ed8bd76c7fccdbad968e0cd727dae6f1c07ad5",
+      "size": 446,
+      "normalized_sha256": "23c0a36c1cca3c59bc6cdfe475ed8bd76c7fccdbad968e0cd727dae6f1c07ad5"
+    },
+    "ohos/hvigor/hvigor-config.json5": {
+      "role": "index",
+      "sha256": "01a4a20bc34adffe85e2328cc2314c1128e5f2da4d276dd3e08b2d75100b16c1",
+      "size": 108,
+      "normalized_sha256": "01a4a20bc34adffe85e2328cc2314c1128e5f2da4d276dd3e08b2d75100b16c1"
+    },
+    "ohos/hvigorfile.ts": {
+      "role": "index",
+      "sha256": "2378c5e0c5246005ada73a67e8c9834fa08adb9ffd6fb6c219051456753bed5a",
+      "size": 103,
+      "normalized_sha256": "2378c5e0c5246005ada73a67e8c9834fa08adb9ffd6fb6c219051456753bed5a"
+    },
+    "ohos/oh-package.json5": {
+      "role": "index",
+      "sha256": "1b0e4b3e48cc4c213b06586f1dd790ec3a8cec9e963f4d96210974c87282a9a4",
+      "size": 103,
+      "normalized_sha256": "1b0e4b3e48cc4c213b06586f1dd790ec3a8cec9e963f4d96210974c87282a9a4"
+    },
+    "ohos/scripts/verify-har.sh": {
+      "role": "index",
+      "sha256": "ce6ed655a8f5904610414996c68dfa55812b16fea71c97240951f621fe2487cf",
+      "size": 1878,
+      "normalized_sha256": "ce6ed655a8f5904610414996c68dfa55812b16fea71c97240951f621fe2487cf"
+    },
+    "ohos/tests/contract.test.cjs": {
+      "role": "index",
+      "sha256": "a212ce95d0692441c77a7570489c354de777c2b2500dac7f53a021e8ae79a1f5",
+      "size": 144372,
+      "normalized_sha256": "a212ce95d0692441c77a7570489c354de777c2b2500dac7f53a021e8ae79a1f5"
+    },
+    "ohos/verification-consumer/AppScope/app.json5": {
+      "role": "index",
+      "sha256": "19f5904b571e212276bb171f7c31e35a4938da29d11b981dd5b2ef9f00eceb33",
+      "size": 214,
+      "normalized_sha256": "19f5904b571e212276bb171f7c31e35a4938da29d11b981dd5b2ef9f00eceb33"
+    },
+    "ohos/verification-consumer/build-profile.json5": {
+      "role": "index",
+      "sha256": "6bda2b86086bc88d7baf544ffc35b4aaee57d5a9c77e792fb3cd77ae5d832201",
+      "size": 442,
+      "normalized_sha256": "6bda2b86086bc88d7baf544ffc35b4aaee57d5a9c77e792fb3cd77ae5d832201"
+    },
+    "ohos/verification-consumer/consumer/Index.ets": {
+      "role": "index",
+      "sha256": "6e371bbdac5d17fcdee547971363faf78f42e87f128e193a2a76ab0e13d12474",
+      "size": 72,
+      "normalized_sha256": "6e371bbdac5d17fcdee547971363faf78f42e87f128e193a2a76ab0e13d12474"
+    },
+    "ohos/verification-consumer/consumer/build-profile.json5": {
+      "role": "index",
+      "sha256": "c81525c7d372dca211a5e4ee76c5f3b0c6f322f5cfa43023be8651cbab6e48d4",
+      "size": 117,
+      "normalized_sha256": "c81525c7d372dca211a5e4ee76c5f3b0c6f322f5cfa43023be8651cbab6e48d4"
+    },
+    "ohos/verification-consumer/consumer/hvigorfile.ts": {
+      "role": "index",
+      "sha256": "ec10a36e82caa46c6e8acc7475d6a889080c130e6d825335745a52d03dd3b0de",
+      "size": 103,
+      "normalized_sha256": "ec10a36e82caa46c6e8acc7475d6a889080c130e6d825335745a52d03dd3b0de"
+    },
+    "ohos/verification-consumer/consumer/oh-package.json5": {
+      "role": "index",
+      "sha256": "7edd3bac9d5cb8bb177022881942a09822744cd87e3cc98deb699456833aa33d",
+      "size": 274,
+      "normalized_sha256": "7edd3bac9d5cb8bb177022881942a09822744cd87e3cc98deb699456833aa33d"
+    },
+    "ohos/verification-consumer/consumer/src/main/ets/ConsumeWebView.ets": {
+      "role": "index",
+      "sha256": "d5af7721e06259f93ea8814516485d13403f592b8f421aa1b8ddd544a7d06a93",
+      "size": 1967,
+      "normalized_sha256": "d5af7721e06259f93ea8814516485d13403f592b8f421aa1b8ddd544a7d06a93"
+    },
+    "ohos/verification-consumer/consumer/src/main/module.json5": {
+      "role": "index",
+      "sha256": "396f9a5b477a6c4d965ec41dfd683fed9de3fca6b79f8f97820a4f348879198d",
+      "size": 131,
+      "normalized_sha256": "396f9a5b477a6c4d965ec41dfd683fed9de3fca6b79f8f97820a4f348879198d"
+    },
+    "ohos/verification-consumer/hvigor/hvigor-config.json5": {
+      "role": "index",
+      "sha256": "01a4a20bc34adffe85e2328cc2314c1128e5f2da4d276dd3e08b2d75100b16c1",
+      "size": 108,
+      "normalized_sha256": "01a4a20bc34adffe85e2328cc2314c1128e5f2da4d276dd3e08b2d75100b16c1"
+    },
+    "ohos/verification-consumer/hvigorfile.ts": {
+      "role": "index",
+      "sha256": "2378c5e0c5246005ada73a67e8c9834fa08adb9ffd6fb6c219051456753bed5a",
+      "size": 103,
+      "normalized_sha256": "2378c5e0c5246005ada73a67e8c9834fa08adb9ffd6fb6c219051456753bed5a"
+    },
+    "ohos/verification-consumer/oh-package.json5": {
+      "role": "index",
+      "sha256": "1b0e4b3e48cc4c213b06586f1dd790ec3a8cec9e963f4d96210974c87282a9a4",
+      "size": 103,
+      "normalized_sha256": "1b0e4b3e48cc4c213b06586f1dd790ec3a8cec9e963f4d96210974c87282a9a4"
+    },
+    "ohos/webview-native/CHANGELOG.md": {
+      "role": "index",
+      "sha256": "d79210cf1cf597ff592680094d061c7fc416323f8cf9ccfa7919e21470eb900f",
+      "size": 12368,
+      "normalized_sha256": "d79210cf1cf597ff592680094d061c7fc416323f8cf9ccfa7919e21470eb900f"
+    },
+    "ohos/webview-native/Index.ets": {
+      "role": "index",
+      "sha256": "3228fef981b2faf2763ff3c54eef4d6ff3ba02b64d7b4ca8fda17bb54a8531f5",
+      "size": 481,
+      "normalized_sha256": "3228fef981b2faf2763ff3c54eef4d6ff3ba02b64d7b4ca8fda17bb54a8531f5"
+    },
+    "ohos/webview-native/LICENSE": {
+      "role": "index",
+      "sha256": "c69e86da3fc2081768d5839c99bf63ee397a308f78e6f61cd2babc530a36f9cc",
+      "size": 11356,
+      "normalized_sha256": "c69e86da3fc2081768d5839c99bf63ee397a308f78e6f61cd2babc530a36f9cc"
+    },
+    "ohos/webview-native/README.md": {
+      "role": "index",
+      "sha256": "904349a1c59f16c84f26c540d5eb0e3a87b91f8b8bc156aca9339a566713e30d",
+      "size": 16896,
+      "normalized_sha256": "904349a1c59f16c84f26c540d5eb0e3a87b91f8b8bc156aca9339a566713e30d"
+    },
+    "ohos/webview-native/build-profile.json5": {
+      "role": "index",
+      "sha256": "c81525c7d372dca211a5e4ee76c5f3b0c6f322f5cfa43023be8651cbab6e48d4",
+      "size": 117,
+      "normalized_sha256": "c81525c7d372dca211a5e4ee76c5f3b0c6f322f5cfa43023be8651cbab6e48d4"
+    },
+    "ohos/webview-native/hvigorfile.ts": {
+      "role": "index",
+      "sha256": "ec10a36e82caa46c6e8acc7475d6a889080c130e6d825335745a52d03dd3b0de",
+      "size": 103,
+      "normalized_sha256": "ec10a36e82caa46c6e8acc7475d6a889080c130e6d825335745a52d03dd3b0de"
+    },
+    "ohos/webview-native/oh-package.json5": {
+      "role": "index",
+      "sha256": "dcbc10bf77e1864d8742872f6c0645c5f08653b44b37d9aaa4bcda8bf7bd3516",
+      "size": 458,
+      "normalized_sha256": "dcbc10bf77e1864d8742872f6c0645c5f08653b44b37d9aaa4bcda8bf7bd3516"
+    },
+    "ohos/webview-native/src/main/ets/GYWebView.ets": {
+      "role": "index",
+      "sha256": "f93d46669681af319ca4a0749398917737801b23c2954cfb9e80609d89453509",
+      "size": 60654,
+      "normalized_sha256": "f93d46669681af319ca4a0749398917737801b23c2954cfb9e80609d89453509"
+    },
+    "ohos/webview-native/src/main/ets/OhosWebViewDataCleaner.ets": {
+      "role": "index",
+      "sha256": "1de60a843e9cdd1598ff81b0715b73934f2b4e1d38b9c275965fa72a912fd543",
+      "size": 1127,
+      "normalized_sha256": "1de60a843e9cdd1598ff81b0715b73934f2b4e1d38b9c275965fa72a912fd543"
+    },
+    "ohos/webview-native/src/main/ets/WebPermissionDialog.ets": {
+      "role": "index",
+      "sha256": "6cbb1777474be128138c6ff3b8932b32987f6bc67a16c2f94799b5f53c783660",
+      "size": 706,
+      "normalized_sha256": "6cbb1777474be128138c6ff3b8932b32987f6bc67a16c2f94799b5f53c783660"
+    },
+    "ohos/webview-native/src/main/ets/WebViewComponent.ets": {
+      "role": "index",
+      "sha256": "95ef0c45d2ec7049af9470d1516ea5e8c96d839d21b3e44a5020d3bd1b06527c",
+      "size": 6179,
+      "normalized_sha256": "95ef0c45d2ec7049af9470d1516ea5e8c96d839d21b3e44a5020d3bd1b06527c"
+    },
+    "ohos/webview-native/src/main/ets/WebViewWire.ts": {
+      "role": "index",
+      "sha256": "38e9be7591bf272c19b92b35ffb2bece82661373e1e1014babccdd3b2ad4dce0",
+      "size": 29539,
+      "normalized_sha256": "38e9be7591bf272c19b92b35ffb2bece82661373e1e1014babccdd3b2ad4dce0"
+    },
+    "ohos/webview-native/src/main/module.json5": {
+      "role": "index",
+      "sha256": "c5e41fb5b76f100d721f70cde0ffe069b47a12662b9cedd5dc0f0004ec746921",
+      "size": 129,
+      "normalized_sha256": "c5e41fb5b76f100d721f70cde0ffe069b47a12662b9cedd5dc0f0004ec746921"
+    },
+    "scripts/build.sh": {
+      "role": "index",
+      "sha256": "2c74240981703d10ebf2c4132a3954706d1ea5475f3d7e7b022d5d8fd2e0203c",
+      "size": 2405,
+      "normalized_sha256": "2c74240981703d10ebf2c4132a3954706d1ea5475f3d7e7b022d5d8fd2e0203c"
+    },
+    "scripts/check-maven.py": {
+      "role": "index",
+      "sha256": "b14800c5a8ee8c2c760e092cda967286eb33ed7a5cb88e4b8ed15229748de908",
+      "size": 8996,
+      "normalized_sha256": "b14800c5a8ee8c2c760e092cda967286eb33ed7a5cb88e4b8ed15229748de908"
+    },
+    "scripts/check-public-maven.py": {
+      "role": "index",
+      "sha256": "1f38e825e4dd966a4faa18d7315d6536841b03145b3fc0ace366bcde1817b203",
+      "size": 17590,
+      "normalized_sha256": "1f38e825e4dd966a4faa18d7315d6536841b03145b3fc0ace366bcde1817b203"
+    },
+    "scripts/ci-build-kuikly-render.sh": {
+      "role": "index",
+      "sha256": "7dbc44e1dbd5bfb54f8c9a59f69090e9453deb21facc31e2dbc034955ab63c6e",
+      "size": 3062,
+      "normalized_sha256": "7dbc44e1dbd5bfb54f8c9a59f69090e9453deb21facc31e2dbc034955ab63c6e"
+    },
+    "scripts/ci-java.security": {
+      "role": "index",
+      "sha256": "2473f59fd92203eaaaa5207f92057f68849518c4a874663547c2d956cf1e9ab4",
+      "size": 170,
+      "normalized_sha256": "2473f59fd92203eaaaa5207f92057f68849518c4a874663547c2d956cf1e9ab4"
+    },
+    "scripts/ci-repositories.gradle": {
+      "role": "index",
+      "sha256": "ef14e75fc251c0aef75aba72875a320f199b00b69e993ecfaf39e567d74569a4",
+      "size": 2178,
+      "normalized_sha256": "ef14e75fc251c0aef75aba72875a320f199b00b69e993ecfaf39e567d74569a4"
+    },
+    "scripts/package-maven.sh": {
+      "role": "index",
+      "sha256": "ab4af07a3f1b97bcc20ef2afec5ed3d75c0b4eb240c54affa03adb8564a9c5dc",
+      "size": 1234,
+      "normalized_sha256": "ab4af07a3f1b97bcc20ef2afec5ed3d75c0b4eb240c54affa03adb8564a9c5dc"
+    },
+    "scripts/verify-ios-native.sh": {
+      "role": "index",
+      "sha256": "1beb0feadfd0d870b31c36d76854bb57e983d16293a689394af1a7ea3bf7b932",
+      "size": 1913,
+      "normalized_sha256": "1beb0feadfd0d870b31c36d76854bb57e983d16293a689394af1a7ea3bf7b932"
+    },
+    "scripts/verify-ios-wire.sh": {
+      "role": "index",
+      "sha256": "a0611f4b1464c5eba8089c8c5c0c6655ec32083e05d62ef2f6cb0a0728c26e7c",
+      "size": 8620,
+      "normalized_sha256": "a0611f4b1464c5eba8089c8c5c0c6655ec32083e05d62ef2f6cb0a0728c26e7c"
+    },
+    "scripts/verify-release.sh": {
+      "role": "index",
+      "sha256": "4ab4919d2fc2100a2e67e6f527e5fe45824cf6d474a8a191cd7db2630199a320",
+      "size": 1763,
+      "normalized_sha256": "4ab4919d2fc2100a2e67e6f527e5fe45824cf6d474a8a191cd7db2630199a320"
+    },
+    "scripts/verify.sh": {
+      "role": "index",
+      "sha256": "06dc4adc9c1895dfaef1041c9e9c8bd8e564244bd9d35393474eddfb4992dca9",
+      "size": 925,
+      "normalized_sha256": "06dc4adc9c1895dfaef1041c9e9c8bd8e564244bd9d35393474eddfb4992dca9"
+    },
+    "settings.gradle.kts": {
+      "role": "index",
+      "sha256": "d3e2102bcdbe2b0af0acb5bcb37383c6c63f9123e722e9bca0fd377063c85f4e",
+      "size": 1781,
+      "normalized_sha256": "d3e2102bcdbe2b0af0acb5bcb37383c6c63f9123e722e9bca0fd377063c85f4e"
+    },
+    "verification-consumer/build.gradle.kts": {
+      "role": "index",
+      "sha256": "9363adfb4680e3e1a10791fec4165c044a709d9704c7bdc7b1dc24d1891c020b",
+      "size": 6352,
+      "normalized_sha256": "9363adfb4680e3e1a10791fec4165c044a709d9704c7bdc7b1dc24d1891c020b"
+    },
+    "verification-consumer/gradle.properties": {
+      "role": "index",
+      "sha256": "b9474993b46ccf5342cd3289e1b9fd31600d8b66acde7a2814c52b6a8e581ad4",
+      "size": 126,
+      "normalized_sha256": "b9474993b46ccf5342cd3289e1b9fd31600d8b66acde7a2814c52b6a8e581ad4"
+    },
+    "verification-consumer/settings.gradle.kts": {
+      "role": "index",
+      "sha256": "f4e5f3a5de3191da1b07fda527544a2c67ef8bd1de8e4a32635d7f699983acb7",
+      "size": 2452,
+      "normalized_sha256": "f4e5f3a5de3191da1b07fda527544a2c67ef8bd1de8e4a32635d7f699983acb7"
+    },
+    "verification-consumer/src/androidMain/AndroidManifest.xml": {
+      "role": "index",
+      "sha256": "ec330d68974d19a37f354dae98936c0c2e83977d6099b98bf26773c2ecd30c26",
+      "size": 527,
+      "normalized_sha256": "ec330d68974d19a37f354dae98936c0c2e83977d6099b98bf26773c2ecd30c26"
+    },
+    "verification-consumer/src/androidMain/kotlin/ConsumeCleaner.kt": {
+      "role": "index",
+      "sha256": "a9b1fa6d7071b877b612e88c922180c5aa6a47ca295b864eee7a7e2533491353",
+      "size": 314,
+      "normalized_sha256": "a9b1fa6d7071b877b612e88c922180c5aa6a47ca295b864eee7a7e2533491353"
+    },
+    "verification-consumer/src/androidMain/kotlin/ConsumerActivity.kt": {
+      "role": "index",
+      "sha256": "6245edebe108c6ac943ec222d1a820cdad2f9b950b6bfa350de5cdafbe736222",
+      "size": 430,
+      "normalized_sha256": "6245edebe108c6ac943ec222d1a820cdad2f9b950b6bfa350de5cdafbe736222"
+    },
+    "verification-consumer/src/commonMain/kotlin/Consumer.kt": {
+      "role": "index",
+      "sha256": "bf3ea2566ce73faa0cc10d68b0b52d3c0939a407a0602c0477b6826f1523a937",
+      "size": 1072,
+      "normalized_sha256": "bf3ea2566ce73faa0cc10d68b0b52d3c0939a407a0602c0477b6826f1523a937"
+    },
+    "verification-consumer/src/fullscreenAndroidMain/kotlin/AndroidFullscreenControlsConsumer.kt": {
+      "role": "index",
+      "sha256": "579aed6c09eadd0cd6c1a9e2c04f66365d58ba37267a82f264c98e8f6467011e",
+      "size": 565,
+      "normalized_sha256": "579aed6c09eadd0cd6c1a9e2c04f66365d58ba37267a82f264c98e8f6467011e"
+    },
+    "verification-consumer/src/fullscreenKuiklyComposeMain/kotlin/FullscreenControlsConsumer.kt": {
+      "role": "index",
+      "sha256": "6ed44bb6ccef46e6bb39d812b44f42a386f0a217fcce6e3322398dd47534e929",
+      "size": 575,
+      "normalized_sha256": "6ed44bb6ccef46e6bb39d812b44f42a386f0a217fcce6e3322398dd47534e929"
+    },
+    "verification-consumer/src/iosMain/kotlin/ConsumeCleaner.kt": {
+      "role": "index",
+      "sha256": "c4fdbb936a0b85d8b7c2d8cb0ffba6afe8c58caac0456f930b05b108fd414f8f",
+      "size": 252,
+      "normalized_sha256": "c4fdbb936a0b85d8b7c2d8cb0ffba6afe8c58caac0456f930b05b108fd414f8f"
+    },
+    "verification-consumer/src/kuiklyAndroidMain/kotlin/FullscreenConsumer.kt": {
+      "role": "index",
+      "sha256": "72afe2eb07e390e698f1b2db57a7cce814a533f96c485b98e8c66d4e9ea96461",
+      "size": 1162,
+      "normalized_sha256": "72afe2eb07e390e698f1b2db57a7cce814a533f96c485b98e8c66d4e9ea96461"
+    },
+    "verification-consumer/src/kuiklyComposeAndroidMain/kotlin/WarmupConsumer.kt": {
+      "role": "index",
+      "sha256": "05eea32f4a53196378e2a63cc8b927e906d9508250b60301ed599a799a5bc20b",
+      "size": 284,
+      "normalized_sha256": "05eea32f4a53196378e2a63cc8b927e906d9508250b60301ed599a799a5bc20b"
+    },
+    "verification-consumer/src/kuiklyComposeMain/kotlin/ComposeApiConsumer.kt": {
+      "role": "index",
+      "sha256": "54986eb93944c1fe2d487419189f49a293c66d3e7e66fdf4e964129ef0174f00",
+      "size": 560,
+      "normalized_sha256": "54986eb93944c1fe2d487419189f49a293c66d3e7e66fdf4e964129ef0174f00"
+    },
+    "verification-consumer/src/kuiklyMain/kotlin/ConsumeKuikly.kt": {
+      "role": "index",
+      "sha256": "1debe7efb680a2f6dcaf411577f78eed940c43d8f09412be45982507713b29da",
+      "size": 940,
+      "normalized_sha256": "1debe7efb680a2f6dcaf411577f78eed940c43d8f09412be45982507713b29da"
+    },
+    "verification-consumer/src/pageChannelsKuiklyMain/kotlin/PageChannelKuiklyProbe.kt": {
+      "role": "index",
+      "sha256": "1495e911fc0f4d377215d2d8c46fc7d6dfc0cb19d385634f1dc1e6a36755ce20",
+      "size": 329,
+      "normalized_sha256": "1495e911fc0f4d377215d2d8c46fc7d6dfc0cb19d385634f1dc1e6a36755ce20"
+    },
+    "verification-consumer/src/pageChannelsMain/kotlin/PageChannelProbe.kt": {
+      "role": "index",
+      "sha256": "5086e58710290bc83d653b8fa4b35bf6f9b8773ac8995389e6ef1b04b85e1131",
+      "size": 488,
+      "normalized_sha256": "5086e58710290bc83d653b8fa4b35bf6f9b8773ac8995389e6ef1b04b85e1131"
+    },
+    "verification/android-callbacks/create-fixture.py": {
+      "role": "index",
+      "sha256": "167cec46eee9259739314be3e5023e6d5b68a1e1de2979027ca54519a27a3671",
+      "size": 2830,
+      "normalized_sha256": "167cec46eee9259739314be3e5023e6d5b68a1e1de2979027ca54519a27a3671"
+    },
+    "verification/android-callbacks/geolocation-main.kt": {
+      "role": "index",
+      "sha256": "039a824e61807359bfe09971849d3d77143c215cb71a7eb0d577b95c4e5c575f",
+      "size": 3610,
+      "normalized_sha256": "039a824e61807359bfe09971849d3d77143c215cb71a7eb0d577b95c4e5c575f"
+    },
+    "verification/android-callbacks/host-permission-main.kt": {
+      "role": "index",
+      "sha256": "b3618a9a3c004b2fbe0778958baf21b3b264032b2556bdd20c0be30f5cc0ccf3",
+      "size": 3597,
+      "normalized_sha256": "b3618a9a3c004b2fbe0778958baf21b3b264032b2556bdd20c0be30f5cc0ccf3"
+    },
+    "verification/android-callbacks/main.kt": {
+      "role": "index",
+      "sha256": "8bff58ee1745ee5789e3efbfa2efbbc3dd76457b088bc6106f7bd1ecafb049eb",
+      "size": 2105,
+      "normalized_sha256": "8bff58ee1745ee5789e3efbfa2efbbc3dd76457b088bc6106f7bd1ecafb049eb"
+    },
+    "verification/android-callbacks/permission-main.kt": {
+      "role": "index",
+      "sha256": "7cda86105268884ad2d9fe056eb9d15cd8d65c6ad870ac42ee8eb180a16ea2d3",
+      "size": 7168,
+      "normalized_sha256": "7cda86105268884ad2d9fe056eb9d15cd8d65c6ad870ac42ee8eb180a16ea2d3"
+    },
+    "verification/android-callbacks/test-cache-path.py": {
+      "role": "index",
+      "sha256": "0b2b59603c75cbcad153b04781808bc2c3e109718133e917cbe9b3b0c25417c8",
+      "size": 4293,
+      "normalized_sha256": "0b2b59603c75cbcad153b04781808bc2c3e109718133e917cbe9b3b0c25417c8"
+    },
+    "verification/android-callbacks/verify-permissions.py": {
+      "role": "index",
+      "sha256": "43d4dc471574675ceb9eef3f934d23e756fb0a23d40200d6ef892bdd04355a69",
+      "size": 7111,
+      "normalized_sha256": "43d4dc471574675ceb9eef3f934d23e756fb0a23d40200d6ef892bdd04355a69"
+    },
+    "verification/android-callbacks/verify.sh": {
+      "role": "index",
+      "sha256": "f04f00c373bb886a5d972853005385e482b52d5a544e7a85e01b2e5caaed8694",
+      "size": 1771,
+      "normalized_sha256": "f04f00c373bb886a5d972853005385e482b52d5a544e7a85e01b2e5caaed8694"
+    },
+    "verification/ci/test_cache_contract.py": {
+      "role": "index",
+      "sha256": "0a2240e39d87b52386a47fe69ceaea0a61d13a45b52ed8fd067679c05b585f3a",
+      "size": 678,
+      "normalized_sha256": "0a2240e39d87b52386a47fe69ceaea0a61d13a45b52ed8fd067679c05b585f3a"
+    },
+    "verification/ci/test_ios_wire_policy.py": {
+      "role": "index",
+      "sha256": "7098eed45174af3097042747521e99d8fee7499b9f8fd3553464404cc1493d7a",
+      "size": 6020,
+      "normalized_sha256": "7098eed45174af3097042747521e99d8fee7499b9f8fd3553464404cc1493d7a"
+    },
+    "verification/ci/test_page_channel_server.py": {
+      "role": "index",
+      "sha256": "940b842d2dde1ed57149e7e7fedd5a4065b6a5cf86a70e34806b61900f6c4978",
+      "size": 4113,
+      "normalized_sha256": "940b842d2dde1ed57149e7e7fedd5a4065b6a5cf86a70e34806b61900f6c4978"
+    },
+    "verification/early-scripts/android-bridge.test.cjs": {
+      "role": "index",
+      "sha256": "89a897af867564bbe647247d6df00c4f880bd96b79890778812c035a2e8104e1",
+      "size": 3104,
+      "normalized_sha256": "89a897af867564bbe647247d6df00c4f880bd96b79890778812c035a2e8104e1"
+    },
+    "verification/early-scripts/native-geolocation.test.cjs": {
+      "role": "index",
+      "sha256": "75048e5024574dcfdd01c67298de1744e3df29a88138fcfe3b9b62a129d6ca42",
+      "size": 6553,
+      "normalized_sha256": "75048e5024574dcfdd01c67298de1744e3df29a88138fcfe3b9b62a129d6ca42"
+    },
+    "verification/early-scripts/page-messages.cjs": {
+      "role": "index",
+      "sha256": "b675847a05cc019dbc5464e82f574f610fbd1084544f1d5514f161c03d2c0015",
+      "size": 3328,
+      "normalized_sha256": "b675847a05cc019dbc5464e82f574f610fbd1084544f1d5514f161c03d2c0015"
+    },
+    "verification/early-scripts/verify.cjs": {
+      "role": "index",
+      "sha256": "5bcbb70b6b03579ac3653fe7588a4a04616193fd5eed9ac894f029eae3409929",
+      "size": 1864,
+      "normalized_sha256": "5bcbb70b6b03579ac3653fe7588a4a04616193fd5eed9ac894f029eae3409929"
+    },
+    "verification/early-scripts/verify.sh": {
+      "role": "index",
+      "sha256": "4b2be5a17f071daf56a4be8e6828a441d1ac3bd90fd118ba155b74774a0a4c6a",
+      "size": 777,
+      "normalized_sha256": "4b2be5a17f071daf56a4be8e6828a441d1ac3bd90fd118ba155b74774a0a4c6a"
+    },
+    "verification/kuikly-lifecycle/verify.py": {
+      "role": "index",
+      "sha256": "25a568fbf78773d2e9dde01969333d534ac39fdb6e7da86048619c5e00c7a3a4",
+      "size": 9546,
+      "normalized_sha256": "25a568fbf78773d2e9dde01969333d534ac39fdb6e7da86048619c5e00c7a3a4"
+    },
+    "verification/native-ios/CreateMovie.swift": {
+      "role": "index",
+      "sha256": "6bf753f31e7ad97966e10534a076c7b213dd3d2c6bea76e1980ba5111a24632d",
+      "size": 1280,
+      "normalized_sha256": "6bf753f31e7ad97966e10534a076c7b213dd3d2c6bea76e1980ba5111a24632d"
+    },
+    "verification/native-ios/file-input-script.test.cjs": {
+      "role": "index",
+      "sha256": "8da57fbc069ed2404eb71b20ac6bce852a51567fd6e900c95b2f93b8400eef29",
+      "size": 4417,
+      "normalized_sha256": "8da57fbc069ed2404eb71b20ac6bce852a51567fd6e900c95b2f93b8400eef29"
+    },
+    "verification/native-ios/fullscreen-script.test.cjs": {
+      "role": "index",
+      "sha256": "7276742b04efe04af4bbb86e229334dcbb2398d16d705ad6415be848610ca98f",
+      "size": 2648,
+      "normalized_sha256": "7276742b04efe04af4bbb86e229334dcbb2398d16d705ad6415be848610ca98f"
+    },
+    "verification/native-ios/picture-in-picture-script.test.cjs": {
+      "role": "index",
+      "sha256": "10b670edc2503c3d8e0122cfb00cd1a06480d3cf616dd36ec9056b0ba2fbc5a1",
+      "size": 2608,
+      "normalized_sha256": "10b670edc2503c3d8e0122cfb00cd1a06480d3cf616dd36ec9056b0ba2fbc5a1"
+    },
+    "verification/publication/test_jitpack_install.py": {
+      "role": "index",
+      "sha256": "c0eb58e5bec12743dcc1789ab304dbedbe1d0de664280a6ed76775b883526e9b",
+      "size": 4722,
+      "normalized_sha256": "c0eb58e5bec12743dcc1789ab304dbedbe1d0de664280a6ed76775b883526e9b"
+    },
+    "verification/publication/test_maven_check.py": {
+      "role": "index",
+      "sha256": "27b08fc2a9031cbed5497fdf37872e47275346c3199a93022f27f1f9c3d4c354",
+      "size": 3922,
+      "normalized_sha256": "27b08fc2a9031cbed5497fdf37872e47275346c3199a93022f27f1f9c3d4c354"
+    },
+    "verification/publication/test_metadata.py": {
+      "role": "index",
+      "sha256": "d7f20706f63b0c7c393341024b80e660355f0162096998db5ed90921b84c0852",
+      "size": 6253,
+      "normalized_sha256": "d7f20706f63b0c7c393341024b80e660355f0162096998db5ed90921b84c0852"
+    },
+    "verification/video-scripts.test.cjs": {
+      "role": "index",
+      "sha256": "69a8c68f3cf5f91b4d0a971fdcf70764ccfcd337142ecbed9becbbd80f28e6b2",
+      "size": 1658,
+      "normalized_sha256": "69a8c68f3cf5f91b4d0a971fdcf70764ccfcd337142ecbed9becbbd80f28e6b2"
+    },
+    "webview-core/build.gradle.kts": {
+      "role": "index",
+      "sha256": "43f87400e479186197da29cceb99f4c245667825420d27e6691de11423d4d475",
+      "size": 1749,
+      "normalized_sha256": "43f87400e479186197da29cceb99f4c245667825420d27e6691de11423d4d475"
+    },
+    "webview-core/src/androidMain/AndroidManifest.xml": {
+      "role": "index",
+      "sha256": "38561d98d2678ba94a4520f10b2c2f5e74dee3a5e258961ed6af66984725901f",
+      "size": 571,
+      "normalized_sha256": "38561d98d2678ba94a4520f10b2c2f5e74dee3a5e258961ed6af66984725901f"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidAppWebViewWarmup.kt": {
+      "role": "index",
+      "sha256": "977975baa7a66d5885aaf537827a4c83c53da0bd0492f9f36fee0c8ef6c1f8f6",
+      "size": 2905,
+      "normalized_sha256": "977975baa7a66d5885aaf537827a4c83c53da0bd0492f9f36fee0c8ef6c1f8f6"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidDefaultWebFullscreenControls.kt": {
+      "role": "index",
+      "sha256": "7d4583f880f573981c5cc055b0ccffe40ce0c7698d77dcdcb80c95c1754ed64b",
+      "size": 5295,
+      "normalized_sha256": "7d4583f880f573981c5cc055b0ccffe40ce0c7698d77dcdcb80c95c1754ed64b"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidDocumentStartScripts.kt": {
+      "role": "index",
+      "sha256": "65868c0419269f482dd2494583dbdc01f5dcd472e474019bd1fa08bb84febd11",
+      "size": 3049,
+      "normalized_sha256": "65868c0419269f482dd2494583dbdc01f5dcd472e474019bd1fa08bb84febd11"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidEarlyScriptInstaller.kt": {
+      "role": "index",
+      "sha256": "f80eabe32eed21f4a922ce031f3ca55450511131e6a81f6fa0468b30c7aab6f8",
+      "size": 5046,
+      "normalized_sha256": "f80eabe32eed21f4a922ce031f3ca55450511131e6a81f6fa0468b30c7aab6f8"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidPopupRouter.kt": {
+      "role": "index",
+      "sha256": "70b2784d5827625e0f66e39bfbf8b2dceb921219a8a0c4c2647b49eba8732f1b",
+      "size": 5788,
+      "normalized_sha256": "70b2784d5827625e0f66e39bfbf8b2dceb921219a8a0c4c2647b49eba8732f1b"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebCapabilities.kt": {
+      "role": "index",
+      "sha256": "b9247e645026119152c9ab5b13e3a4210103b8a5c959910694f1b385848fb273",
+      "size": 6674,
+      "normalized_sha256": "b9247e645026119152c9ab5b13e3a4210103b8a5c959910694f1b385848fb273"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebFileChooserController.kt": {
+      "role": "index",
+      "sha256": "7139886a316a8a7450f3a4b0ffb09804a020f7b3a7277a41465775f72aaf35bd",
+      "size": 11003,
+      "normalized_sha256": "7139886a316a8a7450f3a4b0ffb09804a020f7b3a7277a41465775f72aaf35bd"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebFilePicker.kt": {
+      "role": "index",
+      "sha256": "fbe9b20ae09675f4561584833fd52b207f4665b2e9677bccb638db86ece9c823",
+      "size": 1147,
+      "normalized_sha256": "fbe9b20ae09675f4561584833fd52b207f4665b2e9677bccb638db86ece9c823"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebFullscreenHost.kt": {
+      "role": "index",
+      "sha256": "ac8439f0cf6b871b64374a3305f6495d9d1182a5b81f9d43c54255113a421649",
+      "size": 9642,
+      "normalized_sha256": "ac8439f0cf6b871b64374a3305f6495d9d1182a5b81f9d43c54255113a421649"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebGeolocationController.kt": {
+      "role": "index",
+      "sha256": "8191a488f5c55dc6e9d8b81f471f038999b40ee1bda3373542813d2f1330193b",
+      "size": 2872,
+      "normalized_sha256": "8191a488f5c55dc6e9d8b81f471f038999b40ee1bda3373542813d2f1330193b"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebMediaPermissionController.kt": {
+      "role": "index",
+      "sha256": "8f6e35bdeb17aecae6f9c6220d3a10f5116a3a015537f0c3aeeb88aa7f3a6539",
+      "size": 3883,
+      "normalized_sha256": "8f6e35bdeb17aecae6f9c6220d3a10f5116a3a015537f0c3aeeb88aa7f3a6539"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebPermissionController.kt": {
+      "role": "index",
+      "sha256": "a0011542b09ace2173647e6da98e0e3b970e551e90f2c34dbd21ac67e059a22e",
+      "size": 12898,
+      "normalized_sha256": "a0011542b09ace2173647e6da98e0e3b970e551e90f2c34dbd21ac67e059a22e"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebRequestPolicy.kt": {
+      "role": "index",
+      "sha256": "22bbcad66acaaf0aa6ceb4e1db08c12953bd90ade335a649e1aadb08f4c2b0a5",
+      "size": 1820,
+      "normalized_sha256": "22bbcad66acaaf0aa6ceb4e1db08c12953bd90ade335a649e1aadb08f4c2b0a5"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebViewConfig.kt": {
+      "role": "index",
+      "sha256": "d163513bf17c152ed763f696a1e656d7a88a9069fc10325248ce95ff39c0fc16",
+      "size": 6004,
+      "normalized_sha256": "d163513bf17c152ed763f696a1e656d7a88a9069fc10325248ce95ff39c0fc16"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebViewDataCleaner.kt": {
+      "role": "index",
+      "sha256": "56cfd72b9206a3514148655174fe52f50b87b12f44bef0f809b7f1a579e8e1c9",
+      "size": 1502,
+      "normalized_sha256": "56cfd72b9206a3514148655174fe52f50b87b12f44bef0f809b7f1a579e8e1c9"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebBridge.kt": {
+      "role": "index",
+      "sha256": "4fbbfdf8e02f7677623c6df5abc003f35ad2ccea2e6421e0ed00e03789fda991",
+      "size": 11111,
+      "normalized_sha256": "4fbbfdf8e02f7677623c6df5abc003f35ad2ccea2e6421e0ed00e03789fda991"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebChromeClient.kt": {
+      "role": "index",
+      "sha256": "d44022998af9271372c9f5867c7235eb2e6d8e3b26d4a92a2080cd40e6781bdf",
+      "size": 1636,
+      "normalized_sha256": "d44022998af9271372c9f5867c7235eb2e6d8e3b26d4a92a2080cd40e6781bdf"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt": {
+      "role": "index",
+      "sha256": "57cd02448ca3a890d9673f01a9a899c830d0afeb07e29e5a24838cb8b7e06bca",
+      "size": 6665,
+      "normalized_sha256": "57cd02448ca3a890d9673f01a9a899c830d0afeb07e29e5a24838cb8b7e06bca"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/ComposeWebViewFileProvider.kt": {
+      "role": "index",
+      "sha256": "7d9997327c8d861cf476c1183f2cd55994201428ab656ce99809e54d64a6083f",
+      "size": 239,
+      "normalized_sha256": "7d9997327c8d861cf476c1183f2cd55994201428ab656ce99809e54d64a6083f"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewDiagnostics.kt": {
+      "role": "index",
+      "sha256": "f596b129c7c6db002afa699508b262cd617e1f114f7f6cfda3d01843cf2606b8",
+      "size": 5542,
+      "normalized_sha256": "f596b129c7c6db002afa699508b262cd617e1f114f7f6cfda3d01843cf2606b8"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewErrorHelper.kt": {
+      "role": "index",
+      "sha256": "5f1ddb698a72f532a3cc9300972666c8ef5c9e3e8d8e0f98b830acac9d48a424",
+      "size": 3104,
+      "normalized_sha256": "5f1ddb698a72f532a3cc9300972666c8ef5c9e3e8d8e0f98b830acac9d48a424"
+    },
+    "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewSettings.android.kt": {
+      "role": "index",
+      "sha256": "30f959b53c0e03132bc9547921a4dd821621954909095cbcb50b65547f0597e3",
+      "size": 1409,
+      "normalized_sha256": "30f959b53c0e03132bc9547921a4dd821621954909095cbcb50b65547f0597e3"
+    },
+    "webview-core/src/androidMain/res/values-en/strings.xml": {
+      "role": "index",
+      "sha256": "dd8df1552f9623f0f2652b7fdf85a9c7faf66f644a8825747008b2870ac32481",
+      "size": 2133,
+      "normalized_sha256": "dd8df1552f9623f0f2652b7fdf85a9c7faf66f644a8825747008b2870ac32481"
+    },
+    "webview-core/src/androidMain/res/values/strings.xml": {
+      "role": "index",
+      "sha256": "ac1a4428a4c4603ddf98e77b329ff7a02bee51f73e9f843d68c463c750eaeb3d",
+      "size": 2004,
+      "normalized_sha256": "ac1a4428a4c4603ddf98e77b329ff7a02bee51f73e9f843d68c463c750eaeb3d"
+    },
+    "webview-core/src/androidMain/res/xml/compose_webview_file_paths.xml": {
+      "role": "index",
+      "sha256": "272bb5432ecd9def63391554c3f37fdf52219bb84cb02587a85ec7a85ac57309",
+      "size": 256,
+      "normalized_sha256": "272bb5432ecd9def63391554c3f37fdf52219bb84cb02587a85ec7a85ac57309"
+    },
+    "webview-core/src/androidUnitTest/kotlin/android/webkit/TestWebResourceError.kt": {
+      "role": "index",
+      "sha256": "6374f0995f5a82cc729122b249e178c8c66af7959d2aa7637c6f99c690b557ce",
+      "size": 330,
+      "normalized_sha256": "6374f0995f5a82cc729122b249e178c8c66af7959d2aa7637c6f99c690b557ce"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidDocumentStartScriptsTest.kt": {
+      "role": "index",
+      "sha256": "80c19ad08dc3ee0f015fe2e00dec69df8c79b4ad0056ebc003b11fbc02d1d43a",
+      "size": 17767,
+      "normalized_sha256": "80c19ad08dc3ee0f015fe2e00dec69df8c79b4ad0056ebc003b11fbc02d1d43a"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidEarlyBridgeInstallerTest.kt": {
+      "role": "index",
+      "sha256": "36fbac4df9eaa12450a59e8b96df275d7d24db5b9c38af02f2731c8424b3cd23",
+      "size": 2779,
+      "normalized_sha256": "36fbac4df9eaa12450a59e8b96df275d7d24db5b9c38af02f2731c8424b3cd23"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidPageMessageChannelsTest.kt": {
+      "role": "index",
+      "sha256": "db0b0137654ad21cd6963974b926dc6276c91b04fa86153db67b0d4461e755db",
+      "size": 11382,
+      "normalized_sha256": "db0b0137654ad21cd6963974b926dc6276c91b04fa86153db67b0d4461e755db"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidWebCapabilitiesTest.kt": {
+      "role": "index",
+      "sha256": "877c12674734fd7847d06c6da793b7e34db47f11135355db7465fa535da02210",
+      "size": 3655,
+      "normalized_sha256": "877c12674734fd7847d06c6da793b7e34db47f11135355db7465fa535da02210"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidWebGeolocationControllerTest.kt": {
+      "role": "index",
+      "sha256": "532d2e0dbe6836e5f7a47beb19dfc59470669b49826f619566b9bff9b538b4bf",
+      "size": 3161,
+      "normalized_sha256": "532d2e0dbe6836e5f7a47beb19dfc59470669b49826f619566b9bff9b538b4bf"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidWebRequestPolicyTest.kt": {
+      "role": "index",
+      "sha256": "6b499af55faa3f4efff505969b9d9cf17bb7c4da6b290edd50f02ea9db194cb1",
+      "size": 4393,
+      "normalized_sha256": "6b499af55faa3f4efff505969b9d9cf17bb7c4da6b290edd50f02ea9db194cb1"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AppWebBridgeTest.kt": {
+      "role": "index",
+      "sha256": "465dd333fab844107464d133e18436c92094f1e45f99daad27d4c2306f838eb6",
+      "size": 1155,
+      "normalized_sha256": "465dd333fab844107464d133e18436c92094f1e45f99daad27d4c2306f838eb6"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AppWebViewConfigTest.kt": {
+      "role": "index",
+      "sha256": "d3ae9192a48f7f99d90196be2f21d77068632c984c072e9e5182a6fa850c9326",
+      "size": 2412,
+      "normalized_sha256": "d3ae9192a48f7f99d90196be2f21d77068632c984c072e9e5182a6fa850c9326"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/EarlyScriptsExportTest.kt": {
+      "role": "index",
+      "sha256": "f47ead43321fa4aa80b58477f5ab681fea21e868b178d5ab29b0c72f065ebab7",
+      "size": 2254,
+      "normalized_sha256": "f47ead43321fa4aa80b58477f5ab681fea21e868b178d5ab29b0c72f065ebab7"
+    },
+    "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/WebViewErrorHelperTest.kt": {
+      "role": "index",
+      "sha256": "5e8b51e1acbad9df5f73d3b7b9e962d5edba5ce36e493b67e17959fc70f4580d",
+      "size": 1710,
+      "normalized_sha256": "5e8b51e1acbad9df5f73d3b7b9e962d5edba5ce36e493b67e17959fc70f4580d"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewRuntime.kt": {
+      "role": "index",
+      "sha256": "6220b293dfc2bbcde2220b1184ac8ce9fb60a82c256aff8b121e613e4ab9e54d",
+      "size": 1472,
+      "normalized_sha256": "6220b293dfc2bbcde2220b1184ac8ce9fb60a82c256aff8b121e613e4ab9e54d"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewWarmup.kt": {
+      "role": "index",
+      "sha256": "29f887ea3f59bea540c34974c252f42a13ba5236b3d40510453848076a011f59",
+      "size": 486,
+      "normalized_sha256": "29f887ea3f59bea540c34974c252f42a13ba5236b3d40510453848076a011f59"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebVideoState.kt": {
+      "role": "index",
+      "sha256": "7c20c55f2886bce9fdb5617af9518c0bf9f7efd91cd70641a46e730be3281dd6",
+      "size": 3343,
+      "normalized_sha256": "7c20c55f2886bce9fdb5617af9518c0bf9f7efd91cd70641a46e730be3281dd6"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewContent.kt": {
+      "role": "index",
+      "sha256": "c232cbdd3619efecac764885fe3dfaefd11c2db0141ff573ac2e0f1e0762dfe3",
+      "size": 1756,
+      "normalized_sha256": "c232cbdd3619efecac764885fe3dfaefd11c2db0141ff573ac2e0f1e0762dfe3"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewEarlyScripts.kt": {
+      "role": "index",
+      "sha256": "4655a78730551255d22cac7588669b076be1c0574815bf5429a6c2a29e265caf",
+      "size": 8420,
+      "normalized_sha256": "4655a78730551255d22cac7588669b076be1c0574815bf5429a6c2a29e265caf"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewError.kt": {
+      "role": "index",
+      "sha256": "1621241a8417dffbecde905b0f9ccaba379d5b9bb74e71115064a573976ce742",
+      "size": 967,
+      "normalized_sha256": "1621241a8417dffbecde905b0f9ccaba379d5b9bb74e71115064a573976ce742"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewEvent.kt": {
+      "role": "index",
+      "sha256": "1229415a0b0b9f5ab329a8ee297c4dab0a4d685e0eff4678a96c96f4805b6492",
+      "size": 6744,
+      "normalized_sha256": "1229415a0b0b9f5ab329a8ee297c4dab0a4d685e0eff4678a96c96f4805b6492"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNativeGeolocation.kt": {
+      "role": "index",
+      "sha256": "9e371f9e882edac0e7aa0f4a18bf9fcf2a070b9af10b358c0220e08cf60301f2",
+      "size": 11741,
+      "normalized_sha256": "9e371f9e882edac0e7aa0f4a18bf9fcf2a070b9af10b358c0220e08cf60301f2"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigation.kt": {
+      "role": "index",
+      "sha256": "c5a15fdb6bff4f8be722f842a06b9ec98d4d3f56b9aa014619648969631ea449",
+      "size": 864,
+      "normalized_sha256": "c5a15fdb6bff4f8be722f842a06b9ec98d4d3f56b9aa014619648969631ea449"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt": {
+      "role": "index",
+      "sha256": "a9cc3bf9024d1d0159c4491e7463e9c70ee69a8b760fec0613cce1b6495e87c7",
+      "size": 6472,
+      "normalized_sha256": "a9cc3bf9024d1d0159c4491e7463e9c70ee69a8b760fec0613cce1b6495e87c7"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPageMessages.kt": {
+      "role": "index",
+      "sha256": "0f1fc1043de97870f6eaba37a6d6197c01ff0cde88a4fba8354e25e86b709e29",
+      "size": 4802,
+      "normalized_sha256": "0f1fc1043de97870f6eaba37a6d6197c01ff0cde88a4fba8354e25e86b709e29"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPerformanceTrace.kt": {
+      "role": "index",
+      "sha256": "0b137f6b9555a05b9ad4778ef13419a7808ba51ddb1df3c72a28b28502f6c5b3",
+      "size": 6628,
+      "normalized_sha256": "0b137f6b9555a05b9ad4778ef13419a7808ba51ddb1df3c72a28b28502f6c5b3"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPolicy.kt": {
+      "role": "index",
+      "sha256": "3053f75cc041f4f5836e3adc1fc8ad6d5f6b8a1f2669af571a1afdba99645b32",
+      "size": 5722,
+      "normalized_sha256": "3053f75cc041f4f5836e3adc1fc8ad6d5f6b8a1f2669af571a1afdba99645b32"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt": {
+      "role": "index",
+      "sha256": "d8b6c1bdfb85af5bb34229d6e93c78e896a3bfb44fdad92671678dbb7cd086ca",
+      "size": 2784,
+      "normalized_sha256": "d8b6c1bdfb85af5bb34229d6e93c78e896a3bfb44fdad92671678dbb7cd086ca"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewScript.kt": {
+      "role": "index",
+      "sha256": "2ade447e806f866e41613726daccc7bd699b7db3c6bb1f5855064a0446a8dc7d",
+      "size": 1495,
+      "normalized_sha256": "2ade447e806f866e41613726daccc7bd699b7db3c6bb1f5855064a0446a8dc7d"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewSecurity.kt": {
+      "role": "index",
+      "sha256": "26ea1b0be22111d45b8f25651b7bc44c45c2a6367de6567e6fea1add82b69cb3",
+      "size": 1661,
+      "normalized_sha256": "26ea1b0be22111d45b8f25651b7bc44c45c2a6367de6567e6fea1add82b69cb3"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewSettings.kt": {
+      "role": "index",
+      "sha256": "4a046ecba31617eedfb60db562193c32e3cc3a49f9bf6ee69fa0de10fa67f01c",
+      "size": 4791,
+      "normalized_sha256": "4a046ecba31617eedfb60db562193c32e3cc3a49f9bf6ee69fa0de10fa67f01c"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewSnapshot.kt": {
+      "role": "index",
+      "sha256": "7782b6a23776e7442bfa958af1c1c377ff3940ff2c47240602392d0529b1b850",
+      "size": 1056,
+      "normalized_sha256": "7782b6a23776e7442bfa958af1c1c377ff3940ff2c47240602392d0529b1b850"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewTitle.kt": {
+      "role": "index",
+      "sha256": "e278f3ef63a9cac84cd603fbffa69cf6bac7f22809e20e2f37981cc851365382",
+      "size": 1670,
+      "normalized_sha256": "e278f3ef63a9cac84cd603fbffa69cf6bac7f22809e20e2f37981cc851365382"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewTrustPolicy.kt": {
+      "role": "index",
+      "sha256": "ed675ee1e8bed45f47faa52a0ca38e5163b7f12bd79518c2484b9566739d5f0e",
+      "size": 5427,
+      "normalized_sha256": "ed675ee1e8bed45f47faa52a0ca38e5163b7f12bd79518c2484b9566739d5f0e"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewUrlRule.kt": {
+      "role": "index",
+      "sha256": "0e1c9c9e8b6ca099b273d2b83dac31fd71dd8c75211aceef1df59589c2606b51",
+      "size": 3414,
+      "normalized_sha256": "0e1c9c9e8b6ca099b273d2b83dac31fd71dd8c75211aceef1df59589c2606b51"
+    },
+    "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewWire.kt": {
+      "role": "index",
+      "sha256": "95cdce88b2f6457e8e620d4403689794118ed7408cf2b239d39ef19aa74395fd",
+      "size": 19308,
+      "normalized_sha256": "95cdce88b2f6457e8e620d4403689794118ed7408cf2b239d39ef19aa74395fd"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/NativeGeolocationTest.kt": {
+      "role": "index",
+      "sha256": "7bdb1cb37beeff0589b88cea364fa6aad3e26e716149369ec32deaa0e7cec9b8",
+      "size": 3606,
+      "normalized_sha256": "7bdb1cb37beeff0589b88cea364fa6aad3e26e716149369ec32deaa0e7cec9b8"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/WebVideoStateTest.kt": {
+      "role": "index",
+      "sha256": "0a80741a760241a9b2cf7c1c4803d534a3428078578ff878c3e62693d249e6e1",
+      "size": 1041,
+      "normalized_sha256": "0a80741a760241a9b2cf7c1c4803d534a3428078578ff878c3e62693d249e6e1"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/WebViewContractsTest.kt": {
+      "role": "index",
+      "sha256": "2a08097f1ad351c007eb0706db074baa2a9609ff78a4e280247ba652bb92dfda",
+      "size": 9461,
+      "normalized_sha256": "2a08097f1ad351c007eb0706db074baa2a9609ff78a4e280247ba652bb92dfda"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/WebViewDiagnosticsTest.kt": {
+      "role": "index",
+      "sha256": "1496d0160764a425134180854a3a40acd7f91f3094b2ca53e3a2322d455e35c6",
+      "size": 5208,
+      "normalized_sha256": "1496d0160764a425134180854a3a40acd7f91f3094b2ca53e3a2322d455e35c6"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/WebViewHttpOriginsTest.kt": {
+      "role": "index",
+      "sha256": "ad849c4648e3969bd7751e22b586bfdf43054dac4d1f5a2f5281187c33c6aef0",
+      "size": 1403,
+      "normalized_sha256": "ad849c4648e3969bd7751e22b586bfdf43054dac4d1f5a2f5281187c33c6aef0"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicyTest.kt": {
+      "role": "index",
+      "sha256": "4079864a771f0d765b3e24f6c54514b154fd788ffc3c7691c634441a6ab54b37",
+      "size": 13473,
+      "normalized_sha256": "4079864a771f0d765b3e24f6c54514b154fd788ffc3c7691c634441a6ab54b37"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/WebViewPageMessagesTest.kt": {
+      "role": "index",
+      "sha256": "4af89636927242d09e064f7b0709f0f6865dbb617cbc54329b3cb57767be7880",
+      "size": 4875,
+      "normalized_sha256": "4af89636927242d09e064f7b0709f0f6865dbb617cbc54329b3cb57767be7880"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/WebViewPolicyTest.kt": {
+      "role": "index",
+      "sha256": "1e6b7b485504c201198471b0061a1de45cf828053d857d89e4c4ab300385609d",
+      "size": 8718,
+      "normalized_sha256": "1e6b7b485504c201198471b0061a1de45cf828053d857d89e4c4ab300385609d"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/WebViewTrustPolicyTest.kt": {
+      "role": "index",
+      "sha256": "378e5810fe72e2f3682be1d640c1f50eb89f4617d2c38804b6c433881f067865",
+      "size": 4961,
+      "normalized_sha256": "378e5810fe72e2f3682be1d640c1f50eb89f4617d2c38804b6c433881f067865"
+    },
+    "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/WebViewWireTest.kt": {
+      "role": "index",
+      "sha256": "c447df64fbfd90517f61e3f54bd8211dd56c99e75597396c4d4b477c4101cd3e",
+      "size": 8590,
+      "normalized_sha256": "c447df64fbfd90517f61e3f54bd8211dd56c99e75597396c4d4b477c4101cd3e"
+    },
+    "webview-core/src/iosMain/kotlin/io/github/gycrosskit/composewebview/IosWebViewDataCleaner.kt": {
+      "role": "index",
+      "sha256": "2449adfb3adc7e6ba4e64694be02a07b78997d1c63a0c69938e5f54d3109aeaa",
+      "size": 1539,
+      "normalized_sha256": "2449adfb3adc7e6ba4e64694be02a07b78997d1c63a0c69938e5f54d3109aeaa"
+    },
+    "webview-core/src/iosMain/kotlin/io/github/gycrosskit/composewebview/IosWebViewScripts.kt": {
+      "role": "index",
+      "sha256": "ad7757c845dd4fc141ebd6b8b2dcd3ee1cff991fe02c96ebb367a212d2d58a63",
+      "size": 9268,
+      "normalized_sha256": "ad7757c845dd4fc141ebd6b8b2dcd3ee1cff991fe02c96ebb367a212d2d58a63"
+    },
+    "webview-kuikly/build.gradle.kts": {
+      "role": "index",
+      "sha256": "1cafdaaf4c34dad7d76e00e1dbbf230b3a504455e647dec2bc143a4527ec0db6",
+      "size": 1349,
+      "normalized_sha256": "1cafdaaf4c34dad7d76e00e1dbbf230b3a504455e647dec2bc143a4527ec0db6"
+    },
+    "webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt": {
+      "role": "index",
+      "sha256": "0e70be9947ffde1d0f7ba83fa457534471542cc78085f69d5f82e07f613e3a74",
+      "size": 26266,
+      "normalized_sha256": "0e70be9947ffde1d0f7ba83fa457534471542cc78085f69d5f82e07f613e3a74"
+    },
+    "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/AndroidFullscreenHostTest.kt": {
+      "role": "index",
+      "sha256": "a2db14a87bb3bc4738b66c9c93820c29c0ed4948bba8993a724436671bba49bd",
+      "size": 12853,
+      "normalized_sha256": "a2db14a87bb3bc4738b66c9c93820c29c0ed4948bba8993a724436671bba49bd"
+    },
+    "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/AndroidNativeLifecycleTest.kt": {
+      "role": "index",
+      "sha256": "b79cd3d536ae6f66ce4a057d87b23569ace1f979c354ad4b40a0908de380324e",
+      "size": 3233,
+      "normalized_sha256": "b79cd3d536ae6f66ce4a057d87b23569ace1f979c354ad4b40a0908de380324e"
+    },
+    "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/AndroidPageChannelsNativeTest.kt": {
+      "role": "index",
+      "sha256": "4235917d62f2f17ef122b3b7f9db65f79c9fa914f32b36d3ff66c7a39d4b9459",
+      "size": 13591,
+      "normalized_sha256": "4235917d62f2f17ef122b3b7f9db65f79c9fa914f32b36d3ff66c7a39d4b9459"
+    },
+    "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/AndroidPostNavigationNativeTest.kt": {
+      "role": "index",
+      "sha256": "001fd253795e1d6ed6a9323131968ba5d585fce903d99639b9effbfba70e4197",
+      "size": 10927,
+      "normalized_sha256": "001fd253795e1d6ed6a9323131968ba5d585fce903d99639b9effbfba70e4197"
+    },
+    "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNativeTest.kt": {
+      "role": "index",
+      "sha256": "db2ddda2a4a1a7bece947a1b82d3272a7a6bc7eee9d2b3013e3e131c57988595",
+      "size": 25263,
+      "normalized_sha256": "db2ddda2a4a1a7bece947a1b82d3272a7a6bc7eee9d2b3013e3e131c57988595"
+    },
+    "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewStopTest.kt": {
+      "role": "index",
+      "sha256": "cba7017c9c9a48149b22f45bbdd81b7255ffb308496635c18b032c57836c1e40",
+      "size": 17094,
+      "normalized_sha256": "cba7017c9c9a48149b22f45bbdd81b7255ffb308496635c18b032c57836c1e40"
+    },
+    "webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/AppWebView.kt": {
+      "role": "index",
+      "sha256": "5b9a90e375c273116af0759c8e2428d258e79c44a727d7702fb3f4fb81114f00",
+      "size": 4004,
+      "normalized_sha256": "5b9a90e375c273116af0759c8e2428d258e79c44a727d7702fb3f4fb81114f00"
+    },
+    "webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/FullscreenVideoControls.kt": {
+      "role": "index",
+      "sha256": "29572c03e3e9ee09611efbc2181b077966233a6f07e11db80ff7f93e9a299d8d",
+      "size": 8065,
+      "normalized_sha256": "29572c03e3e9ee09611efbc2181b077966233a6f07e11db80ff7f93e9a299d8d"
+    },
+    "webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt": {
+      "role": "index",
+      "sha256": "a51048ed70579230af59922b1467cd1de35604095f9abf967164848a6d20004c",
+      "size": 5249,
+      "normalized_sha256": "a51048ed70579230af59922b1467cd1de35604095f9abf967164848a6d20004c"
+    }
+  },
+  "managed_scope": {
+    "version": "managed-scope-baseline/v1",
+    "policy_identity": "8d28b84e19128a94f32639591473fb957e1442a990d09030895878dc6bab66ca",
+    "observe_change_policy": "review_required",
+    "budget_policy_identity": "15e9b37a6c57e9bf03c9df3d0d049eb5b9a7f5540f9d34960408114e2538a32d",
+    "budget_policy": {
+      "version": "cognition-budget-policy/v1",
+      "mode": "enforce",
+      "whole_index": {
+        "target_tokens": 200000,
+        "warning_tokens": 300000,
+        "max_tokens": 400000
+      },
+      "r": [
+        {
+          "min_c": 1,
+          "max_c": 4,
+          "target_tokens": 25,
+          "max_tokens": 50
+        },
+        {
+          "min_c": 5,
+          "max_c": 7,
+          "target_tokens": 45,
+          "max_tokens": 90
+        },
+        {
+          "min_c": 8,
+          "max_c": 8,
+          "target_tokens": 70,
+          "max_tokens": 140
+        },
+        {
+          "min_c": 9,
+          "max_c": 9,
+          "target_tokens": 90,
+          "max_tokens": 180
+        }
+      ],
+      "s": [
+        {
+          "min_c": 1,
+          "max_c": 4,
+          "target_tokens": 20,
+          "max_tokens": 40
+        },
+        {
+          "min_c": 5,
+          "max_c": 7,
+          "target_tokens": 40,
+          "max_tokens": 80
+        },
+        {
+          "min_c": 8,
+          "max_c": 8,
+          "target_tokens": 70,
+          "max_tokens": 140
+        },
+        {
+          "min_c": 9,
+          "max_c": 9,
+          "target_tokens": 100,
+          "max_tokens": 200
+        }
+      ]
+    },
+    "apply_authorization_mode": "auto"
+  }
+}
