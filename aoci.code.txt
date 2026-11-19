@@ -1,0 +1,324 @@
+#AOCI-CODE-VOLUME: 1
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/===
+.gitattributes[FC3T]: F:固定文本检出的 LF 行尾以保持 AOCI 字节基线跨平台一致 | R:- | A:- | S:-
+.gitignore[FC3T]: F:忽略本地构建、OHOS 工具生成文件、Python cache 与机器 MCP 配置 | R:- | A:- | S:-
+AGENTS.md[SG6S]: F:定义组件评审和 AOCI 会话与维护合同 | R:code:README.md | A:aoci_rules,aoci_overview,aoci_maintain | S:WebView 生命周期检查须区分旧/新 owner 与平台差异
+CHANGELOG.md[SV5S]: F:集中记录 WebView 各版能力、原生配对与发布证据 | R:code:README.md,code:docs/功能与平台差异.md | A:- | S:-
+GYWebView.podspec[FV7T]: F:从 native Git Tag 分发 iOS Objective-C WKWebView 模块并声明依赖 | R:code:ios/Sources/GYWebView.h,code:ios/Sources/GYWebView.m | A:GYWebView | S:iOS15起步、匹配 Renderer 许可范围，-ObjC 保留注册类
+LICENSE[SS2M]: F:保留自有 WebView 源码的 Apache 2.0 许可 | R:- | A:- | S:-
+README.md[SG6S]: F:提供 Android、iOS 和 HarmonyOS WebView 安装、模块职责与最小接线 | R:code:docs/功能与平台差异.md,code:docs/接入指南.md | A:AppWebView,GYWebView | S:iOS 通用最低15；原生文件选择需要18.4及以上
+VALIDATION.md[SV4T]: F:保存旧 Kotlin/Native、CMP 与多渠道打包验收记录 | R:code:docs/远程闭合验收.md,code:docs/开发与验证.md | A:- | S:-
+build.gradle.kts[FV6T]: F:统一三端 Gradle 插件和 Maven 许可、默认版本及 staging | R:code:webview-core/build.gradle.kts,code:webview-kuikly/build.gradle.kts | A:GROUP,VERSION | S:-
+gradle.properties[FV3T]: F:配置 Gradle JVM、AndroidX 及非传递 R | R:- | A:- | S:-
+gradlew[XV3S]: F:在 POSIX 环境配置 Java 并启动 Gradle Wrapper | R:code:gradle/wrapper/gradle-wrapper.properties | A:- | S:-
+gradlew.bat[XV3T]: F:在 Windows 上配置 Java 并启动 Gradle Wrapper | R:code:gradle/wrapper/gradle-wrapper.properties | A:- | S:-
+jitpack-install.sh[OV8T]: F:按 Tag 源树、构建来源和归档摘要核对并安装冻结 Maven 产物 | R:code:jitpack.yml | A:source-receipt.json,SHA256SUMS | S:归档必须通过成员和目的路径检查，不重编
+jitpack-metadata.py[XV6T]: F:移除 JitPack 分类冲突的源、空资源和转发 metadata，并更新摘要 | R:code:scripts/package-maven.sh | A:normalize | S:非空资源必须独立发布，检查失败前不部分改写
+jitpack.yml[FV4T]: F:指定 JDK 与 compose-webview Release 归档安装入口 | R:code:jitpack-install.sh | A:- | S:-
+settings.gradle.kts[FV5T]: F:配置 KMP 插件和 Maven 源，加载 WebView core 及 Kuikly 生产模块 | R:code:webview-core/build.gradle.kts,code:webview-kuikly/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/docs/===
+0.2.0-rc.11发布验收.md[SV4T]: F:记录 rc.11 组件边界、发布配对及原生消费验收 | R:code:docs/开发与验证.md | A:- | S:-
+0.2.0-rc.12候选验收.md[SV4T]: F:保存 rc.12 的历史导航、全屏脚本、重入及真实 WKWebView 验收 | R:code:docs/开发与验证.md | A:- | S:-
+0.2.0-rc.16发布验收.md[SV4T]: F:记录 rc.16 版本修复及精确发布回验 | R:code:CHANGELOG.md | A:- | S:-
+0.2.0-rc.17发布验收.md[SV4T]: F:记录 rc.17 修复、远程门禁和宿主验收证据 | R:code:CHANGELOG.md | A:- | S:-
+0.2.0-rc.18发布验收.md[SV4T]: F:记录 rc.18 功能、冻结归档、远程消费和未覆盖范围 | R:code:CHANGELOG.md | A:- | S:-
+0.2.0-rc.8远程发布验收.md[SV4T]: F:保存 rc.8 的 Maven/HAR 摘要、原生配套与远程独立消费证据 | R:code:docs/远程闭合验收.md | A:- | S:-
+0.2.0-rc.9候选验收.md[SV4T]: F:保存 rc.9 的三端源码与测试、真 WKWebView 和原生回执候选证据 | R:code:docs/0.2.0-rc.9远程发布验收.md | A:- | S:-
+0.2.0-rc.9远程发布验收.md[SV4T]: F:记录 rc.9 的发布端归档与精确渠道回验结果 | R:code:docs/0.2.0-rc.9候选验收.md | A:- | S:-
+RC迁移说明.md[SV4T]: F:说明已移除 CMP 的历史消费者迁移、冻结候选和渠道边界 | R:code:docs/接入指南.md | A:- | S:-
+功能与平台差异.md[SU8M]: F:列出 WebView 安全、原生导航、会话、bridge 和能力的三端合同 | R:code:docs/接入指南.md,code:docs/开发与验证.md | A:- | S:platform 支持范围按源码、SDK/设备和远程消费分别判定
+完整源码审查.md[SQ5S]: F:保存共享请求、平台 WebView 与 Kuikly 接线的历史逐文件审查和验证限制 | R:code:docs/功能与平台差异.md | A:- | S:-
+开发与验证.md[SV6M]: F:提供平台编译、相机权限和生命周期回归，以及各发布渠道证据 | R:code:docs/功能与平台差异.md,code:scripts/build.sh | A:- | S:-
+接入指南.md[SU8M]: F:指导公共 WebView 配置、原生注册、文件选择与定位接线以及具名早期通道 | R:code:docs/功能与平台差异.md,code:ios/Sources/GYWebView.h | A:AppWebView,GYWebView | S:宿主持有上传、媒体权限与业务消息协议；早期通道回执只是原生受理
+早期页面通道候选验收.md[SU6T]: F:记录低权限 string bridge 及回复、会话 owner、导航代次和旧版本验收 | R:code:docs/接入指南.md | A:- | S:Boolean 回复不证明 H5 业务成功；宿主设握手超时
+远程闭合验收.md[SV5T]: F:保留旧版多渠道归档和消费者编译、链接验收证据 | R:code:docs/开发与验证.md | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/gradle/===
+libs.versions.toml[FV5T]: F:固定 Kotlin、AGP、Kuikly、AndroidX WebKit 与协议依赖编译版本 | R:code:build.gradle.kts,code:webview-core/build.gradle.kts,code:webview-kuikly/build.gradle.kts | A:- | S:-
+native-toolchain.properties[FV4T]: F:登记 Kotlin Native 工具链、四个目标和缓存修订 | R:- | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/gradle/wrapper/===
+gradle-wrapper.properties[FV3T]: F:固定 Gradle 发行版及 Wrapper 存储路径 | R:code:gradlew,code:gradlew.bat | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ios/Sources/===
+GYWebView.h[LU8T]: F:声明 Kuikly WKWebView 原生入口和宿主文件选择 provider 合同 | R:code:ios/Sources/GYWebView.m | A:GYWebView,GYWebFileSelectionProvider | S:工厂不得捕获页面 owner；provider Main 单次回调，退回或文档撤销时归 owner 释放
+GYWebView.m[IU9L]: F:管理系统 WKWebView 的加载、脚本、主框架桥、媒体与文件能力以及释放 | R:code:ios/Sources/GYWebView.h,code:ios/Sources/GYWebViewScripts.inc,code:ios/Tests/BooleanWireCheck.m | A:GYWebView,hrv_callWithMethod,hrv_removeFromSuperview | S:request/文档代次和可见性撤销旧操作；文件选择18.4起，权限告知与真正授权分别处理
+GYWebViewScripts.inc[IU6T]: F:提供由 Kotlin 生成的 WKWebView 注入脚本常量 | R:code:ios/generate-scripts.py,code:ios/Sources/GYWebView.m | A:- | S:以 Kotlin 源为准，生成物禁止手工维护
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ios/Tests/===
+BooleanWireCheck.m[TU6L]: F:运行 WKWebView 原生回归，覆盖 Boolean wire、文档 owner、导航、权限与真实 UIKit 回执 | R:code:ios/Sources/GYWebView.m,code:ios/Tests/page-channel-server.py | A:- | S:-
+page-channel-server.py[TQ4T]: F:为真实 WKWebView 测试提供 loopback 页面与 iframe 等导航 fixture | R:code:ios/Tests/BooleanWireCheck.m | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ios/===
+generate-scripts.py[XV6T]: F:从 Kotlin 的 iOS/早期页面脚本生成 Objective-C include，可核对逐字一致 | R:code:ios/Sources/GYWebViewScripts.inc | A:--check | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/===
+.gitignore[FC3T]: F:忽略鸿蒙 IDE、构建和 OHPM 产生的本地运行文件 | R:- | A:- | S:-
+README.md[SV5T]: F:说明 WebViewNative HAR 的鸿蒙构建与验收入口 | R:code:ohos/scripts/verify-har.sh,code:ohos/VERIFICATION.md | A:- | S:-
+VERIFICATION.md[SV5T]: F:记录 ArkWeb 原生、源码与 HAR 消费验证的边界 | R:code:ohos/scripts/verify-har.sh,code:ohos/tests/contract.test.cjs | A:- | S:-
+build-profile.json5[FV6T]: F:登记默认 HarmonyOS API22 产品和 WebViewNative HAR 模块 | R:code:ohos/hvigorfile.ts | A:- | S:-
+hvigorfile.ts[FV3T]: F:为鸿蒙根工程注册 Hvigor appTasks | R:code:ohos/build-profile.json5 | A:- | S:-
+oh-package.json5[FV4T]: F:声明鸿蒙 WebView HAR 工程的 OHPM 模型与依赖根 | R:code:ohos/scripts/verify-har.sh | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/AppScope/===
+app.json5[FV3T]: F:声明鸿蒙 WebView 工程应用标识及版本资源 | R:code:ohos/build-profile.json5 | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/hvigor/===
+hvigor-config.json5[FV3T]: F:配置鸿蒙工程 Hvigor 模型与默认工具参数 | R:code:ohos/hvigorfile.ts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/scripts/===
+verify-har.sh[TV7T]: F:构建 API22 WebView HAR，执行源码与实际 HAR 合同并编译隔离消费者 | R:code:ohos/tests/contract.test.cjs,code:ohos/verification-consumer/build-profile.json5 | A:WEBVIEW_SYSTEM_ACTIONS_HAR | S:显式本地候选覆盖只用于本次验证，退出时恢复精确 Registry 配置
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/tests/===
+contract.test.cjs[TU6L]: F:执行真实 ArkTS 源/归档合同并模拟 bridge、媒体、存储、Origin 与全屏窗口 | R:code:ohos/scripts/verify-har.sh | A:- | S:替身验证不等于设备全屏或 SDK UI 行为
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/verification-consumer/AppScope/===
+app.json5[FV3T]: F:为独立 HAR consumer 声明单独应用标识与版本 | R:code:ohos/verification-consumer/build-profile.json5 | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/verification-consumer/===
+build-profile.json5[FV5T]: F:用独立 API22 默认产品装配 WebViewConsumer 验证模块 | R:code:ohos/scripts/verify-har.sh | A:- | S:-
+hvigorfile.ts[FV3T]: F:注册独立 HAR 消费根工程 Hvigor appTasks | R:code:ohos/verification-consumer/consumer/hvigorfile.ts | A:- | S:-
+oh-package.json5[FV3T]: F:声明独立消费者安装工程的 OHPM 模型 | R:code:ohos/verification-consumer/consumer/oh-package.json5 | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/verification-consumer/consumer/===
+Index.ets[EU4T]: F:导出独立 ArkWeb consumer 的创建设备视图和请求探针 | R:code:ohos/verification-consumer/consumer/src/main/ets/ConsumeWebView.ets | A:- | S:-
+build-profile.json5[FV3T]: F:配置消费者 HAR 的 stageMode 和运行平台 | R:code:ohos/verification-consumer/build-profile.json5 | A:- | S:-
+hvigorfile.ts[FV3T]: F:为验证消费者注册 Hvigor HAR 任务 | R:code:ohos/verification-consumer/hvigorfile.ts | A:- | S:-
+oh-package.json5[FV5T]: F:绑定消费者到本次 WebViewNative HAR 和固定系统窗口组件 | R:code:ohos/scripts/verify-har.sh | A:- | S:实际使用本地归档，发布 Registry 消费需另验
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/verification-consumer/consumer/src/main/ets/===
+ConsumeWebView.ets[TU6T]: F:编译验证公开 ArkWeb 请求、View Creator、文件 hook、存储清理与窗口 owner 接线 | R:code:ohos/webview-native/Index.ets | A:createWebView,HostPolicyWebView,clearWebData | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/verification-consumer/consumer/src/main/===
+module.json5[FV3T]: F:声明覆盖默认和平板设备的消费者 HAR | R:code:ohos/verification-consumer/consumer/build-profile.json5 | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/verification-consumer/hvigor/===
+hvigor-config.json5[FV3T]: F:配置独立消费者的 Hvigor 模型 | R:code:ohos/verification-consumer/hvigorfile.ts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/webview-native/===
+CHANGELOG.md[SV5S]: F:记录 ArkWeb HAR 版本、配套窗口策略和精确发布边界 | R:code:ohos/webview-native/README.md | A:- | S:-
+Index.ets[EU7T]: F:导出 ArkWeb View、事件、请求、数据清理、Renderer 类型和全屏策略 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts,code:ohos/webview-native/src/main/ets/OhosWebViewDataCleaner.ets | A:- | S:-
+LICENSE[SS2M]: F:保留 HarmonyOS HAR 自有代码的 Apache 2.0 许可 | R:- | A:- | S:-
+README.md[SU7S]: F:说明 HarmonyOS HAR 构建安装、宿主文件 hook 与全屏窗口配对 | R:code:ohos/webview-native/Index.ets,code:ohos/README.md | A:GYWebView,FullscreenWindowPolicy | S:-
+build-profile.json5[FV3T]: F:配置生产 HAR 的 stageMode 和默认产品目标 | R:code:ohos/build-profile.json5 | A:- | S:-
+hvigorfile.ts[FV3T]: F:注册 WebViewNative HAR 模块任务 | R:code:ohos/hvigorfile.ts | A:- | S:-
+oh-package.json5[FV6T]: F:定义 WebView ArkTS 入口和 HAR 版本、Renderer 及窗口依赖 | R:code:ohos/webview-native/Index.ets | A:@gycrosskit/webview | S:Renderer ^2.29.1；system-actions-native 精确 1.0.2
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/webview-native/src/main/ets/===
+GYWebView.ets[IU9L]: F:运行 ArkWeb 原生控制器，处理同步安全规则、文档 bridge、媒体权限和全屏文件回执 | R:code:ohos/webview-native/src/main/ets/WebViewComponent.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts,code:ohos/webview-native/src/main/ets/WebPermissionDialog.ets | A:GYWebView,selectHostFiles,revokeHostFiles,windowPolicyController | S:每次 attach 与文档 token 核对；旧文件、授权和 window lease 不得清除或继承到新 owner；reply 只表示受理
+OhosWebViewDataCleaner.ets[IU7T]: F:在 UI 线程清理默认 ArkWeb 资源缓存或网站数据 | R:code:ohos/webview-native/Index.ets | A:OhosWebViewDataCleaner.clearResourceCache,OhosWebViewDataCleaner.clearWebsiteData | S:只等待 Cookie 完成回调；缓存与 WebStorage 返回不代表持久化，已发出的清除无法撤销
+WebPermissionDialog.ets[AU5T]: F:构建由宿主文案和回调驱动的原生权限用途告知弹窗 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets | A:createWebPermissionDialog | S:-
+WebViewComponent.ets[IU8T]: F:将组件请求映射到 ArkUI Web 属性和原生事件回调 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts | A:createGYWebView | S:每个回调先校验 render token；过期文件、窗口和权限按原生合同结算
+WebViewWire.ts[EU8M]: F:定义 ArkWeb 请求及错误映射，规范 Origin、导航、脚本与资源匹配 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets,code:ohos/webview-native/src/main/ets/WebViewComponent.ets | A:WebViewRequest,origin,trusted,matches | S:顶层追加 headers 不用于所有资源；不支持的配置需拒绝而非扩大权限
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/webview-native/src/main/===
+module.json5[FV3T]: F:声明发行 WebViewNative HAR 及默认、平板设备类型 | R:code:ohos/build-profile.json5 | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/scripts/===
+build.sh[OV7T]: F:分派 Android/iOS/OHOS 生产编译与 Maven/HAR 打包 | R:code:scripts/package-maven.sh,code:scripts/ci-build-kuikly-render.sh | A:compile,package | S:iOS 附加真实生产 Pod；Harmony CLT 从 wrapper 绝对路径定位工具
+check-maven.py[TV6S]: F:验证 staging Maven 变体、JVM 字节码、元数据和文件摘要 | R:code:scripts/package-maven.sh,code:scripts/verify-release.sh | A:check_sidecars,check_jvm_bytecode | S:-
+check-public-maven.py[TV6M]: F:按准确 Git Tag 提交核查下载到的公开 Maven 字节和完整变体树 | R:code:scripts/verify-release.sh | A:audit,ready_state | S:-
+ci-build-kuikly-render.sh[OV6T]: F:用具体 Renderer 版本和源码或标签编译 iOS WebView Pod | R:code:GYWebView.podspec,code:scripts/build.sh | A:- | S:-
+ci-java.security[FV3T]: F:设置 CI JVM 正向和负向 DNS 缓存策略 | R:code:scripts/ci-repositories.gradle | A:- | S:-
+ci-repositories.gradle[FV5T]: F:按环境启用编译缓存，预热 Maven DNS 并要求行为测试真实执行 | R:code:scripts/build.sh,code:settings.gradle.kts | A:- | S:-
+package-maven.sh[OV6T]: F:编译到独占 staging，规范变体和摘要后生成 Maven 归档 | R:code:scripts/check-maven.py,code:jitpack-metadata.py | A:VERSION | S:清除旧 staging 以防归档夹带历史版本
+verify-ios-native.sh[TV7T]: F:编译 ObjC 静态库、链接真实 iphoneos Renderer 并类型检查 Swift 公共 API | R:code:ios/Sources/GYWebView.h,code:ios/generate-scripts.py | A:WEBVIEW_IOS_RENDER_FRAMEWORK_DIR | S:-
+verify-ios-wire.sh[TV7S]: F:安装模拟器 WireCheck，启动本地页面与视频 fixture，运行并记录原生回执 | R:code:ios/Tests/BooleanWireCheck.m,code:ios/Tests/page-channel-server.py | A:WEBVIEW_SIMULATOR,WEBVIEW_HOST_PROVIDER_SOURCE | S:保留失败码和模拟器诊断；宿主文件 provider 集成显式选择
+verify-release.sh[TV7T]: F:从精确 Tag 下载校验候选并对 JitPack 做独立公开消费验证 | R:code:jitpack-install.sh,code:scripts/check-public-maven.py,code:verification-consumer/build.gradle.kts | A:VERSION | S:期望 inventory 源自校验过的归档；真实消费只走 JitPack
+verify.sh[TV6T]: F:串联本地 Android 验证、iOS/OHOS 编译、Maven staging 与原生/HAR 消费 | R:code:scripts/verify-ios-native.sh,code:ohos/scripts/verify-har.sh | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/===
+build.gradle.kts[TV7S]: F:编译独立消费者的三端 code probe，核对精确版本和 Kuikly UI 隔离 | R:code:verification-consumer/settings.gradle.kts | A:verifyExactComponentVersion,verifyNoCmpUi,verifyPageChannels | S:切分历史和新公开能力；本地源码与远程消费互斥
+gradle.properties[FV3T]: F:配置消费者 Gradle JVM 与 AndroidX 环境 | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+settings.gradle.kts[FV6T]: F:选择独立消费者的精确 JitPack、本地 Maven 或显式源码接线 | R:code:verification-consumer/build.gradle.kts | A:remoteOnly,webViewMavenRepo,verifyLocalSource | S:remoteOnly 对 WebView 组独占公开站点
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/androidMain/===
+AndroidManifest.xml[FV3T]: F:声明验证消费者的 Android 启动入口 | R:code:verification-consumer/src/androidMain/kotlin/ConsumerActivity.kt | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/androidMain/kotlin/===
+ConsumeCleaner.kt[TU4T]: F:编译验证 Android 资源缓存和网站数据清理 API | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+ConsumerActivity.kt[TU4T]: F:通过验证 Activity 引用产物的公开 API 和请求编码 | R:code:verification-consumer/src/commonMain/kotlin/Consumer.kt | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/commonMain/kotlin/===
+Consumer.kt[TU5T]: F:编译验证公共请求构造、安全策略、unsupported 事件与 wire 编码 | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/fullscreenAndroidMain/kotlin/===
+AndroidFullscreenControlsConsumer.kt[TU5T]: F:探测 Android 注册面能装配组件自带全屏控制 | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/fullscreenKuiklyComposeMain/kotlin/===
+FullscreenControlsConsumer.kt[TU5T]: F:验证 KuiklyCompose FullscreenPlayerOverlay 与宿主提供文案 API | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/iosMain/kotlin/===
+ConsumeCleaner.kt[TU4T]: F:编译验证 iOS 缓存和网站数据清理 API | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/kuiklyAndroidMain/kotlin/===
+FullscreenConsumer.kt[TU5T]: F:编译验证 Android 默认 WebView 及宿主全屏控件注册方法 | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/kuiklyComposeAndroidMain/kotlin/===
+WarmupConsumer.kt[TU4T]: F:探测 Android 底层 WebView 可由宿主调用 warmUp | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/kuiklyComposeMain/kotlin/===
+ComposeApiConsumer.kt[TU5T]: F:编译验证 AppWebView、可见性、控制器和 PiP owner 公开接线 | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/kuiklyMain/kotlin/===
+ConsumeKuikly.kt[TU5T]: F:编译验证 Kuikly DSL 配置和宿主权限说明事件回执 | R:code:verification-consumer/build.gradle.kts | A:consumeKuikly | S:探针以 false 终结说明，不创建业务页面
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/pageChannelsKuiklyMain/kotlin/===
+PageChannelKuiklyProbe.kt[TU4T]: F:编译验证 raw GYWebView 的具名早期通道单次回复入口 | R:code:verification-consumer/src/pageChannelsMain/kotlin/PageChannelProbe.kt | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification-consumer/src/pageChannelsMain/kotlin/===
+PageChannelProbe.kt[TU4T]: F:编译验证公共 WebViewRequest 频道和 PageMessage 构造 | R:code:verification-consumer/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification/android-callbacks/===
+create-fixture.py[TQ4T]: F:生成 Kotlin Android SDK 替身用于真实媒体权限回调的 JVM 场景 | R:code:verification/android-callbacks/verify.sh,code:verification/android-callbacks/main.kt | A:- | S:-
+geolocation-main.kt[TU6T]: F:验证同源定位、宿主 pause 与系统授权返回、隐藏和撤销的 owner 门禁 | R:code:verification/android-callbacks/verify-permissions.py | A:- | S:-
+host-permission-main.kt[TU6T]: F:验证宿主权限用途说明拒绝、同步重入、旧回执、重复回执与系统授权 | R:code:verification/android-callbacks/verify-permissions.py | A:- | S:-
+main.kt[TU6T]: F:以替身执行 Android 生产媒体权限 Controller，核对撤销、迟回执和可信 iframe | R:code:verification/android-callbacks/create-fixture.py,code:verification/android-callbacks/verify.sh | A:- | S:-
+permission-main.kt[TU6S]: F:验证 Android 权限的首次与再次拒绝、设置提示、队列和重入合同 | R:code:verification/android-callbacks/verify-permissions.py | A:- | S:历史拒绝不能代替当前系统授权；不向旧 owner 发设置提示
+test-cache-path.py[TV4T]: F:验证 Android 回调测试能沿配置使用正确 Gradle 缓存和工具版本 | R:code:verification/android-callbacks/verify.sh | A:- | S:-
+verify-permissions.py[TQ6S]: F:生成 Android 权限和定位 SDK 替身，编译运行实际生产 Controllers 的 fixture | R:code:verification/android-callbacks/geolocation-main.kt,code:verification/android-callbacks/permission-main.kt,code:verification/android-callbacks/host-permission-main.kt | A:- | S:-
+verify.sh[TV6T]: F:从 Gradle 缓存定位匹配 Kotlin 编译工具并执行 Android 回调替身测试 | R:code:verification/android-callbacks/main.kt,code:verification/android-callbacks/create-fixture.py | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification/ci/===
+test_cache_contract.py[TV4T]: F:断言源码 CI 缓存只复用编译、行为测试仍实际执行 | R:code:scripts/ci-repositories.gradle | A:- | S:-
+test_ios_wire_policy.py[TV5S]: F:以模拟工具核对 iOS wire fixture 退出码、模式验证、PASS 与失败取证 | R:code:scripts/verify-ios-wire.sh | A:- | S:-
+test_page_channel_server.py[TV4T]: F:验证 loopback H5 验收服务器无需反向 DNS | R:code:ios/Tests/page-channel-server.py | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification/early-scripts/===
+android-bridge.test.cjs[TU6T]: F:验证 Android bridge 的同文档排队、一次 flush、隐藏丢弃、旧协议和队列上限 | R:code:verification/early-scripts/verify.sh | A:- | S:-
+native-geolocation.test.cjs[TU6S]: F:验证注入定位 API 的参数、错误、watch 串行、取消和不安全文档回退 | R:code:verification/early-scripts/verify.sh | A:- | S:-
+page-messages.cjs[TU6T]: F:验证早期 string 频道 bootstrap、规范 URL、旧 token、iframe 拒绝和单回执 | R:code:verification/early-scripts/verify.sh | A:- | S:-
+verify.cjs[TU5T]: F:运行生产早期脚本 wrapper，验证信任规则与文档执行次数 | R:code:verification/early-scripts/verify.sh | A:- | S:-
+verify.sh[TV6T]: F:通过生产生成器输出真实脚本，再运行 Node 早期脚本回归 | R:code:verification/early-scripts/verify.cjs,code:verification/early-scripts/page-messages.cjs | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification/kuikly-lifecycle/===
+verify.py[TU6M]: F:编译生产 AppWebView 并用 Compose/Renderer 替身验证 owner、PiP、请求去重和销毁 | R:code:webview-kuikly/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification/native-ios/===
+CreateMovie.swift[TU4T]: F:生成 iOS wire 运行时所需的小尺寸 MOV 捕获样例 | R:code:scripts/verify-ios-wire.sh | A:- | S:-
+file-input-script.test.cjs[TU6T]: F:验证 WebKit 文件输入的直接和脚本触发、失效清理与 capture metadata | R:code:ios/Sources/GYWebViewScripts.inc | A:- | S:-
+fullscreen-script.test.cjs[TU6T]: F:验证真实 WKWebView 全屏退出脚本对标准及延迟 WebKit 视频接口、异常和超时的处理 | R:code:ios/Sources/GYWebViewScripts.inc | A:- | S:-
+picture-in-picture-script.test.cjs[TU6T]: F:以 DOM fixture 验证生产 PiP 脚本的事件、frame owner、旧视频和 pagehide | R:code:ios/Sources/GYWebViewScripts.inc | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification/publication/===
+test_jitpack_install.py[TV5T]: F:用模拟 Release 下载验证冻结归档来源、摘要及安全安装 | R:code:jitpack-install.sh | A:- | S:-
+test_maven_check.py[TV5T]: F:验证 Maven 检查脚本对有缺陷或完整测试制品的判定 | R:code:scripts/check-maven.py | A:- | S:-
+test_metadata.py[TV5S]: F:验证发行版本矩阵、空资源裁剪、真实文件拒绝及元数据摘要 | R:code:jitpack-metadata.py | A:PublicationContracts | S:含零字节真实文件的资源也必须拒绝，且不得改写原元数据
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification/===
+video-scripts.test.cjs[TU5T]: F:验证生产视频镜像与播放脚本在同源、异源 iframe 和无视频时的行为 | R:code:webview-core/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/===
+build.gradle.kts[FV6T]: F:发布跨端 WebView core，配置 Android WebKit、序列化和 Robolectric 测试依赖 | R:code:gradle/libs.versions.toml,code:webview-kuikly/build.gradle.kts | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/androidMain/===
+AndroidManifest.xml[FV6T]: F:注册非导出的 Android 文件 provider 供临时相机 URI 使用 | R:code:webview-core/src/androidMain/res/xml/compose_webview_file_paths.xml | A:- | S:authority 绑定宿主 applicationId
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/===
+AndroidAppWebViewWarmup.kt[IU7T]: F:用 application context 触发 AndroidX WebKit 的一次性启动预热 | R:code:gradle/libs.versions.toml | A:AndroidAppWebViewWarmup.warmUp | S:预热失败只记录，不创建业务 WebView 或绑定 Activity
+AndroidDefaultWebFullscreenControls.kt[AU6S]: F:渲染默认原生全屏的返回、播放、进度和时间控件 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebFullscreenHost.kt | A:AndroidDefaultWebFullscreenControls | S:进度只展示，不提供拖动 seek
+AndroidDocumentStartScripts.kt[IU7T]: F:解析 AndroidX WebKit 文档起始脚本注册器及移除句柄 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidEarlyScriptInstaller.kt | A:AndroidDocumentStartScripts.resolve | S:明确检查 UI 线程、能力支持和只移除一次
+AndroidEarlyScriptInstaller.kt[IU8S]: F:为当前 WebView 注册 document-start 脚本并跟踪状态、性能与清理句柄 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidDocumentStartScripts.kt | A:AndroidEarlyScriptInstaller.install,AndroidEarlyScriptInstaller.remove | S:先摘旧 listener 再清 scripts，清理重入不得撤销新 listener
+AndroidPopupRouter.kt[IU8S]: F:解读 Android 临时 popup 的真实目标与触发策略并交还宿主 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebCapabilities.kt | A:AndroidPopupRouter.createWindow,AndroidPopupRouter.release | S:只解析目标，不提交临时网路请求；POST body 不可用时不替换成 GET
+AndroidWebCapabilities.kt[IU8S]: F:集中路由 Android WebView 定位、媒体、文件权限与 owner 生命周期 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebFileChooserController.kt,code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebPermissionController.kt | A:AndroidWebCapabilities.release,AndroidWebCapabilities.pause | S:保留属于同 owner 的系统 picker 等待，释放时撤销迟回执权限
+AndroidWebFileChooserController.kt[IU8S]: F:校验可信文档后将文件选择与捕获交给宿主，管理结果和释放 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebFilePicker.kt,code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebPermissionController.kt | A:AndroidWebFileChooserController.show,AndroidWebFileChooserController.release | S:已交付文件 lease 维持到文档撤销；迟到或无效结果及时释放
+AndroidWebFilePicker.kt[LU7T]: F:定义 Android 宿主 picker、结果文件元数据和取消闭包 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebFileChooserController.kt | A:AndroidWebFilePicker,AndroidWebFilePickerResult | S:-
+AndroidWebFullscreenHost.kt[IU8S]: F:接管 Android 原生视频全屏容器、窗口模式、控件和释放回执 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidDefaultWebFullscreenControls.kt | A:AndroidWebFullscreenHost.show,AndroidWebFullscreenHost.hide | S:按 owner/revision 复核迟回执；旧窗口收尾不覆盖后继状态
+AndroidWebGeolocationController.kt[IU8T]: F:协调 Android 网页定位授权，按文档 Origin 和 owner 结算 callback | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebPermissionController.kt | A:AndroidWebGeolocationController.request,AndroidWebGeolocationController.pause | S:请求须同源，系统权限弹窗导致暂停时为本 owner 保留结果
+AndroidWebMediaPermissionController.kt[IU8S]: F:处理 Android WebChromeClient 音视频捕获授权与失效 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebPermissionController.kt | A:AndroidWebMediaPermissionController.request,AndroidWebMediaPermissionController.release | S:替换或撤销后拒绝旧请求；最终授权前复核当前可信来源
+AndroidWebPermissionController.kt[II9M]: F:串行处理 Android 权限用途说明、系统权限 launcher、撤销和设置提示 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebCapabilities.kt | A:AndroidWebPermissionController.request | S:当前权限优先于旧记录；未到达系统回执前保留 in-flight 栅栏，旧 owner 不能授权新请求
+AndroidWebRequestPolicy.kt[MS8T]: F:在 Android IO 拦截主文档与子资源，并向 UI 回传主文档阻止 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt | A:interceptAndroidRequest | S:系统不报告子资源重定向；受限主文档阻止不经过 override 的非 GET 请求
+AndroidWebViewConfig.kt[IU8S]: F:将公共 WebView 请求映射到 Android View、WebSettings 和 Cookie 策略 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewSettings.android.kt | A:applyWebViewConfig,AppliedAppWebViewConfig | S:-
+AndroidWebViewDataCleaner.kt[IU7T]: F:清理 Android 进程共享资源缓存或网站数据，等待 Cookie 删除与 flush | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewSettings.android.kt | A:AndroidWebViewDataCleaner.clearResourceCache,AndroidWebViewDataCleaner.clearWebsiteData | S:只保存应用 Context；普通清理保留 Cookie 和 WebStorage，取消不撤销已发出的删除
+AppWebBridge.kt[IN9M]: F:安装 Android 应用 Bridge 和具名 document-start 频道，管理单次回复与移除 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidEarlyScriptInstaller.kt | A:AndroidPageMessageChannels,installAppWebBridge,removeAppWebBridge | S:核对主框架、初始 Origin、owner 和文档 token；新文档不能继承旧回执
+AppWebChromeClient.kt[IU6T]: F:接收 Android 原生加载进度和标题事件，并核对活跃 View | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt | A:- | S:-
+AppWebViewClient.kt[IU9S]: F:处理 Android 导航与页面加载、首帧、原生错误和渲染进程退出 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebRequestPolicy.kt,code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewErrorHelper.kt | A:AppWebViewClient | S:过滤过期 owner 和子资源，主文档错误按当前导航去重
+ComposeWebViewFileProvider.kt[IS4T]: F:为 WebView 供给隔离的 Android FileProvider 类型 | R:code:webview-core/src/androidMain/AndroidManifest.xml | A:- | S:-
+WebViewDiagnostics.kt[IO7S]: F:按 WebView owner 记录创建、首帧、失败、释放和性能状态 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt | A:WebViewDiagnostics | S:以弱键追踪 View，防止持有已销毁实例；敏感诊断需要消隐
+WebViewErrorHelper.kt[IU6T]: F:将 Android WebView 资源、HTTP、TLS 和渲染异常映射为公共加载错误 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt | A:WebViewErrorHelper | S:-
+WebViewSettings.android.kt[IU6T]: F:把公共缓存、混合内容和系统字号映射到 Android 设置 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebViewConfig.kt | A:androidMixedContentMode,androidCacheMode,calculateWebViewTextZoom | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/androidMain/res/values-en/===
+strings.xml[FL3T]: F:提供 Android WebView 能力与授权说明的英语文案 | R:- | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/androidMain/res/values/===
+strings.xml[FL3T]: F:提供 Android WebView 原生权限说明等默认文案 | R:- | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/androidMain/res/xml/===
+compose_webview_file_paths.xml[FS5T]: F:限制 Android 文件共享到独立 Pictures、Movies 和 capture 缓存 | R:code:webview-core/src/androidMain/AndroidManifest.xml | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/androidUnitTest/kotlin/android/webkit/===
+TestWebResourceError.kt[TQ3T]: F:为 Android error 回调测试提供可控错误码与描述的替身 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewErrorHelper.kt | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/===
+AndroidDocumentStartScriptsTest.kt[TU6M]: F:验证 WebKit 正式和旧 v0 起始脚本 API、保守回退、移除类型和定位能力 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidDocumentStartScripts.kt | A:- | S:-
+AndroidEarlyBridgeInstallerTest.kt[TU5T]: F:验证 Android 独立导航只在可信 Origin 注册早期 Bridge | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidEarlyScriptInstaller.kt | A:- | S:-
+AndroidPageMessageChannelsTest.kt[TU6M]: F:验证具名早期频道的 frame/Origin、真实名称路由、回执配额及物理 owner 更换 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebBridge.kt | A:- | S:-
+AndroidWebCapabilitiesTest.kt[TU5T]: F:验证 MIME 归一、已支持媒体资源及权限说明和设置能力分类 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebCapabilities.kt | A:- | S:-
+AndroidWebGeolocationControllerTest.kt[TU5T]: F:验证 Android 定位禁用默认、同源粗略授权和 owner 生命周期 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebGeolocationController.kt | A:- | S:-
+AndroidWebRequestPolicyTest.kt[TS5T]: F:验证 Android 受限 POST、HTTP 原点请求和子资源隔离 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebRequestPolicy.kt | A:- | S:-
+AppWebBridgeTest.kt[TU5T]: F:验证业务原文消息转发及旧文档 token 拒绝 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebBridge.kt | A:- | S:-
+AppWebViewConfigTest.kt[TU5T]: F:核对 Android 缓存、混合内容、Cookie、图片与系统字号映射 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebViewConfig.kt | A:- | S:-
+EarlyScriptsExportTest.kt[TQ4T]: F:导出编译后的真实 Kotlin JS 生成结果供 Node 回归 | R:code:verification/early-scripts/verify.sh | A:- | S:-
+WebViewErrorHelperTest.kt[TU5T]: F:验证 Android 原生错误的稳定分类与仅主文档回传 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewErrorHelper.kt | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/===
+AppWebViewRuntime.kt[CO6T]: F:管理进程级可替换日志 sink 和统一 WebView 诊断等级 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewDiagnostics.kt | A:AppWebViewRuntime.installLogSink,AppWebViewLogSink | S:sink 同步调用，不可阻塞 UI 或持有页面；原始 URL 需宿主脱敏，Bridge 正文不进入日志
+AppWebViewWarmup.kt[LU6T]: F:声明宿主在隐私授权后预热 WebView 内核的公共接口 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidAppWebViewWarmup.kt | A:AppWebViewWarmup | S:预热不创建业务页或发网络请求，当前 iOS 不执行内核启动
+WebVideoState.kt[CU7T]: F:定义媒体状态与全屏文案，提供真实页面视频探测、播放、镜像脚本 | R:code:verification/video-scripts.test.cjs | A:WebVideoState,WebFullscreenLabels,parseWebVideoState | S:继承浏览器同源访问约束；读取不到媒体返回空结果
+WebViewContent.kt[LU7T]: F:描述顶层 URL 与 HTML 内容、头、base 和历史地址 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt | A:WebViewContent.Url,WebViewContent.Html | S:追加头仅主文档；HTML 权限由 baseUrl 判定，historyUrl 不提升来源信任
+WebViewEarlyScripts.kt[CU8S]: F:生成带主框架及 Origin 门禁的早期 JS 并解析无业务数据的性能消息 | R:code:ios/generate-scripts.py,code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidEarlyScriptInstaller.kt | A:earlyScriptSource,earlyScriptOriginRules,finishedScriptsAt,parseWebViewPerformanceMessage | S:document-start required 只随实际早期注册；每文档按 id 执行一次
+WebViewError.kt[LU6T]: F:定义跨端主文档错误类别和原生错误快照 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewErrorHelper.kt | A:WebViewErrorKind,WebViewLoadError | S:原始错误说明用于诊断，稳定业务提示由宿主承担
+WebViewEvent.kt[LU8S]: F:定义公开网页事件及应用 Bridge 原文消息的边界 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewWire.kt | A:WebViewEvent,WebViewBridgeMessage,parseAppWebBridgeMessage | S:权限说明、设置提示与实际授予分别发事件；业务正文由宿主解释
+WebViewNativeGeolocation.kt[IU8M]: F:为可信 HTTPS Web 文档安装可选原生定位 JS 并解析请求和回执 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewEarlyScripts.kt,code:webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/NativeGeolocationTest.kt | A:withNativeGeolocation,parseNativeGeolocationRequest,nativeGeolocationPositionReply | S:只在 document-start 主文档替换浏览器 API，保留定位精度和原始时点
+WebViewNavigation.kt[LU6T]: F:定义导航 URL、主框架、用户动作、目标和处理决定 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt | A:WebViewNavigationRequest,WebViewNavigationDecision,WebViewNavigationTarget | S:-
+WebViewNavigationPolicy.kt[LS9S]: F:同步判定允许 URL/Origin 与用户外链和新窗口的转发策略 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigation.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewUrlRule.kt | A:WebViewNavigationPolicy.allows,allowsActiveUserLink,shouldOpenSeparateUserLink | S:显式业务来源留在当前 owner，多平台需区别内置 HTML 初次导航与真实跳转
+WebViewPageMessages.kt[CN9T]: F:验证具名早期 string 频道、初始完整 URL 和文档单次回复脚本 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt,code:ios/generate-scripts.py | A:canUsePageMessageChannelsAt,pageMessageScript,pageMessageReplyScript | S:URL 保留路径/query/fragment；64KiB 按 UTF-8；旧闭包保留其自身 token
+WebViewPerformanceTrace.kt[CO7S]: F:在平台和实例维度记录 WebView 创建、加载与首屏区间 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewEarlyScripts.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewRuntime.kt | A:WebViewPerformanceTrace | S:敏感保护只升不降；性能事件不携带 H5 正文
+WebViewPolicy.kt[CS9S]: F:共享页面来源归一、AppBridge 接收、脚本注入和主框架导航限制 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewTrustPolicy.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt | A:canUseAppBridgeAt,canEvaluateJavascriptAt,toHttpOrigin | S:严格解析 HTTP(S) 的 scheme/host/有效端口，重用 IPv6 标准化支持跨端来源判断
+WebViewRequest.kt[LU9T]: F:提供不可变网页内容、设置、安全、早期频道、导航与资源拦截输入 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewSecurity.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPageMessages.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewWire.kt | A:WebViewRequest,allowsHttpRequest,WebViewPermissionPresentation | S:HTTP origins 的 null 与空集合语义不同；诊断消隐只升不降；HOST 说明不代表系统许可
+WebViewScript.kt[LU7T]: F:定义脚本 ID、注入时点和可信主文档限定 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewEarlyScripts.kt | A:WebViewScript,WebViewScriptInjectionTime | S:必须 document-start 的脚本不退化成迟注入
+WebViewSecurity.kt[LS9T]: F:定义默认关闭的 Bridge、文件、媒体与定位安全开关和可信来源 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewTrustPolicy.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPolicy.kt | A:WebViewSecurity | S:应用与页面 Bridge 互斥；高权限要求显式 HTTP(S) 可信来源且运行时再验证
+WebViewSettings.kt[FC7T]: F:配置跨端 JS、媒体、混合内容、缓存、字体与渲染默认行为 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt | A:WebViewSettings,WebViewMixedContentPolicy,WebViewCachePolicy | S:-
+WebViewSnapshot.kt[DD6T]: F:提供网页标题、地址、进度、首屏、历史和错误的稳定状态快照 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewError.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewTitle.kt | A:WebViewSnapshot | S:-
+WebViewTitle.kt[CU6T]: F:删除控制和零宽占位并过滤网页 URL、域名、路径标题 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewSnapshot.kt | A:normalizedWebViewTitle,usableWebTitle | S:-
+WebViewTrustPolicy.kt[CS8S]: F:归一精确 HTTP(S) Origin 和明确域后缀，编译同一信任条件到 native JS | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPolicy.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewSecurity.kt | A:WebViewTrustPolicy,isTrusted | S:精确来源包含端口；后缀要求域边界；URL 路径、query 和 fragment 不参与 Origin
+WebViewUrlRule.kt[LS7T]: F:定义前缀、关键词、正则及精确或后缀 host 的请求规则 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt | A:WebViewUrlRule.matches | S:-
+WebViewWire.kt[EN9M]: F:编码与解码三端共用请求、脚本、策略和网页事件 JSON | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewEvent.kt | A:WebViewWire.encodeRequest,WebViewWire.decodeRequest,WebViewWire.decodeEvent | S:wire 保持 Boolean 与缺失/null 语义；不以数字代替布尔或不可信数组内容
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/===
+NativeGeolocationTest.kt[TU5T]: F:验证定位适配的开关、可信 HTTPS、入参边界和精度时间回传 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNativeGeolocation.kt | A:- | S:-
+WebVideoStateTest.kt[TU4T]: F:验证视频镜像回执只接受有界有限的三元组和统一播放时间格式 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebVideoState.kt | A:- | S:-
+WebViewContractsTest.kt[TU5M]: F:验证请求默认值、Title 过滤、Bridge 结构和高权限信任及公共合同 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt,code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewTitle.kt | A:- | S:-
+WebViewDiagnosticsTest.kt[TO5S]: F:模拟单调时间验证首屏数据、日志语义和不可降级的敏感诊断保护 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPerformanceTrace.kt | A:- | S:-
+WebViewHttpOriginsTest.kt[TS5T]: F:验证精确 HTTP Origin 规则及 wire 保持区别 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewRequest.kt | A:- | S:-
+WebViewNavigationPolicyTest.kt[TS6S]: F:验证显式导航策略、用户链接、内置 HTML、URL 与 Origin 的组合边界 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt | A:- | S:-
+WebViewPageMessagesTest.kt[TN6T]: F:验证具名频道初始文档规范化、URI 差异、保留名称和 wire | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPageMessages.kt | A:- | S:-
+WebViewPolicyTest.kt[TS5S]: F:验证 app/page bridge、脚本主框架与初始来源的信任策略 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPolicy.kt | A:- | S:-
+WebViewTrustPolicyTest.kt[TS5T]: F:验证 HTTP(S) 精确 Origin、IPv6、合法端口、后缀和 JS 信任门禁 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewTrustPolicy.kt | A:- | S:-
+WebViewWireTest.kt[TN6S]: F:验证请求与事件 round trip、严格 Boolean、来源、权限及异常 wire 类型 | R:code:webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewWire.kt | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-core/src/iosMain/kotlin/io/github/gycrosskit/composewebview/===
+IosWebViewDataCleaner.kt[IU7T]: F:在 Main 清理 WK 默认存储资源或全部站点数据，并等待系统完成 | R:- | A:IosWebViewDataCleaner.clearResourceCache,IosWebViewDataCleaner.clearWebsiteData | S:仅资源缓存时保留 Cookie；取消等待不能撤销已开始的清理
+IosWebViewScripts.kt[IU8M]: F:提供 iOS WebKit 文件输入、桥、视频全屏和 PiP 的唯一 Kotlin 脚本源 | R:code:ios/generate-scripts.py,code:ios/Sources/GYWebViewScripts.inc | A:IOS_FILE_INPUT_SCRIPT,IOS_EXIT_FULLSCREEN_SCRIPT,IOS_PICTURE_IN_PICTURE_SCRIPT | S:跟踪触发 input 和 frame owner；DOM fixture 不代表真实系统全屏
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-kuikly/===
+build.gradle.kts[FV6T]: F:配置原生目标和 Android WebKit/Renderer，发布 KuiklyCompose KMP 组件 | R:code:webview-core/build.gradle.kts,code:gradle/libs.versions.toml | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/===
+GYWebViewNative.kt[IU9L]: F:将 Kuikly 请求、命令、生命周期和原生回执映射到 Android 系统 WebView | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt,code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebCapabilities.kt | A:GYWebViewNative.setProp,GYWebViewNative.call,GYWebViewNative.onDestroy | S:stop 先作用于旧加载再撤销回执；request/文档代次阻止旧回调；隐藏和实际离页的权限保留不同
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/===
+AndroidFullscreenHostTest.kt[TU6M]: F:验证 Android 全屏视频容器、默认控件、owner 重入、镜像输入和清理 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebFullscreenHost.kt | A:- | S:-
+AndroidNativeLifecycleTest.kt[TU5T]: F:验证关闭 popup、释放 owner 后忽略 Android Chrome 和错误事件 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
+AndroidPageChannelsNativeTest.kt[TN6M]: F:验证 Android 原生 channel 的早期安装、失败隔离、后台 owner 与更新后的单次回复 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
+AndroidPostNavigationNativeTest.kt[TS6M]: F:验证 Android 公开导航的 GET 交接、受限 POST/弹窗与旧 owner 隔离 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
+GYWebViewNativeTest.kt[TU6L]: F:验证 Android 原生请求、证书与来源合同、Bridge 支持和敏感诊断传播 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
+GYWebViewStopTest.kt[TU6M]: F:验证 stop、文件注入 lease、媒体权限、实际离页和同步重入隔离 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/===
+AppWebView.kt[EU9T]: F:提供 KuiklyCompose 公共壳层，将 request、可见性、owner 和回执接到同一 raw 实例 | R:code:webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt,code:verification/kuikly-lifecycle/verify.py | A:AppWebView | S:使用当前回调消除重组 stale；退出后先断业务再释放 raw owner
+FullscreenVideoControls.kt[AU7S]: F:渲染 KuiklyCompose 全屏返回、播放和状态控件，轮询同文档镜像 | R:code:webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebView.kt | A:FullscreenPlayerOverlay,FullscreenVideoControls | S:原生可能丢弃离页的 JS 回执，等待有界，控件不创建第二视频 owner
+GYWebView.kt[EU9T]: F:提供 Kuikly raw WebView DSL、命令、原生事件和自定义 owner 属性 | R:code:webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/AppWebView.kt,code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:GYWebView,GYWebViewAttr,GYWebViewEvent | S:导航和回复布尔只表原生受理；保持命令字符串和 wire 兼容
