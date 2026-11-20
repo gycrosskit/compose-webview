@@ -332,7 +332,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     if (internalHtml) return false;
     const gesture = request.isRequestGesture();
     if (current !== null && mainFrame && gesture && this.activeUserLink(target, current) &&
-      !request.isRedirect() && request.getRequestMethod() === 'GET' && this.externalUserLink(target, 'CURRENT_WINDOW', current)) return true;
+      !request.isRedirect() && request.getRequestMethod() === 'GET' && this.externalUserLink(target, current)) return true;
     const allowed = current !== null && navigationAllowed(target, mainFrame, current);
     this.emit({ type: 'navigation', url: target, isMainFrame: mainFrame, hasUserGesture: gesture,
       target: 'CURRENT_WINDOW', blocked: !allowed });
@@ -345,27 +345,15 @@ export class GYWebView extends KuiklyRenderBaseView {
     return !allowed;
   }
 
-  /** 取消真实第二窗口；明确允许的目标沿用当前 Controller，并复核路由回调可能改变的 owner。 */
+  /** ArkWeb 未提供新窗口原始请求，取消弹窗以免 URL-only 转发把 POST 改成 GET。 */
   rejectNewWindow(event: OnWindowNewEvent): void {
     const controllerOwner = this.controller;
     const ownerToken = this.renderToken;
     const current = this.request;
     event.handler.setWebController(null!);
     if (!this.isRenderActive(ownerToken) || this.request !== current || controllerOwner !== this.controller) return;
-    // ArkWeb 的 popup 事件只提供用户手势和目标 URL，原请求体不交给当前页或宿主。
-    const userLink = current !== null && event.isUserTrigger && !event.isAlert && this.activeUserLink(event.targetUrl, current);
-    if (userLink && current !== null && this.externalUserLink(event.targetUrl, 'NEW_WINDOW', current)) return;
-    const allowed = this.visible && this.pageOwned() && this.isRenderActive(ownerToken) && current !== null &&
-      (userLink || current.navigationPolicy.allowNewWindows === true) &&
-      (event.isUserTrigger || current.settings.javaScriptCanOpenWindowsAutomatically === true) && navigationAllowed(event.targetUrl, true, current);
     this.emit({ type: 'navigation', url: event.targetUrl, isMainFrame: true, hasUserGesture: event.isUserTrigger,
-      target: 'NEW_WINDOW', blocked: !allowed });
-    if (!allowed || !this.visible || !this.pageOwned() || this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
-    this.documentReady = false;
-    this.revokePending();
-    if (!this.visible || !this.pageOwned() || this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return;
-    try { controllerOwner.loadUrl(event.targetUrl); }
-    catch (_) { this.fail('LOAD_EXCEPTION', 'ArkWeb popup navigation failed'); }
+      target: 'NEW_WINDOW', blocked: true });
   }
 
   private activeUserLink(target: string, current: WebViewRequest): boolean {
@@ -376,7 +364,7 @@ export class GYWebView extends KuiklyRenderBaseView {
       !!targetOrigin && policy.allowedSchemes.includes(targetOrigin.split(':')[0]) && httpRequestAllowed(target, current);
   }
 
-  private externalUserLink(target: string, windowTarget: string, current: WebViewRequest): boolean {
+  private externalUserLink(target: string, current: WebViewRequest): boolean {
     const policy = current.navigationPolicy;
     if (policy.userLinkPolicy !== 'OPEN_SEPARATELY') return false;
     const source = origin(this.currentUrl());
@@ -384,7 +372,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     const deniedUrl = !!urls?.length && !urls.includes(target);
     const outsideBusinessOrigins = source !== origin(target) && (!policy.navigationOrigins || !navigationAllowed(target, true, current));
     if (!source || (!deniedUrl && !outsideBusinessOrigins)) return false;
-    this.emit({ type: 'externalLinkRequested', url: target, isMainFrame: true, hasUserGesture: true, target: windowTarget });
+    this.emit({ type: 'externalLinkRequested', url: target, isMainFrame: true, hasUserGesture: true, target: 'CURRENT_WINDOW' });
     return true;
   }
 

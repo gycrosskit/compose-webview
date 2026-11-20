@@ -1,6 +1,6 @@
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **2.5.0**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **2.5.1**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
 
 rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和空路径按同一文档身份匹配；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。主帧 capability、nonce、owner 与单次回复门禁保持有效。
 
@@ -15,7 +15,7 @@ rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和
 先按组织要求配置私有 OHPM Registry 和访问身份，再安装精确版本。
 
 ```bash
-ohpm install @gycrosskit/webview@2.5.0
+ohpm install @gycrosskit/webview@2.5.1
 ```
 
 本地候选消费使用 `assembleHar` 输出并核对 SHA-256。干净消费者的 WebView 和宿主直接依赖共用同一个 system-actions `1.0.2`。本地候选消费与私库正式安装分别验收。
@@ -101,7 +101,7 @@ JavaScript、Bridge、文件 URL、媒体采集默认关闭。TLS 错误调用 `
 
 DocumentViewPicker/CameraPicker 结果在导航、隐藏、request 切换和销毁时以空列表结算；迟到回调不能给新文档交付 URI。拍摄使用本实例沙箱 cache 文件，不自动写系统相册；成功后文件保留到文档撤销，失败/取消立即删除，并核验实际输出 JPEG/MP4 头、大小和系统返回 URI。当前 SDK 缺少真实来源 frame 和独立 user-gesture 字段，不能把当前可信页面检查写成来源 frame 证明。真实设备权限与 H5 上传仍需宿主验收。
 
-支持 DOM Storage、图像访问、zoomAccess、混合内容和 cacheMode、User-Agent suffix。HAR rc.13包含系统字体倍率与算法暗化；Android 专属缩放按钮、viewport/overview 没有等价 ArkWeb 开关。新窗口事件同步取消实际第二窗口，policy 允许时路由到当前页面；自动脚本开窗另外要求显式开关。顶层file/content URL与content/resource子资源拒绝；本版显式allowFileAccess可允许file子资源。每实例第三方Cookie开启请求仍拒绝；false/默认也不保证per-view隔离，同进程其他Web可能修改全局Cookie策略。
+支持 DOM Storage、图像访问、zoomAccess、混合内容和 cacheMode、User-Agent suffix。HAR rc.13包含系统字体倍率与算法暗化；Android 专属缩放按钮、viewport/overview 没有等价 ArkWeb 开关。ArkWeb 真实新窗口事件缺少 HTTP 方法和请求体，组件会取消窗口并报告 `NEW_WINDOW` / `blocked=true`（包含 `target="_blank"` 的 GET）；同窗口 GET 和表单按原导航策略交给内核，网页可使用 `target="_self"`。顶层file/content URL与content/resource子资源拒绝；本版显式allowFileAccess可允许file子资源。每实例第三方Cookie开启请求仍拒绝；false/默认也不保证per-view隔离，同进程其他Web可能修改全局Cookie策略。
 
 所有方法回调都为 JSON 对象 `{result: ...}`，不返回裸布尔字符串。`reload/goBack/goForward/stopLoading/exitFullscreen` 的 params 为 null；`evaluateJavascript` 的 params 为 JSON 字符串。historyChanged 通过 `onEvent` 报告 canGoBack / canGoForward。异步调用被撤销后不再投递旧结果。
 
@@ -146,7 +146,7 @@ OHOS `replyPageMessage` Boolean 与 A/i 一致：通过当前 owner/nonce/input/
 
 固定源码基线、五入口差异和验证范围见[功能与平台差异](../../docs/功能与平台差异.md)；本节记录自HAR rc.13提供的既有能力，Release产物消费与Registry上架分别核验。
 
-允许的 popup 复用当前页面，保留原有导航、可信来源、手势/自动开窗和 owner 门禁；不创建独立第二窗口。`textZoomRatio` 使用系统字体倍率和请求上下限，`darkMode` 跟随系统，`forceDarkAccess` 由算法暗化开关控制。系统配置观察失败不阻断加载，销毁后撤销观察和迟到事件。
+当前新窗口处理见上节。`textZoomRatio` 使用系统字体倍率和请求上下限，`darkMode` 跟随系统，`forceDarkAccess` 由算法暗化开关控制。系统配置观察失败不阻断加载，销毁后撤销观察和迟到事件。
 
 本版 allowFileAccess 显式映射 ArkWeb fileAccess（默认 false）；true 只放行应用沙箱 file 子资源，顶层仍限声明 HTTP(S) policy，blockedResourceRules 仍优先，content/resource URI不开放。第三方 Cookie 当前只有 WebCookieManager 全局静态开关，组件不修改进程共享策略；false/默认也不能保证同进程其他Web修改全局策略后的每实例隔离。
 

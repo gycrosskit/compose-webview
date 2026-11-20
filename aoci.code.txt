@@ -7,7 +7,7 @@ AGENTS.md[SG6S]: F:定义组件评审和 AOCI 会话与维护合同 | R:code:REA
 CHANGELOG.md[SV5S]: F:记录各版 WebView 功能、三端渠道和验收证据 | R:code:README.md,code:docs/功能与平台差异.md | A:- | S:-
 GYWebView.podspec[FV7T]: F:声明 WKWebView 原生 Pod 源码版本和 Renderer 依赖 | R:code:ios/Sources/GYWebView.h,code:ios/Sources/GYWebView.m | A:GYWebView | S:Git 源使用 native-<版本> 标签，最低 iOS 15，-ObjC 保留注册类
 LICENSE[SS2M]: F:保留自有 WebView 源码的 Apache 2.0 许可 | R:- | A:- | S:-
-README.md[SG6S]: F:提供 WebView 三端安装坐标、公开模块和导航配置入口 | R:code:docs/功能与平台差异.md,code:docs/接入指南.md | A:AppWebView,GYWebView | S:开放 HTTP(S) 导航不授予原生权限；原生文件选择需要 iOS 18.4 或以上
+README.md[SG6S]: F:说明安装坐标、导航 API 与宿主接线 | R:code:docs/功能与平台差异.md,code:docs/接入指南.md | A:AppWebView,GYWebView | S:鸿蒙 OHPM 独立发补丁。开放导航不授予原生权限，ArkWeb 表单使用当前窗口
 VALIDATION.md[SV4T]: F:保存旧 Kotlin/Native、CMP 与多渠道打包验收记录 | R:code:docs/远程闭合验收.md,code:docs/开发与验证.md | A:- | S:-
 build.gradle.kts[FV6T]: F:统一 KMP 插件、Maven 版本和 staging 仓库 | R:code:webview-core/build.gradle.kts,code:webview-kuikly/build.gradle.kts | A:GROUP,VERSION | S:-
 gradle.properties[FV3T]: F:配置 Gradle JVM、AndroidX 及非传递 R | R:- | A:- | S:-
@@ -28,7 +28,7 @@ settings.gradle.kts[FV5T]: F:配置 KMP 插件和 Maven 源，加载 WebView cor
 0.2.0-rc.9候选验收.md[SV4T]: F:保存 rc.9 的三端源码与测试、真 WKWebView 和原生回执候选证据 | R:code:docs/0.2.0-rc.9远程发布验收.md | A:- | S:-
 0.2.0-rc.9远程发布验收.md[SV4T]: F:记录 rc.9 的发布端归档与精确渠道回验结果 | R:code:docs/0.2.0-rc.9候选验收.md | A:- | S:-
 RC迁移说明.md[SV4T]: F:说明已移除 CMP 的历史消费者迁移、冻结候选和渠道边界 | R:code:docs/接入指南.md | A:- | S:-
-功能与平台差异.md[SU8M]: F:说明三端导航、Bridge、媒体权限与文档生命周期合同 | R:code:docs/接入指南.md,code:docs/开发与验证.md | A:- | S:开放来源只影响导航；外链弹窗、表单和重定向仍受内核回调能力约束
+功能与平台差异.md[SU8M]: F:说明三端导航、Bridge、设备权限和文档生命周期合同 | R:code:docs/接入指南.md,code:docs/开发与验证.md | A:- | S:ArkWeb 的新窗口回调无原始请求，取消且不重发 URL。当前窗合法 GET、POST 与重定向由内核处理
 完整源码审查.md[SQ5S]: F:保存共享请求、平台 WebView 与 Kuikly 接线的历史逐文件审查和验证限制 | R:code:docs/功能与平台差异.md | A:- | S:-
 开发与验证.md[SV6M]: F:提供平台编译、相机权限和生命周期回归，以及各发布渠道证据 | R:code:docs/功能与平台差异.md,code:scripts/build.sh | A:- | S:-
 接入指南.md[SU8M]: F:说明公共请求、开放导航、原生权限与早期通道的宿主接入 | R:code:docs/功能与平台差异.md,code:ios/Sources/GYWebView.h | A:AppWebView,GYWebView | S:允许任意 HTTP(S) 来源仍和显式 URL、scheme 及拒绝规则取交集，不修改 Bridge 信任
@@ -72,7 +72,7 @@ hvigor-config.json5[FV3T]: F:配置鸿蒙工程 Hvigor 模型与默认工具参�
 verify-har.sh[TV7T]: F:构建 API22 WebView HAR，执行源码与实际 HAR 合同并编译隔离消费者 | R:code:ohos/tests/contract.test.cjs,code:ohos/verification-consumer/build-profile.json5 | A:WEBVIEW_SYSTEM_ACTIONS_HAR | S:显式本地候选覆盖只用于本次验证，退出时恢复精确 Registry 配置
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/tests/===
-contract.test.cjs[TU6L]: F:以 ArkTS 源码或 HAR 执行导航、Bridge、权限、窗口和存储合同回归 | R:code:ohos/scripts/verify-har.sh,code:ohos/webview-native/src/main/ets/WebViewWire.ts | A:- | S:替身合同不证明 ArkWeb 真机业务或全屏行为
+contract.test.cjs[TU6L]: F:以 ArkTS 源码或实际 HAR 检查导航、Bridge、权限、窗口和存储 | R:code:ohos/scripts/verify-har.sh,code:ohos/webview-native/src/main/ets/WebViewWire.ts | A:- | S:新窗口测试要求取消且不重发，正常当前窗 POST 保留。替身测试不证明 ArkWeb 真机行为
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/verification-consumer/AppScope/===
 app.json5[FV3T]: F:为独立 HAR consumer 声明单独应用标识与版本 | R:code:ohos/verification-consumer/build-profile.json5 | A:- | S:-
@@ -98,20 +98,20 @@ module.json5[FV3T]: F:声明覆盖默认和平板设备的消费者 HAR | R:code
 hvigor-config.json5[FV3T]: F:配置独立消费者的 Hvigor 模型 | R:code:ohos/verification-consumer/hvigorfile.ts | A:- | S:-
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/webview-native/===
-CHANGELOG.md[SV5S]: F:记录 ArkWeb HAR 各版导航、兼容策略与发布证据 | R:code:ohos/webview-native/README.md | A:- | S:-
+CHANGELOG.md[SV5S]: F:记录 ArkWeb HAR 版本、导航兼容变化和发布证据 | R:code:ohos/webview-native/README.md | A:- | S:2.5.1 取消无法保留原始请求的新窗口
 Index.ets[EU7T]: F:导出 ArkWeb View、事件、请求、数据清理、Renderer 类型和全屏策略 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts,code:ohos/webview-native/src/main/ets/OhosWebViewDataCleaner.ets | A:- | S:-
 LICENSE[SS2M]: F:保留 HarmonyOS HAR 自有代码的 Apache 2.0 许可 | R:- | A:- | S:-
-README.md[SU7S]: F:说明鸿蒙 WebView HAR 安装、注册、文件 hook 和窗口能力 | R:code:ohos/webview-native/Index.ets,code:ohos/README.md | A:GYWebView,FullscreenWindowPolicy | S:窗口 owner 由精确的 System Actions 原生依赖提供
+README.md[SU7S]: F:说明鸿蒙私有包的安装、注册、文件回调与全屏配置 | R:code:ohos/webview-native/Index.ets,code:ohos/README.md | A:GYWebView,FullscreenWindowPolicy | S:表单在当前窗口提交。全屏 owner 由 System Actions 原生依赖提供
 build-profile.json5[FV3T]: F:配置生产 HAR 的 stageMode 和默认产品目标 | R:code:ohos/build-profile.json5 | A:- | S:-
 hvigorfile.ts[FV3T]: F:注册 WebViewNative HAR 模块任务 | R:code:ohos/hvigorfile.ts | A:- | S:-
-oh-package.json5[FV6T]: F:声明 ArkWeb HAR 版本、公开入口及 Renderer 和窗口依赖 | R:code:ohos/webview-native/Index.ets | A:@gycrosskit/webview | S:Renderer ^2.29.1；system-actions-native 精确 1.0.2
+oh-package.json5[FV6T]: F:声明独立 OHPM 2.5.1、公开入口及 Renderer 和窗口依赖 | R:code:ohos/webview-native/Index.ets | A:@gycrosskit/webview | S:Renderer ^2.29.1，System Actions 精确 1.0.2
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/webview-native/src/main/ets/===
-GYWebView.ets[IU9L]: F:运行 ArkWeb 原生控制器，处理同步安全规则、文档 bridge、媒体权限和全屏文件回执 | R:code:ohos/webview-native/src/main/ets/WebViewComponent.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts,code:ohos/webview-native/src/main/ets/WebPermissionDialog.ets | A:GYWebView,selectHostFiles,revokeHostFiles,windowPolicyController | S:每次 attach 与文档 token 核对；旧文件、授权和 window lease 不得清除或继承到新 owner；reply 只表示受理
+GYWebView.ets[IU9L]: F:运行 ArkWeb 控制器，执行导航、文档 Bridge、媒体权限和全屏文件回执 | R:code:ohos/webview-native/src/main/ets/WebViewComponent.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts,code:ohos/webview-native/src/main/ets/WebPermissionDialog.ets | A:GYWebView,selectHostFiles,revokeHostFiles,windowPolicyController | S:新窗口因缺原始请求同步取消。attach 与文档 token 隔离旧文件、权限和 window lease；reply 只表示受理
 OhosWebViewDataCleaner.ets[IU7T]: F:在 UI 线程清理默认 ArkWeb 资源缓存或网站数据 | R:code:ohos/webview-native/Index.ets | A:OhosWebViewDataCleaner.clearResourceCache,OhosWebViewDataCleaner.clearWebsiteData | S:只等待 Cookie 完成回调；缓存与 WebStorage 返回不代表持久化，已发出的清除无法撤销
 WebPermissionDialog.ets[AU5T]: F:构建由宿主文案和回调驱动的原生权限用途告知弹窗 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets | A:createWebPermissionDialog | S:-
 WebViewComponent.ets[IU8T]: F:将组件请求映射到 ArkUI Web 属性和原生事件回调 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts | A:createGYWebView | S:每个回调先校验 render token；过期文件、窗口和权限按原生合同结算
-WebViewWire.ts[EU8M]: F:校验 ArkWeb wire，并判定导航来源、脚本信任和资源访问 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets,code:ohos/webview-native/src/main/ets/WebViewComponent.ets | A:WebViewRequest,navigationAllowed,origin,trusted | S:开放导航仍限制合法 HTTP(S)，且不扩大 trusted；新增布尔字段拒绝非布尔值
+WebViewWire.ts[EU8M]: F:校验 ArkWeb wire 并判定导航来源、脚本信任及资源访问 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets,code:ohos/webview-native/src/main/ets/WebViewComponent.ets | A:WebViewRequest,navigationAllowed,origin,trusted | S:开放导航仍限合法 HTTP(S) 且不扩大 trusted。allowNewWindows 字段保留 wire 合同，ArkWeb 取消未知方法的弹窗
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/webview-native/src/main/===
 module.json5[FV3T]: F:声明发行 WebViewNative HAR 及默认、平板设备类型 | R:code:ohos/build-profile.json5 | A:- | S:-
@@ -205,7 +205,7 @@ picture-in-picture-script.test.cjs[TU6T]: F:以 DOM fixture 验证生产 PiP 脚
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification/publication/===
 test_jitpack_install.py[TV5T]: F:用模拟 Release 下载验证冻结归档来源、摘要及安全安装 | R:code:jitpack-install.sh | A:- | S:-
 test_maven_check.py[TV5T]: F:验证 Maven 检查脚本对有缺陷或完整测试制品的判定 | R:code:scripts/check-maven.py | A:- | S:-
-test_metadata.py[TV5S]: F:校验 Maven、Pod、HAR 发行版本矩阵、元数据裁剪及摘要 | R:code:jitpack-metadata.py,code:GYWebView.podspec | A:PublicationContracts | S:发现实际资源文件时必须拒绝，即使文件为空也不得部分改写
+test_metadata.py[TV5S]: F:校验独立发行渠道的版本矩阵、元数据裁剪及摘要 | R:code:jitpack-metadata.py,code:GYWebView.podspec | A:PublicationContracts | S:发现实际资源文件时拒绝修改，保留所有输入原件
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/verification/===
 video-scripts.test.cjs[TU5T]: F:验证生产视频镜像与播放脚本在同源、异源 iframe 和无视频时的行为 | R:code:webview-core/build.gradle.kts | A:- | S:-

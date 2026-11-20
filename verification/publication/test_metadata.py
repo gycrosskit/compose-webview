@@ -57,7 +57,7 @@ class PublicationContracts(unittest.TestCase):
             'maven-consumer': '2.5.0',
             'verify-consumer': '2.5.0',
             'pod': '2.5.0',
-            'har': '2.5.0',
+            'har': '2.5.1',
         })
         for path, current in (('CHANGELOG.md', versions['maven']),
                               ('ohos/webview-native/CHANGELOG.md', versions['har'])):

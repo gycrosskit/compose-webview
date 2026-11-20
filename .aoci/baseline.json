@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-19T08:49:25Z",
-  "updated_at": "2026-11-20T08:15:19Z",
+  "updated_at": "2026-11-20T09:29:00Z",
   "files": {
     ".gitattributes": {
       "role": "index",
@@ -41,9 +41,9 @@
     },
     "README.md": {
       "role": "index",
-      "sha256": "cce4fd50dccecffccd35dee40ca87df3949bcbf68565fe538f156fa03471bfd5",
-      "size": 20182,
-      "normalized_sha256": "cce4fd50dccecffccd35dee40ca87df3949bcbf68565fe538f156fa03471bfd5"
+      "sha256": "bfc72c4792502ff8523a046830fdb32caf72d72079645d043e0602f65753ad6e",
+      "size": 20226,
+      "normalized_sha256": "bfc72c4792502ff8523a046830fdb32caf72d72079645d043e0602f65753ad6e"
     },
     "VALIDATION.md": {
       "role": "index",
@@ -53,9 +53,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "5a5d7bd11ee0281f211d364cd7ef12c884875480f10881e988411093083f4993",
-      "size": 55569,
-      "normalized_sha256": "5a5d7bd11ee0281f211d364cd7ef12c884875480f10881e988411093083f4993"
+      "sha256": "6d8075d79b59a8d2e44fc101adbc0d1b059c7c7998c00d44dc7710315cbfeb78",
+      "size": 55690,
+      "normalized_sha256": "6d8075d79b59a8d2e44fc101adbc0d1b059c7c7998c00d44dc7710315cbfeb78"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -131,9 +131,9 @@
     },
     "docs/功能与平台差异.md": {
       "role": "index",
-      "sha256": "5e73219fcf0dafb3e03f096149e67297f1be0cf366f6d82efe34b7bd00ace076",
-      "size": 36163,
-      "normalized_sha256": "5e73219fcf0dafb3e03f096149e67297f1be0cf366f6d82efe34b7bd00ace076"
+      "sha256": "021be3265fb01cbf36eb91c3656ec3e8d938c7b507e4bc7531a94c8f9c300c56",
+      "size": 36439,
+      "normalized_sha256": "021be3265fb01cbf36eb91c3656ec3e8d938c7b507e4bc7531a94c8f9c300c56"
     },
     "docs/完整源码审查.md": {
       "role": "index",
@@ -316,9 +316,9 @@
     },
     "ohos/tests/contract.test.cjs": {
       "role": "index",
-      "sha256": "223f5596600a0d28f81e0dae8407b5c089c66101761246520b5b6c26ee53d976",
-      "size": 145133,
-      "normalized_sha256": "223f5596600a0d28f81e0dae8407b5c089c66101761246520b5b6c26ee53d976"
+      "sha256": "4df3672a20f83942c7f67d8db354c5786375b1f6f2f334824004498e2b327df2",
+      "size": 145023,
+      "normalized_sha256": "4df3672a20f83942c7f67d8db354c5786375b1f6f2f334824004498e2b327df2"
     },
     "ohos/verification-consumer/AppScope/app.json5": {
       "role": "index",
@@ -388,9 +388,9 @@
     },
     "ohos/webview-native/CHANGELOG.md": {
       "role": "index",
-      "sha256": "c67fe905a5a4cfd95e56300856ef96f76739c65ea30d34e2a9157be7404d942f",
-      "size": 12478,
-      "normalized_sha256": "c67fe905a5a4cfd95e56300856ef96f76739c65ea30d34e2a9157be7404d942f"
+      "sha256": "52794ed4d06faca0dfbefce15122eaaff1b138054ce35f2b83eb7591ad939ff5",
+      "size": 12645,
+      "normalized_sha256": "52794ed4d06faca0dfbefce15122eaaff1b138054ce35f2b83eb7591ad939ff5"
     },
     "ohos/webview-native/Index.ets": {
       "role": "index",
@@ -406,9 +406,9 @@
     },
     "ohos/webview-native/README.md": {
       "role": "index",
-      "sha256": "749154a1798bac9de369db84306bb5343d54c4ca7317d979d33eb829987fd109",
-      "size": 16896,
-      "normalized_sha256": "749154a1798bac9de369db84306bb5343d54c4ca7317d979d33eb829987fd109"
+      "sha256": "c7dad85ab08803b59d45e3e706a3d709743a71e8b7aebfd04f76de68238d7abb",
+      "size": 16908,
+      "normalized_sha256": "c7dad85ab08803b59d45e3e706a3d709743a71e8b7aebfd04f76de68238d7abb"
     },
     "ohos/webview-native/build-profile.json5": {
       "role": "index",
@@ -424,15 +424,15 @@
     },
     "ohos/webview-native/oh-package.json5": {
       "role": "index",
-      "sha256": "753e9c5bd958970eec9924c00c2242a22e0fa8247e533de5ad10897497edff2f",
+      "sha256": "e8d8183824799ee78862e74368a4895d11124a010aab9576b43479d44420dcfb",
       "size": 458,
-      "normalized_sha256": "753e9c5bd958970eec9924c00c2242a22e0fa8247e533de5ad10897497edff2f"
+      "normalized_sha256": "e8d8183824799ee78862e74368a4895d11124a010aab9576b43479d44420dcfb"
     },
     "ohos/webview-native/src/main/ets/GYWebView.ets": {
       "role": "index",
-      "sha256": "f93d46669681af319ca4a0749398917737801b23c2954cfb9e80609d89453509",
-      "size": 60654,
-      "normalized_sha256": "f93d46669681af319ca4a0749398917737801b23c2954cfb9e80609d89453509"
+      "sha256": "b5b924758f11e82aed5351662a1da3fd13b57315fdfd2daf2df14e20f55662d9",
+      "size": 59393,
+      "normalized_sha256": "b5b924758f11e82aed5351662a1da3fd13b57315fdfd2daf2df14e20f55662d9"
     },
     "ohos/webview-native/src/main/ets/OhosWebViewDataCleaner.ets": {
       "role": "index",
@@ -454,9 +454,9 @@
     },
     "ohos/webview-native/src/main/ets/WebViewWire.ts": {
       "role": "index",
-      "sha256": "4b8172f5c4d69822f7d7fe894fe82c8aa1891cd1a4e8e94169eef33243e08ac3",
-      "size": 29784,
-      "normalized_sha256": "4b8172f5c4d69822f7d7fe894fe82c8aa1891cd1a4e8e94169eef33243e08ac3"
+      "sha256": "ec720eaf1f313937e1c14de68d7c668285c3d23bc2464f5802fbe3f978779124",
+      "size": 29800,
+      "normalized_sha256": "ec720eaf1f313937e1c14de68d7c668285c3d23bc2464f5802fbe3f978779124"
     },
     "ohos/webview-native/src/main/module.json5": {
       "role": "index",
@@ -772,9 +772,9 @@
     },
     "verification/publication/test_metadata.py": {
       "role": "index",
-      "sha256": "1cb367f21b45fb2370df6d8432bac7e452998c9cbb24368ff182dbbc222a98e4",
+      "sha256": "8c27348988fef52b89d464839bc325274ddbf533cc9eaf197fa028645b4bb2d1",
       "size": 6253,
-      "normalized_sha256": "1cb367f21b45fb2370df6d8432bac7e452998c9cbb24368ff182dbbc222a98e4"
+      "normalized_sha256": "8c27348988fef52b89d464839bc325274ddbf533cc9eaf197fa028645b4bb2d1"
     },
     "verification/video-scripts.test.cjs": {
       "role": "index",
