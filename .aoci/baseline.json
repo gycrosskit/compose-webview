@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-19T08:49:25Z",
-  "updated_at": "2026-11-20T08:15:19Z",
+  "updated_at": "2026-11-20T09:17:53Z",
   "files": {
     ".gitattributes": {
       "role": "index",
@@ -41,9 +41,9 @@
     },
     "README.md": {
       "role": "index",
-      "sha256": "cce4fd50dccecffccd35dee40ca87df3949bcbf68565fe538f156fa03471bfd5",
-      "size": 20182,
-      "normalized_sha256": "cce4fd50dccecffccd35dee40ca87df3949bcbf68565fe538f156fa03471bfd5"
+      "sha256": "5f7aa5ba4dbb4b854c81bfb1256a634dc49fbbdb0db37c0597af4b7453c74b6e",
+      "size": 20264,
+      "normalized_sha256": "5f7aa5ba4dbb4b854c81bfb1256a634dc49fbbdb0db37c0597af4b7453c74b6e"
     },
     "VALIDATION.md": {
       "role": "index",
@@ -53,9 +53,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "5a5d7bd11ee0281f211d364cd7ef12c884875480f10881e988411093083f4993",
-      "size": 55569,
-      "normalized_sha256": "5a5d7bd11ee0281f211d364cd7ef12c884875480f10881e988411093083f4993"
+      "sha256": "ef83708b75b63d981fcc1ac7fb59364ee5b0e7215c7030fbeb5bf00696b2b30b",
+      "size": 55741,
+      "normalized_sha256": "ef83708b75b63d981fcc1ac7fb59364ee5b0e7215c7030fbeb5bf00696b2b30b"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -131,9 +131,9 @@
     },
     "docs/功能与平台差异.md": {
       "role": "index",
-      "sha256": "5e73219fcf0dafb3e03f096149e67297f1be0cf366f6d82efe34b7bd00ace076",
-      "size": 36163,
-      "normalized_sha256": "5e73219fcf0dafb3e03f096149e67297f1be0cf366f6d82efe34b7bd00ace076"
+      "sha256": "021be3265fb01cbf36eb91c3656ec3e8d938c7b507e4bc7531a94c8f9c300c56",
+      "size": 36439,
+      "normalized_sha256": "021be3265fb01cbf36eb91c3656ec3e8d938c7b507e4bc7531a94c8f9c300c56"
     },
     "docs/完整源码审查.md": {
       "role": "index",
@@ -316,9 +316,9 @@
     },
     "ohos/tests/contract.test.cjs": {
       "role": "index",
-      "sha256": "223f5596600a0d28f81e0dae8407b5c089c66101761246520b5b6c26ee53d976",
-      "size": 145133,
-      "normalized_sha256": "223f5596600a0d28f81e0dae8407b5c089c66101761246520b5b6c26ee53d976"
+      "sha256": "4df3672a20f83942c7f67d8db354c5786375b1f6f2f334824004498e2b327df2",
+      "size": 145023,
+      "normalized_sha256": "4df3672a20f83942c7f67d8db354c5786375b1f6f2f334824004498e2b327df2"
     },
     "ohos/verification-consumer/AppScope/app.json5": {
       "role": "index",
@@ -406,9 +406,9 @@
     },
     "ohos/webview-native/README.md": {
       "role": "index",
-      "sha256": "749154a1798bac9de369db84306bb5343d54c4ca7317d979d33eb829987fd109",
-      "size": 16896,
-      "normalized_sha256": "749154a1798bac9de369db84306bb5343d54c4ca7317d979d33eb829987fd109"
+      "sha256": "b0b9e7e39593d6ecfbd141656cbb3a141097a54d1e894cfc87d2ef32aa651a33",
+      "size": 16908,
+      "normalized_sha256": "b0b9e7e39593d6ecfbd141656cbb3a141097a54d1e894cfc87d2ef32aa651a33"
     },
     "ohos/webview-native/build-profile.json5": {
       "role": "index",
@@ -430,9 +430,9 @@
     },
     "ohos/webview-native/src/main/ets/GYWebView.ets": {
       "role": "index",
-      "sha256": "f93d46669681af319ca4a0749398917737801b23c2954cfb9e80609d89453509",
-      "size": 60654,
-      "normalized_sha256": "f93d46669681af319ca4a0749398917737801b23c2954cfb9e80609d89453509"
+      "sha256": "b5b924758f11e82aed5351662a1da3fd13b57315fdfd2daf2df14e20f55662d9",
+      "size": 59393,
+      "normalized_sha256": "b5b924758f11e82aed5351662a1da3fd13b57315fdfd2daf2df14e20f55662d9"
     },
     "ohos/webview-native/src/main/ets/OhosWebViewDataCleaner.ets": {
       "role": "index",
@@ -454,9 +454,9 @@
     },
     "ohos/webview-native/src/main/ets/WebViewWire.ts": {
       "role": "index",
-      "sha256": "4b8172f5c4d69822f7d7fe894fe82c8aa1891cd1a4e8e94169eef33243e08ac3",
-      "size": 29784,
-      "normalized_sha256": "4b8172f5c4d69822f7d7fe894fe82c8aa1891cd1a4e8e94169eef33243e08ac3"
+      "sha256": "ec720eaf1f313937e1c14de68d7c668285c3d23bc2464f5802fbe3f978779124",
+      "size": 29800,
+      "normalized_sha256": "ec720eaf1f313937e1c14de68d7c668285c3d23bc2464f5802fbe3f978779124"
     },
     "ohos/webview-native/src/main/module.json5": {
       "role": "index",
