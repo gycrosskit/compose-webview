@@ -803,48 +803,51 @@ const requestForNavigation = (value, gesture = true, method = 'GET', redirect = 
   view.rejectNewWindow({ targetUrl: 'https://trusted.test/popup', isUserTrigger: true, handler: { setWebController: controller => popupController = controller } });
   assert.equal(popupController, null, 'popup must be cancelled synchronously');
   assert.equal(events.at(-1).target, 'NEW_WINDOW'); assert.equal(events.at(-1).blocked, true);
-  for (const mode of ['allow', 'block', 'untrusted', 'hide', 'replace', 'destroy']) {
-    const popup = new GYWebView(); const popupEvents = [];
-    popup.setProp('request', encoded(request({ settings: {javaScriptEnabled: true, supportMultipleWindows: true},
-      security: {...standard.security, appBridgeEnabled: true},
-      navigationPolicy: {...standard.navigationPolicy, allowNewWindows: mode !== 'block'} })));
-    popup.onControllerAttached(); const previous = popup.controller; const before = previous.loads.length;
-    popup.setProp('onEvent', event => {
-      popupEvents.push(event);
-      if (event.target === 'NEW_WINDOW') {
-        if (mode === 'hide') popup.setProp('visible', false);
-        if (mode === 'replace') popup.setProp('request', encoded(request()));
-        if (mode === 'destroy') popup.onDestroy();
-      }
-    });
-    popup.rejectNewWindow({targetUrl: mode === 'untrusted' ? 'https://evil.test/popup' : 'https://trusted.test/popup',
-      isUserTrigger: true, handler: {setWebController: controller => assert.equal(controller, null)}});
-    assert.equal(popupEvents[0].blocked, mode === 'block' || mode === 'untrusted');
-    assert.equal(previous.loads.length, before + (mode === 'allow' ? 1 : 0), 'popup routing must retain current owner and visibility');
-    popup.onDestroy();
-  }
-  for (const automatic of [false, true]) {
-    const popup = new GYWebView(); const popupEvents = [];
-    popup.setProp('request', encoded(request({settings: {javaScriptCanOpenWindowsAutomatically: automatic},
-      navigationPolicy: {...standard.navigationPolicy, allowNewWindows: true}})));
-    popup.onControllerAttached(); const before = popup.controller.loads.length;
-    popup.setProp('onEvent', event => popupEvents.push(event));
-    popup.rejectNewWindow({targetUrl: 'https://trusted.test/automatic', isUserTrigger: false, handler: {setWebController: () => {}}});
-    assert.equal(popupEvents[0].blocked, !automatic);
-    assert.equal(popup.controller.loads.length, before + (automatic ? 1 : 0)); popup.onDestroy();
+  for (const userLinkPolicy of ['DEFAULT', 'IN_CURRENT_PAGE', 'OPEN_SEPARATELY']) {
+    for (const isUserTrigger of [false, true]) {
+      const popup = new GYWebView(); const popupEvents = [];
+      popup.setProp('request', encoded(request({
+        settings: {javaScriptEnabled: true, supportMultipleWindows: true, javaScriptCanOpenWindowsAutomatically: true},
+        navigationPolicy: {...standard.navigationPolicy, allowNewWindows: true, userLinkPolicy}
+      })));
+      popup.onControllerAttached();
+      const originalUrl = popup.controller.getUrl();
+      const loads = popup.controller.loads.length;
+      const targetUrl = 'https://trusted.test/popup';
+      let cancelled = false;
+      popup.setProp('onEvent', event => {
+        assert.equal(cancelled, true, 'ArkWeb must receive the cancellation before the host receives the event');
+        popupEvents.push(event);
+      });
+      popup.rejectNewWindow({targetUrl, isUserTrigger, isAlert: false, handler: {setWebController: controller => {
+        assert.equal(cancelled, false);
+        assert.equal(controller, null);
+        cancelled = true;
+      }}});
+      assert.equal(cancelled, true);
+      assert.equal(popupEvents.length, 1);
+      assert.equal(popupEvents[0].type, 'navigation');
+      assert.equal(popupEvents[0].target, 'NEW_WINDOW');
+      assert.equal(popupEvents[0].blocked, true, 'ArkWeb popup events cannot distinguish GET from POST');
+      assert.equal(popup.controller.loads.length, loads, 'unknown-method popup must never be replayed as GET');
+      assert.equal(popup.controller.getUrl(), originalUrl);
+      popup.onDestroy();
+    }
   }
   {
     const ordinary = new GYWebView(); const events = [];
-    ordinary.setProp('request', encoded(request({ navigationPolicy: {...standard.navigationPolicy, userLinkPolicy: 'IN_CURRENT_PAGE'} })));
+    ordinary.setProp('request', encoded(request({ navigationPolicy: {...standard.navigationPolicy,
+      userLinkPolicy: 'IN_CURRENT_PAGE', navigationOrigins: {exactOrigins: [], hostSuffixOrigins: [], allowAnyHttpOrigin: true} } })));
     ordinary.onControllerAttached(); ordinary.setProp('onEvent', event => events.push(event));
     const outside = 'https://external.test/guide';
-    const popup = (view, targetUrl, isUserTrigger = true) =>
-      view.rejectNewWindow({targetUrl, isUserTrigger, handler: {setWebController: controller => assert.equal(controller, null)}});
-    popup(ordinary, outside, false);
-    assert.equal(events.pop().blocked, true);
-    popup(ordinary, outside);
-    assert.equal(events.pop().blocked, false);
-    assert.equal(ordinary.controller.loads.at(-1).url, outside);
+    const ordinaryLoads = ordinary.controller.loads.length;
+    for (const method of ['GET', 'POST']) {
+      assert.equal(ordinary.interceptNavigation(requestForNavigation(outside, true, method)), false);
+      const event = events.pop();
+      assert.equal(event.target, 'CURRENT_WINDOW');
+      assert.equal(event.blocked, false);
+    }
+    assert.equal(ordinary.controller.loads.length, ordinaryLoads, 'allow the original request without reloading its URL');
     ordinary.onDestroy();
 
     const protectedPage = new GYWebView();
@@ -861,18 +864,18 @@ const requestForNavigation = (value, gesture = true, method = 'GET', redirect = 
     assert.equal(events.pop().type, 'externalLinkRequested');
     assert.equal(protectedPage.interceptNavigation(requestForNavigation('https://trusted.test/help')), true);
     assert.equal(events.pop().type, 'externalLinkRequested');
-    popup(protectedPage, outside);
+    protectedPage.rejectNewWindow({targetUrl: outside, isUserTrigger: true, isAlert: false,
+      handler: {setWebController: controller => assert.equal(controller, null)}});
     assert.equal(events.length, 1);
-    assert.equal(events.pop().target, 'NEW_WINDOW');
+    const blockedPopup = events.pop();
+    assert.equal(blockedPopup.type, 'navigation', 'do not give an unverified popup URL to the host as an external link');
+    assert.equal(blockedPopup.target, 'NEW_WINDOW');
+    assert.equal(blockedPopup.blocked, true);
     assert.equal(protectedPage.controller.getUrl(), source);
     protectedPage.setProp('request', encoded(request({ navigationPolicy: {...standard.navigationPolicy,
       userLinkPolicy: 'OPEN_SEPARATELY', navigationOrigins: {exactOrigins: [source, outside], hostSuffixOrigins: []} } })));
     assert.equal(protectedPage.interceptNavigation(requestForNavigation(outside)), false);
     assert.equal(events.pop().type, 'navigation');
-    popup(protectedPage, outside);
-    assert.equal(events.length, 1);
-    assert.equal(events.pop().type, 'navigation');
-    assert.equal(protectedPage.controller.getUrl(), outside);
     protectedPage.onDestroy();
   }
   {

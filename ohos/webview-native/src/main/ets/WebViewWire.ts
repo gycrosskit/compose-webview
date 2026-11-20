@@ -61,8 +61,8 @@ export interface WebViewContent {
  * @property mixedContentPolicy 默认 ALWAYS_ALLOW。
  * @property cachePolicy 默认 DEFAULT。
  * @property acceptsThirdPartyCookies 默认 false，不能启用。
- * @property supportMultipleWindows 默认 false；新窗口始终路由到当前页面，不创建第二窗口。
- * @property javaScriptCanOpenWindowsAutomatically 默认 false；启用后仍受 navigationPolicy 与当前 owner 门禁。
+ * @property supportMultipleWindows 默认 false；ArkWeb 保留 wire 兼容，组件取消真实新窗口。
+ * @property javaScriptCanOpenWindowsAutomatically 默认 false；仅控制网页能否发起开窗请求。
  * @property mediaPlaybackRequiresUserGesture 默认 true。
  * @property loadsImagesAutomatically 默认 true。
  * @property blockNetworkImage 默认 false。
@@ -120,7 +120,7 @@ export interface WebViewScript { id: string; source: string; injectionTime: stri
  * @property allowedOrigins 可选精确主文档来源白名单，空时不限制。
  * @property allowedUrls 可选完整 URL 字符串白名单，只限制主文档；空时不限制，不归一化路径或查询。
  * @property blockedRules 主文档拒绝规则。
- * @property allowNewWindows 默认 false；允许目标复用当前窗口导航。
+ * @property allowNewWindows 默认 false；ArkWeb 新窗口回调没有原始请求，组件取消后报告已拦截。
  * @property userLinkPolicy 用户主动点开的主文档链接处理方式。
  */
 export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; allowedUrls?: string[]; navigationOrigins?: NavigationOrigins; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; userLinkPolicy?: string; }

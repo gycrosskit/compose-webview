@@ -101,7 +101,7 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 - 导航拦截由预先下发的 `navigationPolicy` 同步判断，事件用于报告结果；`allowedOrigins` 精确匹配 scheme、host 和有效端口。
 - rc.11 增加 `allowedUrls`，按完整 URL 字符串同步限制主文档，与 scheme、来源和拒绝规则同时生效；空集合不增加限制，不归一化默认端口、路径、查询或 fragment，也不限制 iframe/子资源。
 - 使用 `navigationOrigins = WebViewNavigationOrigins(allowAnyHttpOrigin = true)` 可独立允许任意 HTTP(S) 来源导航，Bridge 等原生能力仍按来源授权。未额外配置来源、URL 或拒绝规则时，原始 POST 与重定向交给内核。Android 对有这些限制的主框架仍保守拒绝非 GET，因为 [Android WebViewClient](https://developer.android.com/reference/android/webkit/WebViewClient) 无法保证观察保留 POST 的每跳重定向。
-- Android 临时弹窗仅解析 GET 目标并沿用当前窗口；非 GET 主文档始终拒绝并通知，不先联网，也不把 POST 改为 GET 重放。
+- Android 临时弹窗仅沿用确认过的 GET，拒绝并报告非 GET。鸿蒙 ArkWeb 的真实新窗口回调不提供 HTTP 方法和请求体，组件取消该窗口并报告已拦截，普通链接和表单请在当前窗口打开。
 - iOS 18.4 以下不能开启受控原生文件选择，返回 `CapabilityUnsupported(FILE_CHOOSER)`；旧系统的 DOM 拦截不能保证原生文件隔离。iOS18.4+ 与 HarmonyOS H5 `capture` 复用系统拍摄能力，核验权限、来源、文档代次、MIME 和大小；取消/失败不回传文件，成功临时文件在文档撤销时清理。
 - 导航、请求切换、页面归属失效和销毁撤销旧消息端口、系统请求与迟到回调。显式 `pageOwnerActive=true` 的后台切换保留文档、Bridge 和在途业务，未提供该属性时保留原有 visible 兼容行为。暂时隐藏不取消当前文档初始化：脚本仍受 JavaScript 开关与可信主文档门禁，显示不会重跑副作用脚本或重载页面。应用负责业务脚本输入编码和页面生命周期。
 
