@@ -103,6 +103,7 @@ static BOOL GYHttpRequestAllowed(NSDictionary *request, NSString *url) {
 static BOOL GYNavigationOriginsAllow(NSDictionary *origins, NSString *url) {
     NSDictionary *target = GYOrigin(url);
     if (!target) return NO;
+    if (GYBool(origins, @"allowAnyHttpOrigin", NO)) return YES;
     for (NSString *value in origins[@"exactOrigins"]) if ([target isEqual:GYOrigin(value)]) return YES;
     for (NSString *value in origins[@"hostSuffixOrigins"]) {
         NSDictionary *suffix = GYOrigin(value);
@@ -356,6 +357,8 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     id navigationOrigins = policy[@"navigationOrigins"];
     if (navigationOrigins) {
         if (![navigationOrigins isKindOfClass:NSDictionary.class]) return NO;
+        id allowAny = navigationOrigins[@"allowAnyHttpOrigin"];
+        if (allowAny && (![allowAny isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)allowAny) != CFBooleanGetTypeID())) return NO;
         for (NSString *key in @[@"exactOrigins", @"hostSuffixOrigins"]) {
             id values = navigationOrigins[key];
             if (![values isKindOfClass:NSArray.class]) return NO;

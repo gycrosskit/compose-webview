@@ -1364,6 +1364,14 @@ static void Check(void) {
         @"security": @{@"appBridgeEnabled": @YES, @"trustedOrigins": @{@"urls": @[@"https://safe.example"], @"trustedHostSuffixes": @[]}},
         @"navigationPolicy": @{@"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": independent}};
     Require([view validRequest:view.request], @"Independent origins rejected");
+    NSMutableDictionary *wideRequest = [view.request mutableCopy];
+    wideRequest[@"navigationPolicy"] = @{@"allowedSchemes": @[@"http", @"https"],
+        @"navigationOrigins": @{@"exactOrigins": @[], @"hostSuffixOrigins": @[], @"allowAnyHttpOrigin": @YES}};
+    view.request = wideRequest;
+    Require([view validRequest:view.request], @"Open Web navigation rejected");
+    Require([view allows:@"http://outside.example:8080/path" mainFrame:YES newWindow:NO gesture:NO], @"Cross-origin Web navigation blocked");
+    Require(![view bridgeAllowed:@"http://outside.example:8080/path"], @"Open navigation granted Bridge");
+    Require(![view allows:@"custom://outside.example" mainFrame:YES newWindow:NO gesture:NO], @"Open navigation accepted a custom scheme");
     NSDictionary *anyPort = @{ @"exactOrigins": @[], @"hostSuffixOrigins": @[], @"hostSuffixAnyPortOrigins": @[@"http://shop.example", @"https://shop.example"] };
     view.request = @{ @"content": @{ @"type": @"url", @"url": @"https://safe.example" }, @"security": @{}, @"navigationPolicy": @{ @"allowedSchemes": @[@"http", @"https"], @"navigationOrigins": anyPort } };
     Require([view validRequest:view.request], @"Any-port origin rejected");
