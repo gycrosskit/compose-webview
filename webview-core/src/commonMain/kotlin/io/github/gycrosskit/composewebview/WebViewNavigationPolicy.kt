@@ -7,6 +7,8 @@ data class WebViewNavigationOrigins(
     val exactOrigins: Set<String> = emptySet(),
     val hostSuffixOrigins: Set<String> = emptySet(),
     val hostSuffixAnyPortOrigins: Set<String> = emptySet(),
+    /** 让内核处理 Web 导航，JSBridge 等权限仍按各自来源授权。 */
+    val allowAnyHttpOrigin: Boolean = false,
 ) {
     init {
         require((exactOrigins + hostSuffixOrigins + hostSuffixAnyPortOrigins).all { it.toHttpOrigin() != null })
@@ -20,7 +22,7 @@ data class WebViewNavigationOrigins(
 
     internal fun allows(url: String): Boolean {
         val target = url.toHttpOrigin() ?: return false
-        return exactOrigins.any { it.toHttpOrigin() == target } || hostSuffixOrigins.any {
+        return allowAnyHttpOrigin || exactOrigins.any { it.toHttpOrigin() == target } || hostSuffixOrigins.any {
             val suffix = it.toHttpOrigin() ?: return@any false
             target.scheme == suffix.scheme && target.port == suffix.port &&
                 (target.host == suffix.host || target.host.endsWith(".${suffix.host}"))

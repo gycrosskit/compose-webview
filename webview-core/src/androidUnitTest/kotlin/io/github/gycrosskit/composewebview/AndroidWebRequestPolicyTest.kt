@@ -47,6 +47,24 @@ class AndroidWebRequestPolicyTest {
         assertEquals(6, rejected.size)
     }
 
+    @Test fun `open navigation preserves cross origin form submissions without granting bridge access`() {
+        val request = WebViewRequest(
+            WebViewContent.Url(allowed),
+            security = WebViewSecurity(appBridgeEnabled = true, trustedOrigins = WebViewTrustPolicy(listOf(allowed))),
+            navigationPolicy = WebViewNavigationPolicy(navigationOrigins = WebViewNavigationOrigins(allowAnyHttpOrigin = true)),
+        )
+        val decoded = WebViewWire.decodeRequest(WebViewWire.encodeRequest(request))
+        assertEquals(request, decoded)
+        val rejected = mutableListOf<WebViewNavigationRequest>()
+        for (url in listOf("http://shop.test:8080/form", "https://checkout.test/form")) {
+            assertNull(decoded.interceptAndroidRequest(resource(url), rejected::add))
+            assertFalse(decoded.canReceiveAppBridgeMessage(url, true))
+        }
+        assertTrue(rejected.isEmpty())
+        val restricted = decoded.copy(navigationPolicy = decoded.navigationPolicy.copy(allowedUrls = setOf(allowed)))
+        assertNotNull(restricted.interceptAndroidRequest(resource(allowed), rejected::add))
+    }
+
     @Test fun `HTTP origin policy covers observable main and resource requests`() {
         val request = WebViewRequest(WebViewContent.Url(allowed), allowedHttpOrigins = setOf("http://allowed.test"))
         val rejected = mutableListOf<WebViewNavigationRequest>()

@@ -42,6 +42,7 @@ object WebViewWire {
             request.navigationPolicy.navigationOrigins?.let { origins -> put("navigationOrigins", buildJsonObject {
                 put("exactOrigins", strings(origins.exactOrigins)); put("hostSuffixOrigins", strings(origins.hostSuffixOrigins))
                 put("hostSuffixAnyPortOrigins", strings(origins.hostSuffixAnyPortOrigins))
+                if (origins.allowAnyHttpOrigin) put("allowAnyHttpOrigin", true)
             }) }
             put("blockedRules", rules(request.navigationPolicy.blockedRules))
             put("allowNewWindows", request.navigationPolicy.allowNewWindows)
@@ -83,7 +84,10 @@ object WebViewWire {
                 policy.strings("allowedUrls").toSet(),
                 policy["navigationOrigins"]?.jsonObject?.let {
                     require("exactOrigins" in it && "hostSuffixOrigins" in it)
-                    WebViewNavigationOrigins(it.strings("exactOrigins").toSet(), it.strings("hostSuffixOrigins").toSet(), it.strings("hostSuffixAnyPortOrigins").toSet())
+                    WebViewNavigationOrigins(
+                        it.strings("exactOrigins").toSet(), it.strings("hostSuffixOrigins").toSet(),
+                        it.strings("hostSuffixAnyPortOrigins").toSet(), it.boolean("allowAnyHttpOrigin", false),
+                    )
                 },
                 policy.enum("userLinkPolicy", WebViewUserLinkPolicy.DEFAULT),
             ),

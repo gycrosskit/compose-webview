@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-19T08:49:25Z",
-  "updated_at": "2026-11-19T09:20:27Z",
+  "updated_at": "2026-11-20T08:15:19Z",
   "files": {
     ".gitattributes": {
       "role": "index",
@@ -23,15 +23,15 @@
     },
     "CHANGELOG.md": {
       "role": "index",
-      "sha256": "957ebbe2b5033afcd370daaadc93b5c5d53ed40b161a9e5506735d371b928ab1",
-      "size": 11153,
-      "normalized_sha256": "957ebbe2b5033afcd370daaadc93b5c5d53ed40b161a9e5506735d371b928ab1"
+      "sha256": "fd6e025d75b0f38c3d18b0fcd1b7f0eb68208c43ee454724fb5c5a4de6c2ed2f",
+      "size": 11520,
+      "normalized_sha256": "fd6e025d75b0f38c3d18b0fcd1b7f0eb68208c43ee454724fb5c5a4de6c2ed2f"
     },
     "GYWebView.podspec": {
       "role": "index",
-      "sha256": "24aea6fa823980586b40e04bec1c5fe9b39b3e6e54ba93c447ddaef9bf3e573f",
+      "sha256": "9353af69c806066da63a2da94467119e35fe5cce6c63c4f2bcb6c68ea9f2047e",
       "size": 771,
-      "normalized_sha256": "24aea6fa823980586b40e04bec1c5fe9b39b3e6e54ba93c447ddaef9bf3e573f"
+      "normalized_sha256": "9353af69c806066da63a2da94467119e35fe5cce6c63c4f2bcb6c68ea9f2047e"
     },
     "LICENSE": {
       "role": "index",
@@ -41,9 +41,9 @@
     },
     "README.md": {
       "role": "index",
-      "sha256": "f8b144fbb81127897d932fac691fa239d0be85d76d08ba3e584abae9e63132d5",
-      "size": 20275,
-      "normalized_sha256": "f8b144fbb81127897d932fac691fa239d0be85d76d08ba3e584abae9e63132d5"
+      "sha256": "cce4fd50dccecffccd35dee40ca87df3949bcbf68565fe538f156fa03471bfd5",
+      "size": 20182,
+      "normalized_sha256": "cce4fd50dccecffccd35dee40ca87df3949bcbf68565fe538f156fa03471bfd5"
     },
     "VALIDATION.md": {
       "role": "index",
@@ -53,9 +53,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "d95f92db5f67d6d11942a6b0c90fdc207b44516c89dc301309c814a0733846d5",
-      "size": 55280,
-      "normalized_sha256": "d95f92db5f67d6d11942a6b0c90fdc207b44516c89dc301309c814a0733846d5"
+      "sha256": "5a5d7bd11ee0281f211d364cd7ef12c884875480f10881e988411093083f4993",
+      "size": 55569,
+      "normalized_sha256": "5a5d7bd11ee0281f211d364cd7ef12c884875480f10881e988411093083f4993"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -71,9 +71,9 @@
     },
     "build.gradle.kts": {
       "role": "index",
-      "sha256": "b8dd7ac7cd937efd2637c2173d29a8ba3056230098547261893f41b77715be0e",
+      "sha256": "b9098f8af37311a924ac3126f9b26cbc3034b7fc8130b07b6581623925ce16b3",
       "size": 1082,
-      "normalized_sha256": "b8dd7ac7cd937efd2637c2173d29a8ba3056230098547261893f41b77715be0e"
+      "normalized_sha256": "b9098f8af37311a924ac3126f9b26cbc3034b7fc8130b07b6581623925ce16b3"
     },
     "docs/0.2.0-rc.11发布验收.md": {
       "role": "index",
@@ -131,9 +131,9 @@
     },
     "docs/功能与平台差异.md": {
       "role": "index",
-      "sha256": "6075c7aff612c221861faba47d92b346460b3641fffcaded9d00327180d81b61",
-      "size": 35990,
-      "normalized_sha256": "6075c7aff612c221861faba47d92b346460b3641fffcaded9d00327180d81b61"
+      "sha256": "5e73219fcf0dafb3e03f096149e67297f1be0cf366f6d82efe34b7bd00ace076",
+      "size": 36163,
+      "normalized_sha256": "5e73219fcf0dafb3e03f096149e67297f1be0cf366f6d82efe34b7bd00ace076"
     },
     "docs/完整源码审查.md": {
       "role": "index",
@@ -149,9 +149,9 @@
     },
     "docs/接入指南.md": {
       "role": "index",
-      "sha256": "57355b9e7f395b8b43662d95defb5cd84dc8e21dcaf5fc7be01c1407d17885c8",
-      "size": 27661,
-      "normalized_sha256": "57355b9e7f395b8b43662d95defb5cd84dc8e21dcaf5fc7be01c1407d17885c8"
+      "sha256": "4a4e1af487be56688ab12c625f267b680f4d84be1b9be314be93bceef8d64766",
+      "size": 27873,
+      "normalized_sha256": "4a4e1af487be56688ab12c625f267b680f4d84be1b9be314be93bceef8d64766"
     },
     "docs/早期页面通道候选验收.md": {
       "role": "index",
@@ -214,9 +214,9 @@
     },
     "ios/Sources/GYWebView.m": {
       "role": "index",
-      "sha256": "2229b02d924d61587ada30bc40299c40940704bf5b7812b1bc5b46f3709d648d",
-      "size": 97442,
-      "normalized_sha256": "2229b02d924d61587ada30bc40299c40940704bf5b7812b1bc5b46f3709d648d"
+      "sha256": "89f648fe59fafd8cc0a274fee9ace22c227cd74cf50a086deab9c1ec826354fa",
+      "size": 97718,
+      "normalized_sha256": "89f648fe59fafd8cc0a274fee9ace22c227cd74cf50a086deab9c1ec826354fa"
     },
     "ios/Sources/GYWebViewScripts.inc": {
       "role": "index",
@@ -226,9 +226,9 @@
     },
     "ios/Tests/BooleanWireCheck.m": {
       "role": "index",
-      "sha256": "80e770379fcae8001b41191d03df059c238571ddfc256b09ebfa0afdc67c1aa8",
-      "size": 140823,
-      "normalized_sha256": "80e770379fcae8001b41191d03df059c238571ddfc256b09ebfa0afdc67c1aa8"
+      "sha256": "eb0cb2bcd9e91c20c7567039131f8172853593ab2e9955a5c940c5365f48a982",
+      "size": 141585,
+      "normalized_sha256": "eb0cb2bcd9e91c20c7567039131f8172853593ab2e9955a5c940c5365f48a982"
     },
     "ios/Tests/page-channel-server.py": {
       "role": "index",
@@ -316,9 +316,9 @@
     },
     "ohos/tests/contract.test.cjs": {
       "role": "index",
-      "sha256": "a212ce95d0692441c77a7570489c354de777c2b2500dac7f53a021e8ae79a1f5",
-      "size": 144372,
-      "normalized_sha256": "a212ce95d0692441c77a7570489c354de777c2b2500dac7f53a021e8ae79a1f5"
+      "sha256": "223f5596600a0d28f81e0dae8407b5c089c66101761246520b5b6c26ee53d976",
+      "size": 145133,
+      "normalized_sha256": "223f5596600a0d28f81e0dae8407b5c089c66101761246520b5b6c26ee53d976"
     },
     "ohos/verification-consumer/AppScope/app.json5": {
       "role": "index",
@@ -388,9 +388,9 @@
     },
     "ohos/webview-native/CHANGELOG.md": {
       "role": "index",
-      "sha256": "d79210cf1cf597ff592680094d061c7fc416323f8cf9ccfa7919e21470eb900f",
-      "size": 12368,
-      "normalized_sha256": "d79210cf1cf597ff592680094d061c7fc416323f8cf9ccfa7919e21470eb900f"
+      "sha256": "c67fe905a5a4cfd95e56300856ef96f76739c65ea30d34e2a9157be7404d942f",
+      "size": 12478,
+      "normalized_sha256": "c67fe905a5a4cfd95e56300856ef96f76739c65ea30d34e2a9157be7404d942f"
     },
     "ohos/webview-native/Index.ets": {
       "role": "index",
@@ -406,9 +406,9 @@
     },
     "ohos/webview-native/README.md": {
       "role": "index",
-      "sha256": "904349a1c59f16c84f26c540d5eb0e3a87b91f8b8bc156aca9339a566713e30d",
+      "sha256": "749154a1798bac9de369db84306bb5343d54c4ca7317d979d33eb829987fd109",
       "size": 16896,
-      "normalized_sha256": "904349a1c59f16c84f26c540d5eb0e3a87b91f8b8bc156aca9339a566713e30d"
+      "normalized_sha256": "749154a1798bac9de369db84306bb5343d54c4ca7317d979d33eb829987fd109"
     },
     "ohos/webview-native/build-profile.json5": {
       "role": "index",
@@ -424,9 +424,9 @@
     },
     "ohos/webview-native/oh-package.json5": {
       "role": "index",
-      "sha256": "dcbc10bf77e1864d8742872f6c0645c5f08653b44b37d9aaa4bcda8bf7bd3516",
+      "sha256": "753e9c5bd958970eec9924c00c2242a22e0fa8247e533de5ad10897497edff2f",
       "size": 458,
-      "normalized_sha256": "dcbc10bf77e1864d8742872f6c0645c5f08653b44b37d9aaa4bcda8bf7bd3516"
+      "normalized_sha256": "753e9c5bd958970eec9924c00c2242a22e0fa8247e533de5ad10897497edff2f"
     },
     "ohos/webview-native/src/main/ets/GYWebView.ets": {
       "role": "index",
@@ -454,9 +454,9 @@
     },
     "ohos/webview-native/src/main/ets/WebViewWire.ts": {
       "role": "index",
-      "sha256": "38e9be7591bf272c19b92b35ffb2bece82661373e1e1014babccdd3b2ad4dce0",
-      "size": 29539,
-      "normalized_sha256": "38e9be7591bf272c19b92b35ffb2bece82661373e1e1014babccdd3b2ad4dce0"
+      "sha256": "4b8172f5c4d69822f7d7fe894fe82c8aa1891cd1a4e8e94169eef33243e08ac3",
+      "size": 29784,
+      "normalized_sha256": "4b8172f5c4d69822f7d7fe894fe82c8aa1891cd1a4e8e94169eef33243e08ac3"
     },
     "ohos/webview-native/src/main/module.json5": {
       "role": "index",
@@ -502,9 +502,9 @@
     },
     "scripts/package-maven.sh": {
       "role": "index",
-      "sha256": "ab4af07a3f1b97bcc20ef2afec5ed3d75c0b4eb240c54affa03adb8564a9c5dc",
+      "sha256": "9d310c1f044cb14c410be8b3fd23936b9ace59d3e04b2d5f2a751e6063bee819",
       "size": 1234,
-      "normalized_sha256": "ab4af07a3f1b97bcc20ef2afec5ed3d75c0b4eb240c54affa03adb8564a9c5dc"
+      "normalized_sha256": "9d310c1f044cb14c410be8b3fd23936b9ace59d3e04b2d5f2a751e6063bee819"
     },
     "scripts/verify-ios-native.sh": {
       "role": "index",
@@ -526,9 +526,9 @@
     },
     "scripts/verify.sh": {
       "role": "index",
-      "sha256": "06dc4adc9c1895dfaef1041c9e9c8bd8e564244bd9d35393474eddfb4992dca9",
+      "sha256": "0956d54fe9a9c9226ca339c236b3bab0b7b43c55bbdfec5c0178c4bcf58875d9",
       "size": 925,
-      "normalized_sha256": "06dc4adc9c1895dfaef1041c9e9c8bd8e564244bd9d35393474eddfb4992dca9"
+      "normalized_sha256": "0956d54fe9a9c9226ca339c236b3bab0b7b43c55bbdfec5c0178c4bcf58875d9"
     },
     "settings.gradle.kts": {
       "role": "index",
@@ -538,9 +538,9 @@
     },
     "verification-consumer/build.gradle.kts": {
       "role": "index",
-      "sha256": "9363adfb4680e3e1a10791fec4165c044a709d9704c7bdc7b1dc24d1891c020b",
+      "sha256": "1f5db4fa55b6b6c92abb336b4f4dd8e81973e281da0baa7be03667c3f1f4f280",
       "size": 6352,
-      "normalized_sha256": "9363adfb4680e3e1a10791fec4165c044a709d9704c7bdc7b1dc24d1891c020b"
+      "normalized_sha256": "1f5db4fa55b6b6c92abb336b4f4dd8e81973e281da0baa7be03667c3f1f4f280"
     },
     "verification-consumer/gradle.properties": {
       "role": "index",
@@ -772,9 +772,9 @@
     },
     "verification/publication/test_metadata.py": {
       "role": "index",
-      "sha256": "d7f20706f63b0c7c393341024b80e660355f0162096998db5ed90921b84c0852",
+      "sha256": "1cb367f21b45fb2370df6d8432bac7e452998c9cbb24368ff182dbbc222a98e4",
       "size": 6253,
-      "normalized_sha256": "d7f20706f63b0c7c393341024b80e660355f0162096998db5ed90921b84c0852"
+      "normalized_sha256": "1cb367f21b45fb2370df6d8432bac7e452998c9cbb24368ff182dbbc222a98e4"
     },
     "verification/video-scripts.test.cjs": {
       "role": "index",
@@ -868,9 +868,9 @@
     },
     "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebRequestPolicy.kt": {
       "role": "index",
-      "sha256": "22bbcad66acaaf0aa6ceb4e1db08c12953bd90ade335a649e1aadb08f4c2b0a5",
-      "size": 1820,
-      "normalized_sha256": "22bbcad66acaaf0aa6ceb4e1db08c12953bd90ade335a649e1aadb08f4c2b0a5"
+      "sha256": "70945762a0abc743e3c5ca4a651fb94155f49dfbe93e705218d50b8b7f067301",
+      "size": 1850,
+      "normalized_sha256": "70945762a0abc743e3c5ca4a651fb94155f49dfbe93e705218d50b8b7f067301"
     },
     "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebViewConfig.kt": {
       "role": "index",
@@ -982,9 +982,9 @@
     },
     "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidWebRequestPolicyTest.kt": {
       "role": "index",
-      "sha256": "6b499af55faa3f4efff505969b9d9cf17bb7c4da6b290edd50f02ea9db194cb1",
-      "size": 4393,
-      "normalized_sha256": "6b499af55faa3f4efff505969b9d9cf17bb7c4da6b290edd50f02ea9db194cb1"
+      "sha256": "733962dd9a086495913e69755129311ab2a5ee2a6b8453d662a694bddd8baf53",
+      "size": 5538,
+      "normalized_sha256": "733962dd9a086495913e69755129311ab2a5ee2a6b8453d662a694bddd8baf53"
     },
     "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AppWebBridgeTest.kt": {
       "role": "index",
@@ -1066,9 +1066,9 @@
     },
     "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewNavigationPolicy.kt": {
       "role": "index",
-      "sha256": "a9cc3bf9024d1d0159c4491e7463e9c70ee69a8b760fec0613cce1b6495e87c7",
-      "size": 6472,
-      "normalized_sha256": "a9cc3bf9024d1d0159c4491e7463e9c70ee69a8b760fec0613cce1b6495e87c7"
+      "sha256": "0b342ecf4e506f0e08919b6bcc45d5455f531633d07912b85d15eaf3cbce5a9a",
+      "size": 6625,
+      "normalized_sha256": "0b342ecf4e506f0e08919b6bcc45d5455f531633d07912b85d15eaf3cbce5a9a"
     },
     "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewPageMessages.kt": {
       "role": "index",
@@ -1138,9 +1138,9 @@
     },
     "webview-core/src/commonMain/kotlin/io/github/gycrosskit/composewebview/WebViewWire.kt": {
       "role": "index",
-      "sha256": "95cdce88b2f6457e8e620d4403689794118ed7408cf2b239d39ef19aa74395fd",
-      "size": 19308,
-      "normalized_sha256": "95cdce88b2f6457e8e620d4403689794118ed7408cf2b239d39ef19aa74395fd"
+      "sha256": "195f9b953c7739254902cae6ac16eb23158f2861096e3c77178c8b5ab8f31849",
+      "size": 19500,
+      "normalized_sha256": "195f9b953c7739254902cae6ac16eb23158f2861096e3c77178c8b5ab8f31849"
     },
     "webview-core/src/commonTest/kotlin/io/github/gycrosskit/composewebview/NativeGeolocationTest.kt": {
       "role": "index",

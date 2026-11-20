@@ -534,6 +534,14 @@ const requestForNavigation = (value, gesture = true, method = 'GET', redirect = 
   }
   for (const value of ['https://shop.test', 'http://shop.test:8443', 'https://badshop.test:8443', 'https://shop.test.evil:8443', 'https://user@shop.test:8443'])
     assert.equal(wire.navigationAllowed(value, true, independent), false, value);
+  const openWeb = { ...independent, navigationPolicy: { ...independent.navigationPolicy, navigationOrigins:
+    { exactOrigins: [], hostSuffixOrigins: [], allowAnyHttpOrigin: true } } };
+  const decodedOpenWeb = wire.decodeRequest(encoded(openWeb));
+  assert.equal(wire.navigationAllowed('http://outside.test:8080/path', true, decodedOpenWeb), true);
+  assert.equal(wire.trusted('http://outside.test:8080/path', decodedOpenWeb.security), false);
+  assert.equal(wire.navigationAllowed('custom://outside.test', true, decodedOpenWeb), false);
+  assert.throws(() => wire.decodeRequest(encoded({ ...openWeb, navigationPolicy: { ...openWeb.navigationPolicy,
+    navigationOrigins: { ...openWeb.navigationPolicy.navigationOrigins, allowAnyHttpOrigin: 'true' } } })));
   const anyPort = request({ content: { type: 'url', url: 'https://shop.test' }, navigationPolicy: { allowedSchemes: ['http', 'https'], blockedRules: [], navigationOrigins: {
     exactOrigins: [], hostSuffixOrigins: [], hostSuffixAnyPortOrigins: ['http://shop.test', 'https://shop.test'] } } });
   assert.ok(wire.decodeRequest(encoded(anyPort)));

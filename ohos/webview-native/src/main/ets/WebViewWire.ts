@@ -124,7 +124,7 @@ export interface WebViewScript { id: string; source: string; injectionTime: stri
  * @property userLinkPolicy 用户主动点开的主文档链接处理方式。
  */
 export interface NavigationPolicy { allowedSchemes: string[]; allowedOrigins?: string[]; allowedUrls?: string[]; navigationOrigins?: NavigationOrigins; blockedRules: WebViewUrlRule[]; allowNewWindows?: boolean; userLinkPolicy?: string; }
-export interface NavigationOrigins { exactOrigins: string[]; hostSuffixOrigins: string[]; hostSuffixAnyPortOrigins?: string[]; }
+export interface NavigationOrigins { exactOrigins: string[]; hostSuffixOrigins: string[]; hostSuffixAnyPortOrigins?: string[]; allowAnyHttpOrigin?: boolean; }
 /**
  * 单个原生实例的完整 JSON 输入；变化重建 Controller 并撤销旧异步操作。
  * @property content 本次声明式内容。
@@ -213,7 +213,7 @@ export function navigationAllowed(value: string, mainFrame: boolean, request: We
     if (mainFrame && request.navigationPolicy.allowedUrls && request.navigationPolicy.allowedUrls.length > 0 &&
       !request.navigationPolicy.allowedUrls.includes(value)) return false;
     const independent = request.navigationPolicy.navigationOrigins;
-    if (mainFrame && independent) {
+    if (mainFrame && independent && independent.allowAnyHttpOrigin !== true) {
       const target = new url.URL(value);
       const host = target.hostname.toLowerCase().replace(/\.$/, '');
       const allowed = independent.exactOrigins.some(item => origin(item) === origin(value)) || independent.hostSuffixOrigins.some(item => {
@@ -275,6 +275,7 @@ export function decodeRequest(raw: string, checkInitialNavigation: boolean = tru
   if (navigationOrigins !== undefined) {
     if (!navigationOrigins || typeof navigationOrigins !== 'object' || Array.isArray(navigationOrigins) ||
       !Array.isArray(navigationOrigins.exactOrigins) || !Array.isArray(navigationOrigins.hostSuffixOrigins)) throw new Error('Invalid navigation origins');
+    if (navigationOrigins.allowAnyHttpOrigin !== undefined && typeof navigationOrigins.allowAnyHttpOrigin !== 'boolean') throw new Error('Invalid navigation origin mode');
     navigationOrigins.exactOrigins.forEach(item => { if (typeof item !== 'string' || !origin(item)) throw new Error('Invalid navigation origin'); });
     navigationOrigins.hostSuffixOrigins.forEach(item => {
       if (typeof item !== 'string' || !origin(item) || !validHost(new url.URL(item).hostname)) throw new Error('Invalid navigation suffix');

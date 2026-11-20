@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-`2.4.0` 的发行渠道为 Maven/JitPack、Git Pod 与私有 OHPM。新增用户链接导航策略，接入方式见下文。
+`2.5.0` 的发行渠道为 Maven/JitPack、Git Pod 与私有 OHPM。新增与原生授权独立的 HTTP(S) 导航策略，接入方式见下文。
 
 济世三端已使用正式远程依赖编译，Android、iOS 已安装；私库字节与真实安装已核对，用户设备行为另行验收。通用 HAR 消费及 macOS 上的正式 Maven / Git Pod 完整消费通过，旧网络失败记录保留；Linux 公开消费仍 deferred。`2.3.2` / `native-2.3.2` 仅有冻结 Tag / 候选且未完成正式发行，旧 Tag、制品和历史记录保持。
 
@@ -56,23 +56,23 @@ dependencyResolutionManagement {
 }
 ```
 
-以下为 Maven、Git Pod 与私有 OHPM 的 `2.4.0` 精确依赖示例。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
+以下为 Maven、Git Pod 与私有 OHPM 的 `2.5.0` 精确依赖示例。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.4.0")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.5.0")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.4.0'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.5.0'
 ```
 
 原生 Pod 的 Renderer 范围为 `>= 2.29.1, < 3.0`，由宿主统一选择；消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS 通过私有 OHPM 安装 `@gycrosskit/webview@2.4.0`。接线见[鸿蒙接入指南](ohos/webview-native/README.md)。
+HarmonyOS 通过私有 OHPM 安装 `@gycrosskit/webview@2.5.0`。接线见[鸿蒙接入指南](ohos/webview-native/README.md)。
 
 ## 快速使用
 
@@ -100,7 +100,7 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 - iOS Native 候选可由宿主通过 `pictureInPicturePageActive` 保留当前视频页的系统 PiP 后台播放，默认隐藏仍停播；业务 Bridge 按页面归属判断，新的采集权限 UI 仍要求可见，详见[全屏视频与 PiP 边界](docs/功能与平台差异.md#h5-全屏视频控制)。
 - 导航拦截由预先下发的 `navigationPolicy` 同步判断，事件用于报告结果；`allowedOrigins` 精确匹配 scheme、host 和有效端口。
 - rc.11 增加 `allowedUrls`，按完整 URL 字符串同步限制主文档，与 scheme、来源和拒绝规则同时生效；空集合不增加限制，不归一化默认端口、路径、查询或 fragment，也不限制 iframe/子资源。
-- Android Kuikly 在 HTTP(S) 主文档非 GET 请求发送前补查导航策略。配置 `allowedUrls`、`allowedOrigins`、`blockedRules` 或限制 HTTP(S) scheme 时，即使首地址允许也保守拒绝，并在 UI 线程报告 `Navigation(blocked=true)`；默认策略 POST、iframe/XHR 不受此额外限制。原因是 [Android WebViewClient](https://developer.android.com/reference/android/webkit/WebViewClient) 不为 POST 调用 `shouldOverrideUrlLoading`，且 `shouldInterceptRequest` 仅检查 redirect 的首地址，无法保证 307/308 保留 POST 后仍符合白名单。
+- 使用 `navigationOrigins = WebViewNavigationOrigins(allowAnyHttpOrigin = true)` 可独立允许任意 HTTP(S) 来源导航，Bridge 等原生能力仍按来源授权。未额外配置来源、URL 或拒绝规则时，原始 POST 与重定向交给内核。Android 对有这些限制的主框架仍保守拒绝非 GET，因为 [Android WebViewClient](https://developer.android.com/reference/android/webkit/WebViewClient) 无法保证观察保留 POST 的每跳重定向。
 - Android 临时弹窗仅解析 GET 目标并沿用当前窗口；非 GET 主文档始终拒绝并通知，不先联网，也不把 POST 改为 GET 重放。
 - iOS 18.4 以下不能开启受控原生文件选择，返回 `CapabilityUnsupported(FILE_CHOOSER)`；旧系统的 DOM 拦截不能保证原生文件隔离。iOS18.4+ 与 HarmonyOS H5 `capture` 复用系统拍摄能力，核验权限、来源、文档代次、MIME 和大小；取消/失败不回传文件，成功临时文件在文档撤销时清理。
 - 导航、请求切换、页面归属失效和销毁撤销旧消息端口、系统请求与迟到回调。显式 `pageOwnerActive=true` 的后台切换保留文档、Bridge 和在途业务，未提供该属性时保留原有 visible 兼容行为。暂时隐藏不取消当前文档初始化：脚本仍受 JavaScript 开关与可信主文档门禁，显示不会重跑副作用脚本或重载页面。应用负责业务脚本输入编码和页面生命周期。
