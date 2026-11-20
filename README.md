@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-`2.5.0` 的发行渠道为 Maven/JitPack、Git Pod 与私有 OHPM。新增与原生授权独立的 HTTP(S) 导航策略，接入方式见下文。
+Maven/JitPack 与 Git Pod 使用 `2.5.0`。鸿蒙私有 OHPM 补丁 `2.5.1` 修正 ArkWeb 新窗口的表单处理。
 
 济世三端已使用正式远程依赖编译，Android、iOS 已安装；私库字节与真实安装已核对，用户设备行为另行验收。通用 HAR 消费及 macOS 上的正式 Maven / Git Pod 完整消费通过，旧网络失败记录保留；Linux 公开消费仍 deferred。`2.3.2` / `native-2.3.2` 仅有冻结 Tag / 候选且未完成正式发行，旧 Tag、制品和历史记录保持。
 
@@ -56,7 +56,7 @@ dependencyResolutionManagement {
 }
 ```
 
-以下为 Maven、Git Pod 与私有 OHPM 的 `2.5.0` 精确依赖示例。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
+以下为 Maven、Git Pod 与私有 OHPM 的精确依赖示例。升级前先完成[2.0.0 文件选择迁移](docs/接入指南.md#200-文件选择迁移)。在 KMP 的 `commonMain.dependencies` 接入：
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
@@ -72,7 +72,7 @@ pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :t
 原生 Pod 的 Renderer 范围为 `>= 2.29.1, < 3.0`，由宿主统一选择；消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS 通过私有 OHPM 安装 `@gycrosskit/webview@2.5.0`。接线见[鸿蒙接入指南](ohos/webview-native/README.md)。
+HarmonyOS 通过私有 OHPM 安装 `@gycrosskit/webview@2.5.1`。接线见[鸿蒙接入指南](ohos/webview-native/README.md)。
 
 ## 快速使用
 
