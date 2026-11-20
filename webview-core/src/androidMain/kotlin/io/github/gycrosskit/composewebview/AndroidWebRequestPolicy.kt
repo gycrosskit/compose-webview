@@ -15,12 +15,14 @@ fun WebViewRequest.interceptAndroidRequest(
         if (resource.isForMainFrame) onNavigationBlocked(WebViewNavigationRequest(url, true, resource.hasGesture()))
         return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
     }
-    if (resource.isForMainFrame && resource.method != "GET" && resource.url.scheme?.lowercase() in setOf("http", "https")) {
+    val scheme = resource.url.scheme?.lowercase()
+    if (resource.isForMainFrame && resource.method != "GET" && scheme in setOf("http", "https")) {
         val navigation = WebViewNavigationRequest(url, true, resource.hasGesture())
         val policy = navigationPolicy
-        val restricted = policy.navigationOrigins != null || policy.allowedUrls.isNotEmpty() || policy.allowedOrigins.isNotEmpty() ||
+        val restricted = policy.navigationOrigins?.allowAnyHttpOrigin == false ||
+            policy.allowedUrls.isNotEmpty() || policy.allowedOrigins.isNotEmpty() ||
             policy.blockedRules.isNotEmpty() || !policy.allowedSchemes.containsAll(setOf("http", "https"))
-        // POST 跳过 override，intercept 又不覆盖 redirect；受限主文档不能安全放行非 GET 首请求。
+        // 受限主框架须保守处理，Android 不报告保留 POST 的所有重定向。
         if (!allowsNavigation(navigation) || restricted) {
             onNavigationBlocked(navigation)
             return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))

@@ -1,6 +1,6 @@
 # GY WebView 鸿蒙 HAR
 
-`@gycrosskit/webview` 的 **2.4.0**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
+`@gycrosskit/webview` 的 **2.5.0**。本组件自己封装系统 ArkWeb，供 Kuikly 2.29.1 使用，最低 HarmonyOS 6.0.2 / API 22。依赖 `@kuikly-open/render:^2.29.1` 与 `@gycrosskit/system-actions-native:1.0.2`，后者提供共用窗口执行 owner。
 
 rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和空路径按同一文档身份匹配；path/query/fragment 保留原字节，allowedUrls 仍匹配实际 URL 原字符串。主帧 capability、nonce、owner 与单次回复门禁保持有效。
 
@@ -15,7 +15,7 @@ rc.14 修复初始页面 URL 规范化：scheme/host 大小写、默认端口和
 先按组织要求配置私有 OHPM Registry 和访问身份，再安装精确版本。
 
 ```bash
-ohpm install @gycrosskit/webview@2.4.0
+ohpm install @gycrosskit/webview@2.5.0
 ```
 
 本地候选消费使用 `assembleHar` 输出并核对 SHA-256。干净消费者的 WebView 和宿主直接依赖共用同一个 system-actions `1.0.2`。本地候选消费与私库正式安装分别验收。

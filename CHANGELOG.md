@@ -1,5 +1,11 @@
 # 更新记录
 
+## 2.5.0
+
+- 共享导航策略支持任意 HTTP(S) 来源，仍按原有可信来源检查 JSBridge、文件和媒体能力。
+- Android 开放导航的当前页表单由 WebView 原样提交，并沿用内核重定向；限定 URL 或来源的页面保留原有策略。
+- iOS WKWebView 和鸿蒙 ArkWeb 消费同一导航字段，未设置时保留现有行为。
+
 ## 2.4.0
 
 已发布 Maven/JitPack `2.4.0`、Git Pod `native-2.4.0` 和私有 OHPM `@gycrosskit/webview@2.4.0`。Maven 归档、源码回执和 SHA-256 清单见 [2.4.0 Release](https://github.com/gycrosskit/compose-webview/releases/tag/2.4.0)。Git Pod 源码见 [native-2.4.0 标签](https://github.com/gycrosskit/compose-webview/tree/native-2.4.0)。
