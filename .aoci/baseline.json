@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-19T08:49:25Z",
-  "updated_at": "2026-11-20T09:17:53Z",
+  "updated_at": "2026-11-20T09:29:00Z",
   "files": {
     ".gitattributes": {
       "role": "index",
@@ -41,9 +41,9 @@
     },
     "README.md": {
       "role": "index",
-      "sha256": "5f7aa5ba4dbb4b854c81bfb1256a634dc49fbbdb0db37c0597af4b7453c74b6e",
-      "size": 20264,
-      "normalized_sha256": "5f7aa5ba4dbb4b854c81bfb1256a634dc49fbbdb0db37c0597af4b7453c74b6e"
+      "sha256": "bfc72c4792502ff8523a046830fdb32caf72d72079645d043e0602f65753ad6e",
+      "size": 20226,
+      "normalized_sha256": "bfc72c4792502ff8523a046830fdb32caf72d72079645d043e0602f65753ad6e"
     },
     "VALIDATION.md": {
       "role": "index",
@@ -53,9 +53,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "ef83708b75b63d981fcc1ac7fb59364ee5b0e7215c7030fbeb5bf00696b2b30b",
-      "size": 55741,
-      "normalized_sha256": "ef83708b75b63d981fcc1ac7fb59364ee5b0e7215c7030fbeb5bf00696b2b30b"
+      "sha256": "6d8075d79b59a8d2e44fc101adbc0d1b059c7c7998c00d44dc7710315cbfeb78",
+      "size": 55690,
+      "normalized_sha256": "6d8075d79b59a8d2e44fc101adbc0d1b059c7c7998c00d44dc7710315cbfeb78"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -388,9 +388,9 @@
     },
     "ohos/webview-native/CHANGELOG.md": {
       "role": "index",
-      "sha256": "c67fe905a5a4cfd95e56300856ef96f76739c65ea30d34e2a9157be7404d942f",
-      "size": 12478,
-      "normalized_sha256": "c67fe905a5a4cfd95e56300856ef96f76739c65ea30d34e2a9157be7404d942f"
+      "sha256": "52794ed4d06faca0dfbefce15122eaaff1b138054ce35f2b83eb7591ad939ff5",
+      "size": 12645,
+      "normalized_sha256": "52794ed4d06faca0dfbefce15122eaaff1b138054ce35f2b83eb7591ad939ff5"
     },
     "ohos/webview-native/Index.ets": {
       "role": "index",
@@ -406,9 +406,9 @@
     },
     "ohos/webview-native/README.md": {
       "role": "index",
-      "sha256": "b0b9e7e39593d6ecfbd141656cbb3a141097a54d1e894cfc87d2ef32aa651a33",
+      "sha256": "c7dad85ab08803b59d45e3e706a3d709743a71e8b7aebfd04f76de68238d7abb",
       "size": 16908,
-      "normalized_sha256": "b0b9e7e39593d6ecfbd141656cbb3a141097a54d1e894cfc87d2ef32aa651a33"
+      "normalized_sha256": "c7dad85ab08803b59d45e3e706a3d709743a71e8b7aebfd04f76de68238d7abb"
     },
     "ohos/webview-native/build-profile.json5": {
       "role": "index",
@@ -424,9 +424,9 @@
     },
     "ohos/webview-native/oh-package.json5": {
       "role": "index",
-      "sha256": "753e9c5bd958970eec9924c00c2242a22e0fa8247e533de5ad10897497edff2f",
+      "sha256": "e8d8183824799ee78862e74368a4895d11124a010aab9576b43479d44420dcfb",
       "size": 458,
-      "normalized_sha256": "753e9c5bd958970eec9924c00c2242a22e0fa8247e533de5ad10897497edff2f"
+      "normalized_sha256": "e8d8183824799ee78862e74368a4895d11124a010aab9576b43479d44420dcfb"
     },
     "ohos/webview-native/src/main/ets/GYWebView.ets": {
       "role": "index",
@@ -772,9 +772,9 @@
     },
     "verification/publication/test_metadata.py": {
       "role": "index",
-      "sha256": "1cb367f21b45fb2370df6d8432bac7e452998c9cbb24368ff182dbbc222a98e4",
+      "sha256": "8c27348988fef52b89d464839bc325274ddbf533cc9eaf197fa028645b4bb2d1",
       "size": 6253,
-      "normalized_sha256": "1cb367f21b45fb2370df6d8432bac7e452998c9cbb24368ff182dbbc222a98e4"
+      "normalized_sha256": "8c27348988fef52b89d464839bc325274ddbf533cc9eaf197fa028645b4bb2d1"
     },
     "verification/video-scripts.test.cjs": {
       "role": "index",
