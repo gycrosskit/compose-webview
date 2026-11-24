@@ -128,6 +128,7 @@ export class GYWebView extends KuiklyRenderBaseView {
   private sensitiveDiagnostics: boolean = false;
   private fileResults: Set<FileSelectorResult> = new Set();
   private pageOwnerActive: boolean | null = null;
+  private mainDocumentFailed: boolean = false;
   private fileGeneration: number = 0;
   private fileVisibilityWaiters: Set<() => void> = new Set();
   private fullscreenHandler: FullScreenExitHandler | null = null;
@@ -198,9 +199,11 @@ export class GYWebView extends KuiklyRenderBaseView {
         try {
           if (!this.visible || !owned) { this.exitFullscreen(); this.controller.stopAllMedia(); }
           // 显式归属仍有效的后台页继续执行加载与 JS，避免 onInactive 暂停初始化。
-          if (owned) this.controller.onActive();
+          // 已失败的可见文档仍由内核绘制，页面归属撤销只关闭权限和媒体。
+          const showFailedDocument = this.visible && this.mainDocumentFailed;
+          if (owned || showFailedDocument) this.controller.onActive();
           else this.controller.onInactive();
-          if (this.pageOwnerActive === false) this.controller.stop();
+          if (this.pageOwnerActive === false && !showFailedDocument) this.controller.stop();
           if (owned && !this.loadSubmitted) this.loadRequest();
           if (ownerChanged && this.settings().javaScriptEnabled === true) {
             const controller = this.controller;
@@ -297,6 +300,7 @@ export class GYWebView extends KuiklyRenderBaseView {
     const request = this.request;
     if (!this.attached || !request || this.lifetime.disposed || this.pageOwnerActive === false) return;
     try {
+      this.mainDocumentFailed = false;
       this.revokePending(false);
       const suffix = request.settings.userAgentSuffix;
       if (suffix) this.controller.setCustomUserAgent(`${this.controller.getUserAgent()} ${suffix}`);
@@ -338,6 +342,7 @@ export class GYWebView extends KuiklyRenderBaseView {
       target: 'CURRENT_WINDOW', blocked: !allowed });
     if (this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
     if (mainFrame && allowed) {
+      this.mainDocumentFailed = false;
       const initial = !this.pageMessageIntercepted && this.isInitialPageMessageUrl(target);
       this.pageMessageIntercepted = true; this.documentReady = false; this.revokePending(!initial);
       if (this.request !== current || controllerOwner !== this.controller || !this.isRenderActive(ownerToken)) return true;
@@ -920,6 +925,7 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
     const controllerOwner = this.controller; const ownerToken = this.renderToken;
     this.revokePending();
     if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return;
+    this.mainDocumentFailed = true;
     this.emit({ type: 'loadFailed', kind: kind, message: message, url: this.attached ? this.currentUrl() : '',
       errorCode: errorCode, httpStatus: httpStatus, isMainFrame: true });
   }

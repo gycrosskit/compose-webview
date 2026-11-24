@@ -1,6 +1,7 @@
 package io.github.gycrosskit.composewebview.kuikly
 
 import android.net.Uri
+import android.view.View
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import androidx.activity.ComponentActivity
@@ -59,6 +60,32 @@ class GYWebViewNativeTest {
             assertEquals(0, stale.proceeded)
             assertTrue(stale.cancelled > 0)
         }
+    }
+
+    @Test
+    fun `visible failed document survives owner revocation without regaining capabilities`() {
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        native.setProp("request", WebViewWire.encodeRequest(request))
+        val owner = native.getChildAt(0) as WebView
+        val shadow = Shadow.extract<RecordingWebView>(owner)
+        val client = shadow.webViewClient as AppWebViewClient
+
+        native.setProp("pageOwnerActive", false)
+        assertEquals(View.INVISIBLE, native.visibility)
+        native.setProp("pageOwnerActive", true)
+        client.reportFailure(WebViewLoadError(WebViewErrorKind.SSL))
+        native.setProp("pageOwnerActive", false)
+        assertEquals(View.VISIBLE, native.visibility)
+        assertTrue(shadow.wasOnPauseCalled())
+        native.setProp("visible", false)
+        assertEquals(View.INVISIBLE, native.visibility)
+
+        native.setProp("pageOwnerActive", true)
+        native.setProp("visible", true)
+        client.onPageStarted(owner, owner.url, null)
+        native.setProp("pageOwnerActive", false)
+        assertEquals(View.INVISIBLE, native.visibility)
+        native.onDestroy()
     }
 
     @Test

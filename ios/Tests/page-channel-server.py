@@ -14,7 +14,11 @@ class PageHandler(BaseHTTPRequestHandler):
         body = b"<html><body>page message history fixture<script>window.contentScriptExecuted=true</script></body></html>"
         image = self.path.startswith("/mixed-image")
         if image: body = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
-        self.send_response(200 if image or self.path in ("/page", "/other") else 404)
+        status = 200 if image or self.path in ("/page", "/other") else 404
+        if self.path in ("/http-404", "/http-500"):
+            status = int(self.path.removeprefix("/http-"))
+            body = f"<html><body>server error body {status}</body></html>".encode()
+        self.send_response(status)
         self.send_header("Content-Type", "image/gif" if image else "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

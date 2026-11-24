@@ -1143,6 +1143,40 @@ static void CheckServerCertificatePolicy(void) {
     CFRelease(trust); CFRelease(policy); CFRelease(certificate);
 }
 
+static void CheckHttpErrorResponseBody(void) {
+    NSURL *initial = [NSURL URLWithString:NSProcessInfo.processInfo.environment[@"WEBVIEW_WIRE_PAGE_URL"]];
+    for (NSNumber *status in @[@404, @500]) {
+        NSURL *url = [[initial URLByDeletingLastPathComponent] URLByAppendingPathComponent:
+            [NSString stringWithFormat:@"http-%@", status]];
+        GYWebView *page = [[GYWebView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+        [UIApplication.sharedApplication.keyWindow.rootViewController.view addSubview:page];
+        __block NSUInteger failures = 0;
+        __block BOOL finished = NO;
+        [page hrv_setPropWithKey:@"onEvent" propValue:^(id event) {
+            if ([event[@"type"] isEqual:@"pageFinished"]) finished = YES;
+            if (![event[@"type"] isEqual:@"loadFailed"]) return;
+            Require([event[@"kind"] isEqual:@"HTTP"] && [event[@"httpStatus"] isEqual:status], [NSString stringWithFormat:@"HTTP status not reported: %@", event]);
+            failures++;
+        }];
+        [page hrv_setPropWithKey:@"request" propValue:RequestJSON(@{
+            @"content": @{@"type": @"url", @"url": url.absoluteString},
+            @"settings": @{@"javaScriptEnabled": @YES},
+            @"security": @{@"trustedOrigins": @{@"urls": @[initial.absoluteString]}}
+        })];
+        WaitUntil(^BOOL { return failures > 0 && !page.webView.loading && [page.webView.URL isEqual:url]; }, @"HTTP response did not load");
+        Require([Evaluate(page.webView, @"document.body.innerText") isEqual:[NSString stringWithFormat:@"server error body %@", status]],
+            @"WKWebView did not display the HTTP response body");
+        __block BOOL returned = NO;
+        [page hrv_callWithMethod:@"evaluateJavascript" params:RequestJSON(@{@"script": @"'unexpected capability'"}) callback:^(id reply) {
+            Require(reply[@"result"] == NSNull.null, @"Failed document retained native JS capability");
+            returned = YES;
+        }];
+        Require(returned && failures == 1 && !finished, @"HTTP document must remain failed after rendering its body");
+        [page hrv_removeFromSuperview];
+    }
+    puts("PASS: HTTP 404/500 response bodies display and retain failure state");
+}
+
 static void CheckNavigationErrors(void) {
     GYWebView *page = [[GYWebView alloc] initWithFrame:CGRectZero];
     page.webView = [[WKWebView alloc] initWithFrame:CGRectZero];
@@ -1177,6 +1211,7 @@ static void CheckNavigationErrors(void) {
 static void Check(void) {
     CheckServerCertificatePolicy();
     CheckNavigationErrors();
+    CheckHttpErrorResponseBody();
     CheckPermissionExplanationPresentation();
     CheckHostPermissionExplanation();
     CheckHostMediaPermissionContinuation();

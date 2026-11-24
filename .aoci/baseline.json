@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-19T08:49:25Z",
-  "updated_at": "2026-11-20T09:29:00Z",
+  "updated_at": "2026-11-24T03:39:19Z",
   "files": {
     ".gitattributes": {
       "role": "index",
@@ -23,15 +23,15 @@
     },
     "CHANGELOG.md": {
       "role": "index",
-      "sha256": "fd6e025d75b0f38c3d18b0fcd1b7f0eb68208c43ee454724fb5c5a4de6c2ed2f",
-      "size": 11520,
-      "normalized_sha256": "fd6e025d75b0f38c3d18b0fcd1b7f0eb68208c43ee454724fb5c5a4de6c2ed2f"
+      "sha256": "9064f9f78ffd4b48cd9a0fd72f4e630c576915dd8edb6c3a4afa4602b8bde9a9",
+      "size": 11858,
+      "normalized_sha256": "9064f9f78ffd4b48cd9a0fd72f4e630c576915dd8edb6c3a4afa4602b8bde9a9"
     },
     "GYWebView.podspec": {
       "role": "index",
-      "sha256": "9353af69c806066da63a2da94467119e35fe5cce6c63c4f2bcb6c68ea9f2047e",
+      "sha256": "35b9217b73c8cba16ffdb03f11ea31d4e6c914d6fb119a865144074d5ddd7cba",
       "size": 771,
-      "normalized_sha256": "9353af69c806066da63a2da94467119e35fe5cce6c63c4f2bcb6c68ea9f2047e"
+      "normalized_sha256": "35b9217b73c8cba16ffdb03f11ea31d4e6c914d6fb119a865144074d5ddd7cba"
     },
     "LICENSE": {
       "role": "index",
@@ -41,9 +41,9 @@
     },
     "README.md": {
       "role": "index",
-      "sha256": "bfc72c4792502ff8523a046830fdb32caf72d72079645d043e0602f65753ad6e",
-      "size": 20226,
-      "normalized_sha256": "bfc72c4792502ff8523a046830fdb32caf72d72079645d043e0602f65753ad6e"
+      "sha256": "d5a8d82f459a8a50a7c4c85435ecd50c920dd646595a4bc778719101d49c7dac",
+      "size": 20265,
+      "normalized_sha256": "d5a8d82f459a8a50a7c4c85435ecd50c920dd646595a4bc778719101d49c7dac"
     },
     "VALIDATION.md": {
       "role": "index",
@@ -53,9 +53,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "6d8075d79b59a8d2e44fc101adbc0d1b059c7c7998c00d44dc7710315cbfeb78",
-      "size": 55690,
-      "normalized_sha256": "6d8075d79b59a8d2e44fc101adbc0d1b059c7c7998c00d44dc7710315cbfeb78"
+      "sha256": "f94a1a3e1f1731833e80bbf58afa338a40839543a3c4673a13402bf6f96fc773",
+      "size": 56098,
+      "normalized_sha256": "f94a1a3e1f1731833e80bbf58afa338a40839543a3c4673a13402bf6f96fc773"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -71,9 +71,9 @@
     },
     "build.gradle.kts": {
       "role": "index",
-      "sha256": "b9098f8af37311a924ac3126f9b26cbc3034b7fc8130b07b6581623925ce16b3",
+      "sha256": "fcaa2cad15dfa02073da50c1246faf418cde02799890fceeecaa3166937dbcbf",
       "size": 1082,
-      "normalized_sha256": "b9098f8af37311a924ac3126f9b26cbc3034b7fc8130b07b6581623925ce16b3"
+      "normalized_sha256": "fcaa2cad15dfa02073da50c1246faf418cde02799890fceeecaa3166937dbcbf"
     },
     "docs/0.2.0-rc.11发布验收.md": {
       "role": "index",
@@ -131,9 +131,9 @@
     },
     "docs/功能与平台差异.md": {
       "role": "index",
-      "sha256": "021be3265fb01cbf36eb91c3656ec3e8d938c7b507e4bc7531a94c8f9c300c56",
-      "size": 36439,
-      "normalized_sha256": "021be3265fb01cbf36eb91c3656ec3e8d938c7b507e4bc7531a94c8f9c300c56"
+      "sha256": "99ffdd399c2c7b1830e540567b503dc3df601c1886ba4cef2731d5bb57a64b77",
+      "size": 36721,
+      "normalized_sha256": "99ffdd399c2c7b1830e540567b503dc3df601c1886ba4cef2731d5bb57a64b77"
     },
     "docs/完整源码审查.md": {
       "role": "index",
@@ -149,9 +149,9 @@
     },
     "docs/接入指南.md": {
       "role": "index",
-      "sha256": "4a4e1af487be56688ab12c625f267b680f4d84be1b9be314be93bceef8d64766",
+      "sha256": "d46be7afa823ca7fefa8df8b9c3e0e56b5193df886b52b7ace189535f4622013",
       "size": 27873,
-      "normalized_sha256": "4a4e1af487be56688ab12c625f267b680f4d84be1b9be314be93bceef8d64766"
+      "normalized_sha256": "d46be7afa823ca7fefa8df8b9c3e0e56b5193df886b52b7ace189535f4622013"
     },
     "docs/早期页面通道候选验收.md": {
       "role": "index",
@@ -214,9 +214,9 @@
     },
     "ios/Sources/GYWebView.m": {
       "role": "index",
-      "sha256": "89f648fe59fafd8cc0a274fee9ace22c227cd74cf50a086deab9c1ec826354fa",
-      "size": 97718,
-      "normalized_sha256": "89f648fe59fafd8cc0a274fee9ace22c227cd74cf50a086deab9c1ec826354fa"
+      "sha256": "7cff667ba1f5dbb2ac76c59d7e1cfcca0432594049bc2d133df9298b42b4ab12",
+      "size": 97939,
+      "normalized_sha256": "7cff667ba1f5dbb2ac76c59d7e1cfcca0432594049bc2d133df9298b42b4ab12"
     },
     "ios/Sources/GYWebViewScripts.inc": {
       "role": "index",
@@ -226,15 +226,15 @@
     },
     "ios/Tests/BooleanWireCheck.m": {
       "role": "index",
-      "sha256": "eb0cb2bcd9e91c20c7567039131f8172853593ab2e9955a5c940c5365f48a982",
-      "size": 141585,
-      "normalized_sha256": "eb0cb2bcd9e91c20c7567039131f8172853593ab2e9955a5c940c5365f48a982"
+      "sha256": "52f8d125bd4c02b0fdf97ed365dab9b7671e11a77cf5c5bc3507d68f80e1286d",
+      "size": 143846,
+      "normalized_sha256": "52f8d125bd4c02b0fdf97ed365dab9b7671e11a77cf5c5bc3507d68f80e1286d"
     },
     "ios/Tests/page-channel-server.py": {
       "role": "index",
-      "sha256": "6d8c3a394e9672b79efa8252f8fa53d57706b37a0d3faa3cb1a7c4d50445e02c",
-      "size": 1508,
-      "normalized_sha256": "6d8c3a394e9672b79efa8252f8fa53d57706b37a0d3faa3cb1a7c4d50445e02c"
+      "sha256": "4ba2ea69bd12218d723f9828f7eddf5a821e4aac59ea218a356e03101b6401b9",
+      "size": 1727,
+      "normalized_sha256": "4ba2ea69bd12218d723f9828f7eddf5a821e4aac59ea218a356e03101b6401b9"
     },
     "ios/generate-scripts.py": {
       "role": "index",
@@ -316,9 +316,9 @@
     },
     "ohos/tests/contract.test.cjs": {
       "role": "index",
-      "sha256": "4df3672a20f83942c7f67d8db354c5786375b1f6f2f334824004498e2b327df2",
-      "size": 145023,
-      "normalized_sha256": "4df3672a20f83942c7f67d8db354c5786375b1f6f2f334824004498e2b327df2"
+      "sha256": "036c71373c76c24e2e06f5909feb9100f42c79a81b6091176279068c43d83f36",
+      "size": 145779,
+      "normalized_sha256": "036c71373c76c24e2e06f5909feb9100f42c79a81b6091176279068c43d83f36"
     },
     "ohos/verification-consumer/AppScope/app.json5": {
       "role": "index",
@@ -388,9 +388,9 @@
     },
     "ohos/webview-native/CHANGELOG.md": {
       "role": "index",
-      "sha256": "52794ed4d06faca0dfbefce15122eaaff1b138054ce35f2b83eb7591ad939ff5",
-      "size": 12645,
-      "normalized_sha256": "52794ed4d06faca0dfbefce15122eaaff1b138054ce35f2b83eb7591ad939ff5"
+      "sha256": "a9eb6bcda9f05c43463371eb724e6617dcfe724d3dd4605c7cf1a5e9fa48de09",
+      "size": 12767,
+      "normalized_sha256": "a9eb6bcda9f05c43463371eb724e6617dcfe724d3dd4605c7cf1a5e9fa48de09"
     },
     "ohos/webview-native/Index.ets": {
       "role": "index",
@@ -406,9 +406,9 @@
     },
     "ohos/webview-native/README.md": {
       "role": "index",
-      "sha256": "c7dad85ab08803b59d45e3e706a3d709743a71e8b7aebfd04f76de68238d7abb",
+      "sha256": "ddd56ce03fe8d3ff41545707c85baf2b9b6a38013f8d6e3ebc190119d4235d8f",
       "size": 16908,
-      "normalized_sha256": "c7dad85ab08803b59d45e3e706a3d709743a71e8b7aebfd04f76de68238d7abb"
+      "normalized_sha256": "ddd56ce03fe8d3ff41545707c85baf2b9b6a38013f8d6e3ebc190119d4235d8f"
     },
     "ohos/webview-native/build-profile.json5": {
       "role": "index",
@@ -424,15 +424,15 @@
     },
     "ohos/webview-native/oh-package.json5": {
       "role": "index",
-      "sha256": "e8d8183824799ee78862e74368a4895d11124a010aab9576b43479d44420dcfb",
+      "sha256": "a05b5a5a5455fedb1912326f9df4f1fac6cd483edf02e0d55559796bcd657d8f",
       "size": 458,
-      "normalized_sha256": "e8d8183824799ee78862e74368a4895d11124a010aab9576b43479d44420dcfb"
+      "normalized_sha256": "a05b5a5a5455fedb1912326f9df4f1fac6cd483edf02e0d55559796bcd657d8f"
     },
     "ohos/webview-native/src/main/ets/GYWebView.ets": {
       "role": "index",
-      "sha256": "b5b924758f11e82aed5351662a1da3fd13b57315fdfd2daf2df14e20f55662d9",
-      "size": 59393,
-      "normalized_sha256": "b5b924758f11e82aed5351662a1da3fd13b57315fdfd2daf2df14e20f55662d9"
+      "sha256": "fa0a12580da499196f5367d3a9929a462b248e9eb1fe0ea9576acc76a12aa0dd",
+      "size": 59781,
+      "normalized_sha256": "fa0a12580da499196f5367d3a9929a462b248e9eb1fe0ea9576acc76a12aa0dd"
     },
     "ohos/webview-native/src/main/ets/OhosWebViewDataCleaner.ets": {
       "role": "index",
@@ -502,9 +502,9 @@
     },
     "scripts/package-maven.sh": {
       "role": "index",
-      "sha256": "9d310c1f044cb14c410be8b3fd23936b9ace59d3e04b2d5f2a751e6063bee819",
+      "sha256": "c21cc213977311de0b7b6f8675ea1f6075ecc441b65025fcceda3712bf2fc47b",
       "size": 1234,
-      "normalized_sha256": "9d310c1f044cb14c410be8b3fd23936b9ace59d3e04b2d5f2a751e6063bee819"
+      "normalized_sha256": "c21cc213977311de0b7b6f8675ea1f6075ecc441b65025fcceda3712bf2fc47b"
     },
     "scripts/verify-ios-native.sh": {
       "role": "index",
@@ -526,9 +526,9 @@
     },
     "scripts/verify.sh": {
       "role": "index",
-      "sha256": "0956d54fe9a9c9226ca339c236b3bab0b7b43c55bbdfec5c0178c4bcf58875d9",
+      "sha256": "f6c349af087cf231aa16f8dffb4037ad691a8f4d22bc8c2200f0313813683e37",
       "size": 925,
-      "normalized_sha256": "0956d54fe9a9c9226ca339c236b3bab0b7b43c55bbdfec5c0178c4bcf58875d9"
+      "normalized_sha256": "f6c349af087cf231aa16f8dffb4037ad691a8f4d22bc8c2200f0313813683e37"
     },
     "settings.gradle.kts": {
       "role": "index",
@@ -538,9 +538,9 @@
     },
     "verification-consumer/build.gradle.kts": {
       "role": "index",
-      "sha256": "1f5db4fa55b6b6c92abb336b4f4dd8e81973e281da0baa7be03667c3f1f4f280",
+      "sha256": "9625a41f4b618d209d1e0b00d7b9ff17e591446a70bf96367d19b667aac7e36a",
       "size": 6352,
-      "normalized_sha256": "1f5db4fa55b6b6c92abb336b4f4dd8e81973e281da0baa7be03667c3f1f4f280"
+      "normalized_sha256": "9625a41f4b618d209d1e0b00d7b9ff17e591446a70bf96367d19b667aac7e36a"
     },
     "verification-consumer/gradle.properties": {
       "role": "index",
@@ -772,9 +772,9 @@
     },
     "verification/publication/test_metadata.py": {
       "role": "index",
-      "sha256": "8c27348988fef52b89d464839bc325274ddbf533cc9eaf197fa028645b4bb2d1",
+      "sha256": "049358d12477c52e68a7c1da93e9ad88a150e70bbc1d001637db40eb3a0d6150",
       "size": 6253,
-      "normalized_sha256": "8c27348988fef52b89d464839bc325274ddbf533cc9eaf197fa028645b4bb2d1"
+      "normalized_sha256": "049358d12477c52e68a7c1da93e9ad88a150e70bbc1d001637db40eb3a0d6150"
     },
     "verification/video-scripts.test.cjs": {
       "role": "index",
@@ -1222,9 +1222,9 @@
     },
     "webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt": {
       "role": "index",
-      "sha256": "0e70be9947ffde1d0f7ba83fa457534471542cc78085f69d5f82e07f613e3a74",
-      "size": 26266,
-      "normalized_sha256": "0e70be9947ffde1d0f7ba83fa457534471542cc78085f69d5f82e07f613e3a74"
+      "sha256": "31f4180b963f4837d0749bc7aedee544fffad8bcfb1d2c20e0bdeabad8ae29c6",
+      "size": 26467,
+      "normalized_sha256": "31f4180b963f4837d0749bc7aedee544fffad8bcfb1d2c20e0bdeabad8ae29c6"
     },
     "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/AndroidFullscreenHostTest.kt": {
       "role": "index",
@@ -1252,9 +1252,9 @@
     },
     "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNativeTest.kt": {
       "role": "index",
-      "sha256": "db2ddda2a4a1a7bece947a1b82d3272a7a6bc7eee9d2b3013e3e131c57988595",
-      "size": 25263,
-      "normalized_sha256": "db2ddda2a4a1a7bece947a1b82d3272a7a6bc7eee9d2b3013e3e131c57988595"
+      "sha256": "89de864ac997544c177db03ae9f70d4ddca93593a1207c40180e5b4e94b1eb9b",
+      "size": 26462,
+      "normalized_sha256": "89de864ac997544c177db03ae9f70d4ddca93593a1207c40180e5b4e94b1eb9b"
     },
     "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewStopTest.kt": {
       "role": "index",

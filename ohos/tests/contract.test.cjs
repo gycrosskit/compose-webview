@@ -722,6 +722,17 @@ const requestForNavigation = (value, gesture = true, method = 'GET', redirect = 
   legacyHiddenLeave.setProp('pageOwnerActive', false);
   assert.equal(legacyHiddenLeave.controller.stops, 1, 'explicit leave still stops an already hidden legacy page');
   assert.equal(legacyHiddenLeave.documentStartScripts().length, 0); legacyHiddenLeave.onDestroy();
+  const failedDocument = new GYWebView();
+  failedDocument.setProp('pageOwnerActive', true);
+  failedDocument.setProp('request', encoded(scriptRequest)); failedDocument.onControllerAttached();
+  failedDocument.fail('HTTP', 'HTTP load failed', undefined, 500);
+  failedDocument.setProp('pageOwnerActive', false);
+  assert.equal(failedDocument.controller.stops, 0, 'visible server error body remains with ArkWeb');
+  assert.equal(failedDocument.controller.inactiveCalls, 0);
+  assert.equal(failedDocument.documentStartScripts().length, 0, 'failed document has no native script capability');
+  failedDocument.setProp('visible', false);
+  assert.equal(failedDocument.controller.stops, 1, 'hidden failed document stops on leave');
+  failedDocument.onDestroy();
   const noVisibleCallback = new GYWebView(); noVisibleCallback.setProp('visible', false);
   noVisibleCallback.setProp('request', encoded(scriptRequest)); noVisibleCallback.onControllerAttached();
   noVisibleCallback.onPageBegin('https://trusted.test/page'); noVisibleCallback.onPageEnd('https://trusted.test/page');
