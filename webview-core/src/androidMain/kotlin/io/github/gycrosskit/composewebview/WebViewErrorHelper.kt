@@ -1,5 +1,6 @@
 package io.github.gycrosskit.composewebview
 
+import android.net.http.SslError
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -27,6 +28,7 @@ object WebViewErrorHelper {
             message = description,
             url = request.url?.toString(),
             errorCode = code,
+            sslReason = if (code == WebViewClient.ERROR_FAILED_SSL_HANDSHAKE) WebViewSslReason.TLS_HANDSHAKE_FAILED else null,
             isMainFrame = true,
         )
     }
@@ -56,10 +58,19 @@ object WebViewErrorHelper {
     }
 
     /** 将已被 Client 拒绝继续加载的 SSL 错误转换为页面错误。 */
-    fun fromSslError(url: String?): WebViewLoadError {
+    fun fromSslError(url: String?, primaryError: Int? = null): WebViewLoadError {
         return WebViewLoadError(
             kind = WebViewErrorKind.SSL,
             url = url,
+            errorCode = primaryError,
+            sslReason = when (primaryError) {
+                SslError.SSL_EXPIRED -> WebViewSslReason.CERTIFICATE_EXPIRED
+                SslError.SSL_NOTYETVALID -> WebViewSslReason.CERTIFICATE_NOT_YET_VALID
+                SslError.SSL_DATE_INVALID -> WebViewSslReason.CERTIFICATE_DATE_INVALID
+                SslError.SSL_IDMISMATCH -> WebViewSslReason.CERTIFICATE_HOST_MISMATCH
+                SslError.SSL_UNTRUSTED -> WebViewSslReason.CERTIFICATE_UNTRUSTED
+                else -> null
+            },
         )
     }
 

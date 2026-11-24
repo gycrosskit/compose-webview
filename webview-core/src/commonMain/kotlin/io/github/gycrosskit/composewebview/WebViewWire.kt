@@ -108,7 +108,7 @@ object WebViewWire {
         is WebViewEvent.BridgeMessage -> mapOf("type" to "bridgeMessage", "handlerName" to event.value.handlerName, "data" to event.value.data)
         is WebViewEvent.PageMessage -> mapOf("type" to "pageMessage", "channel" to event.channel, "data" to event.data, "replyId" to event.replyId)
         is WebViewEvent.FullscreenChanged -> mapOf("type" to "fullscreenChanged", "isFullscreen" to event.isFullscreen)
-        is WebViewEvent.LoadFailed -> with(event.error) { mapOf("type" to "loadFailed", "kind" to kind.name, "message" to message, "url" to url, "errorCode" to errorCode, "httpStatus" to httpStatus, "isMainFrame" to isMainFrame) }
+        is WebViewEvent.LoadFailed -> with(event.error) { mapOf("type" to "loadFailed", "kind" to kind.name, "message" to message, "url" to url, "errorCode" to errorCode, "httpStatus" to httpStatus, "isMainFrame" to isMainFrame, "sslReason" to sslReason?.name) }
         is WebViewEvent.CapabilityUnsupported -> mapOf("type" to "capabilityUnsupported", "capability" to event.capability.name)
         is WebViewEvent.PermissionExplanationRequested -> mapOf("type" to "permissionExplanationRequested", "requestId" to event.requestId, "permissions" to event.permissions.map { it.name })
         is WebViewEvent.PermissionExplanationCancelled -> mapOf("type" to "permissionExplanationCancelled", "requestId" to event.requestId)
@@ -131,7 +131,15 @@ object WebViewWire {
             "bridgeMessage" -> WebViewEvent.BridgeMessage(WebViewBridgeMessage(value.requiredString("handlerName"), value.requiredString("data")))
             "pageMessage" -> WebViewEvent.PageMessage(value.requiredString("channel"), value.requiredString("data"), value.requiredString("replyId"))
             "fullscreenChanged" -> WebViewEvent.FullscreenChanged(value.boolean("isFullscreen", false))
-            "loadFailed" -> WebViewEvent.LoadFailed(WebViewLoadError(value.enum("kind", WebViewErrorKind.UNKNOWN), value.string("message", ""), value.stringOrNull("url"), value["errorCode"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.int, value["httpStatus"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.int, value.boolean("isMainFrame", true)))
+            "loadFailed" -> WebViewEvent.LoadFailed(WebViewLoadError(
+                kind = value.enum("kind", WebViewErrorKind.UNKNOWN),
+                message = value.string("message", ""),
+                url = value.stringOrNull("url"),
+                errorCode = value["errorCode"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.int,
+                httpStatus = value["httpStatus"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.int,
+                isMainFrame = value.boolean("isMainFrame", true),
+                sslReason = value.stringOrNull("sslReason")?.let { name -> WebViewSslReason.entries.firstOrNull { it.name == name } },
+            ))
             "capabilityUnsupported" -> WebViewEvent.CapabilityUnsupported(enumValueOf(value.requiredString("capability")))
             "permissionExplanationRequested" -> WebViewEvent.PermissionExplanationRequested(value.requiredString("requestId"), value.strings("permissions").map { enumValueOf<WebViewPermission>(it) }.toSet())
             "permissionExplanationCancelled" -> WebViewEvent.PermissionExplanationCancelled(value.requiredString("requestId"))

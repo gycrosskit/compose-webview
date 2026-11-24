@@ -12,6 +12,17 @@ enum class WebViewErrorKind {
     UNKNOWN,
 }
 
+/** 平台回调能够确认的 TLS/证书原因；缺少证据时保持 null，不从通用 SSL 失败推断证书问题。 */
+enum class WebViewSslReason {
+    CERTIFICATE_EXPIRED,
+    CERTIFICATE_NOT_YET_VALID,
+    CERTIFICATE_DATE_INVALID,
+    CERTIFICATE_HOST_MISMATCH,
+    CERTIFICATE_UNTRUSTED,
+    TLS_HANDSHAKE_FAILED,
+    TLS_VERSION_OR_CIPHER_MISMATCH,
+}
+
 /**
  * 跨平台网页加载失败快照。
  *
@@ -20,9 +31,10 @@ enum class WebViewErrorKind {
  * @property kind 稳定错误分类。
  * @property message 平台原始错误说明。
  * @property url 失败的主框架地址。
- * @property errorCode 平台网络错误码。
+ * @property errorCode 平台网络或证书回调的原始错误码（包含有效的 0）。
  * @property httpStatus HTTP 响应状态码。
  * @property isMainFrame 是否属于主文档失败。
+ * @property sslReason 有明确平台证据的 TLS/证书原因，未知或旧 wire 为 null。
  */
 data class WebViewLoadError(
     val kind: WebViewErrorKind,
@@ -31,4 +43,5 @@ data class WebViewLoadError(
     val errorCode: Int? = null,
     val httpStatus: Int? = null,
     val isMainFrame: Boolean = true,
+    val sslReason: WebViewSslReason? = null,
 )

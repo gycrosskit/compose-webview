@@ -102,7 +102,7 @@ class WebViewPerformanceTrace(
         log(
             AppWebViewLogLevel.WARNING,
             "page-failed loadToFailureMs=${now.since(loadRequestedAtMillis)} " +
-                "kind=${error.kind} code=${error.errorCode} http=${error.httpStatus} " +
+                "kind=${error.kind} code=${error.errorCode} http=${error.httpStatus} sslReason=${error.sslReason} " +
                 "url=${describeUrl(error.url)}",
         )
     }

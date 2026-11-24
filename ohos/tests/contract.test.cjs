@@ -118,6 +118,9 @@ const nativeErrorCodes = {
   ERR_SSL_CLIENT_AUTH_NO_COMMON_ALGORITHMS: -177,
   ERR_SSL_KEY_USAGE_INCOMPATIBLE: -181,
   ERR_CERT_COMMON_NAME_INVALID: -200,
+  ERR_CERT_DATE_INVALID: -201,
+  ERR_CERT_AUTHORITY_INVALID: -202,
+  ERR_SSL_OBSOLETE_VERSION_OR_CIPHER: -218,
   ERR_CERT_END: -219,
 };
 const mocks = {
@@ -166,6 +169,7 @@ function load(file) {
   const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, experimentalDecorators: true } }).outputText;
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: name => name === './WebViewWire' ? load('WebViewWire.ts') : mocks[name],
+    SslError: { Invalid: 0, HostMismatch: 1, DateInvalid: 2, Untrusted: 3 },
     Observed: value => value, wrapBuilder: value => value, $r: name => name, ProtectedResourceType: { VIDEO_CAPTURE: 'video', AUDIO_CAPTURE: 'audio' },
     FileSelectorMode: { FileOpenMultipleMode: 1 }, console, Set, Map, Promise, setTimeout,
     WebResourceResponse: class { setResponseCode() {} setReasonMessage() {} setResponseData() {} },
@@ -173,6 +177,13 @@ function load(file) {
   cache[file] = exports; return exports;
 }
 const wire = load('WebViewWire.ts');
+for (const [code, reason] of [[-200, 'CERTIFICATE_HOST_MISMATCH'], [-201, 'CERTIFICATE_DATE_INVALID'],
+  [-202, 'CERTIFICATE_UNTRUSTED'], [-107, 'TLS_HANDSHAKE_FAILED'], [-148, 'TLS_HANDSHAKE_FAILED'],
+  ...[-112, -113, -172, -218].map(code => [code, 'TLS_VERSION_OR_CIPHER_MISMATCH']), [-207, undefined], [-8, undefined]]) {
+  assert.equal(wire.networkSslReason(code), reason);
+}
+for (const [code, reason] of [[0, undefined], [1, 'CERTIFICATE_HOST_MISMATCH'], [2, 'CERTIFICATE_DATE_INVALID'], [3, 'CERTIFICATE_UNTRUSTED'], [99, undefined]])
+  assert.equal(wire.certificateSslReason(code), reason);
 for (const origins of [[], ['http://allowed.test:80']]) {
   const policy = {allowedHttpOrigins: origins};
   assert.equal(wire.httpRequestAllowed('http://allowed.test/a', policy), origins.length > 0);
@@ -187,26 +198,28 @@ for (const code of [-8, -100, -105, -106, -219, -1001, 12345]) assert.equal(wire
   const source = fs.readFileSync(path.join(root, 'WebViewComponent.ets'), 'utf8');
   const failures = [];
   const view = { isRenderActive: token => token === 1, fail: (...args) => failures.push(args) };
-  const callback = vm.runInNewContext(source.match(/\.onErrorReceive\((.*)\)/)[1], {view, token: 1, networkErrorKind: wire.networkErrorKind});
+  const callback = vm.runInNewContext(source.match(/\.onErrorReceive\((.*)\)/)[1], {view, token: 1, networkErrorKind: wire.networkErrorKind, networkSslReason: wire.networkSslReason});
   for (const [code, kind] of [[-7, 'TIMEOUT'], [-118, 'TIMEOUT'], [-107, 'SSL'], [-8, 'NETWORK']]) {
     const error = {getErrorCode: () => code, getErrorInfo: () => 'native detail'};
     callback({request: {isMainFrame: () => false}, error});
     const count = failures.length;
     callback({request: {isMainFrame: () => true}, error});
     assert.equal(failures.length, count + 1);
-    assert.deepEqual(Array.from(failures.at(-1)), [kind, 'native detail', code]);
+    assert.deepEqual(Array.from(failures.at(-1)), [kind, 'native detail', code, undefined, wire.networkSslReason(code)]);
   }
   assert.equal(failures.length, 4, 'subresource errors never fail the main document');
 }
 
 {
   const source = fs.readFileSync(path.join(root, 'WebViewComponent.ets'), 'utf8');
-  for (const verify of [undefined, true, false]) for (const active of [true, false]) {
+  for (const verify of [undefined, true, false]) for (const active of [true, false]) for (const code of [0, 1, 2, 3]) {
     const calls = [];
-    const view = { isRenderActive: () => active, settings: () => ({verifyServerCertificate: verify}), fail: () => calls.push('fail') };
-    const callback = vm.runInNewContext(source.match(/\.onSslErrorEventReceive\((.*)\)/)[1], {view, token: 1});
-    callback({handler: {handleConfirm: () => calls.push('confirm'), handleCancel: () => calls.push('cancel')}});
+    const failures = [];
+    const view = { isRenderActive: () => active, settings: () => ({verifyServerCertificate: verify}), fail: (...args) => { calls.push('fail'); failures.push(args); } };
+    const callback = vm.runInNewContext(source.match(/\.onSslErrorEventReceive\((.*)\)/)[1], {view, token: 1, certificateSslReason: wire.certificateSslReason});
+    callback({error: code, handler: {handleConfirm: () => calls.push('confirm'), handleCancel: () => calls.push('cancel')}});
     assert.deepEqual(calls, active && verify === false ? ['confirm'] : active ? ['cancel', 'fail'] : ['cancel']);
+    if (failures.length) assert.deepEqual(Array.from(failures[0]), ['SSL', 'TLS certificate rejected', code, undefined, wire.certificateSslReason(code)]);
   }
 }
 
