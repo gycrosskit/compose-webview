@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-19T08:49:25Z",
-  "updated_at": "2026-11-24T08:47:41Z",
+  "updated_at": "2026-11-24T09:15:50Z",
   "files": {
     ".gitattributes": {
       "role": "index",
@@ -23,15 +23,15 @@
     },
     "CHANGELOG.md": {
       "role": "index",
-      "sha256": "fd6e025d75b0f38c3d18b0fcd1b7f0eb68208c43ee454724fb5c5a4de6c2ed2f",
-      "size": 11520,
-      "normalized_sha256": "fd6e025d75b0f38c3d18b0fcd1b7f0eb68208c43ee454724fb5c5a4de6c2ed2f"
+      "sha256": "ba7afa85f90d1057d820d2b856beb17ce67f581ba31d56f208fb664128322410",
+      "size": 12060,
+      "normalized_sha256": "ba7afa85f90d1057d820d2b856beb17ce67f581ba31d56f208fb664128322410"
     },
     "GYWebView.podspec": {
       "role": "index",
-      "sha256": "9353af69c806066da63a2da94467119e35fe5cce6c63c4f2bcb6c68ea9f2047e",
+      "sha256": "98b9f4bf8145438c5edae0d2a604348d8dc2bf4130c468c74d85ac96efda19f4",
       "size": 771,
-      "normalized_sha256": "9353af69c806066da63a2da94467119e35fe5cce6c63c4f2bcb6c68ea9f2047e"
+      "normalized_sha256": "98b9f4bf8145438c5edae0d2a604348d8dc2bf4130c468c74d85ac96efda19f4"
     },
     "LICENSE": {
       "role": "index",
@@ -41,9 +41,9 @@
     },
     "README.md": {
       "role": "index",
-      "sha256": "652f5ec728f61f0ffa684313b14e76497148b0cc737eb415e87a7a4e6ffab49b",
-      "size": 20485,
-      "normalized_sha256": "652f5ec728f61f0ffa684313b14e76497148b0cc737eb415e87a7a4e6ffab49b"
+      "sha256": "d28095ad2e059c170884aa419b2f8daa4371f991ab20924b65e8a39ae183356f",
+      "size": 20538,
+      "normalized_sha256": "d28095ad2e059c170884aa419b2f8daa4371f991ab20924b65e8a39ae183356f"
     },
     "VALIDATION.md": {
       "role": "index",
@@ -53,9 +53,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "d9cd32a5da447f6b45eb70f48fde0e17d0848e8e52788829b086266fb30b4c3a",
-      "size": 57436,
-      "normalized_sha256": "d9cd32a5da447f6b45eb70f48fde0e17d0848e8e52788829b086266fb30b4c3a"
+      "sha256": "15ebc93c98097c4f9f833c473755a0f4c24fbc41c1d0234b1b140e40870741b2",
+      "size": 57796,
+      "normalized_sha256": "15ebc93c98097c4f9f833c473755a0f4c24fbc41c1d0234b1b140e40870741b2"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -71,9 +71,9 @@
     },
     "build.gradle.kts": {
       "role": "index",
-      "sha256": "b9098f8af37311a924ac3126f9b26cbc3034b7fc8130b07b6581623925ce16b3",
+      "sha256": "98914fb67cc0bf5ba8933341e3d71f5e822068170ef2bb45badc1b85de4a75b7",
       "size": 1082,
-      "normalized_sha256": "b9098f8af37311a924ac3126f9b26cbc3034b7fc8130b07b6581623925ce16b3"
+      "normalized_sha256": "98914fb67cc0bf5ba8933341e3d71f5e822068170ef2bb45badc1b85de4a75b7"
     },
     "docs/0.2.0-rc.11发布验收.md": {
       "role": "index",
@@ -149,9 +149,9 @@
     },
     "docs/接入指南.md": {
       "role": "index",
-      "sha256": "cf74cca268ac36b8eefad58c53850e5fe2aa3c45969685ce980a8603fd1ac0f6",
+      "sha256": "fbdc531adcb93c98105363f7fe9af06f764037b1d1d315f78b9a451cedc5e40e",
       "size": 29166,
-      "normalized_sha256": "cf74cca268ac36b8eefad58c53850e5fe2aa3c45969685ce980a8603fd1ac0f6"
+      "normalized_sha256": "fbdc531adcb93c98105363f7fe9af06f764037b1d1d315f78b9a451cedc5e40e"
     },
     "docs/早期页面通道候选验收.md": {
       "role": "index",
@@ -388,9 +388,9 @@
     },
     "ohos/webview-native/CHANGELOG.md": {
       "role": "index",
-      "sha256": "52794ed4d06faca0dfbefce15122eaaff1b138054ce35f2b83eb7591ad939ff5",
-      "size": 12645,
-      "normalized_sha256": "52794ed4d06faca0dfbefce15122eaaff1b138054ce35f2b83eb7591ad939ff5"
+      "sha256": "575a0d75a01b2aca2271bb7453a156ca192f72e80938bfbf32695d21bd74ba16",
+      "size": 12866,
+      "normalized_sha256": "575a0d75a01b2aca2271bb7453a156ca192f72e80938bfbf32695d21bd74ba16"
     },
     "ohos/webview-native/Index.ets": {
       "role": "index",
@@ -406,9 +406,9 @@
     },
     "ohos/webview-native/README.md": {
       "role": "index",
-      "sha256": "c7dad85ab08803b59d45e3e706a3d709743a71e8b7aebfd04f76de68238d7abb",
+      "sha256": "1e18e849914b403459b721898050c149503eb0b8e7153869f428622f6f8101c3",
       "size": 16908,
-      "normalized_sha256": "c7dad85ab08803b59d45e3e706a3d709743a71e8b7aebfd04f76de68238d7abb"
+      "normalized_sha256": "1e18e849914b403459b721898050c149503eb0b8e7153869f428622f6f8101c3"
     },
     "ohos/webview-native/build-profile.json5": {
       "role": "index",
@@ -424,9 +424,9 @@
     },
     "ohos/webview-native/oh-package.json5": {
       "role": "index",
-      "sha256": "e8d8183824799ee78862e74368a4895d11124a010aab9576b43479d44420dcfb",
+      "sha256": "36e55d6e8ccb9026ba15bfc81df5aa616657c48a47d72bd10a72360d01b5d55b",
       "size": 458,
-      "normalized_sha256": "e8d8183824799ee78862e74368a4895d11124a010aab9576b43479d44420dcfb"
+      "normalized_sha256": "36e55d6e8ccb9026ba15bfc81df5aa616657c48a47d72bd10a72360d01b5d55b"
     },
     "ohos/webview-native/src/main/ets/GYWebView.ets": {
       "role": "index",
@@ -502,9 +502,9 @@
     },
     "scripts/package-maven.sh": {
       "role": "index",
-      "sha256": "9d310c1f044cb14c410be8b3fd23936b9ace59d3e04b2d5f2a751e6063bee819",
+      "sha256": "b89e031a83f6c7b891e3fee065904cca35e72d68561a1f8e47763f7476e2d636",
       "size": 1234,
-      "normalized_sha256": "9d310c1f044cb14c410be8b3fd23936b9ace59d3e04b2d5f2a751e6063bee819"
+      "normalized_sha256": "b89e031a83f6c7b891e3fee065904cca35e72d68561a1f8e47763f7476e2d636"
     },
     "scripts/verify-ios-native.sh": {
       "role": "index",
@@ -526,9 +526,9 @@
     },
     "scripts/verify.sh": {
       "role": "index",
-      "sha256": "0956d54fe9a9c9226ca339c236b3bab0b7b43c55bbdfec5c0178c4bcf58875d9",
+      "sha256": "7cbe3286be4209906e983ee334de8af5366ca05f70e35974ef7b891ac1b3b95d",
       "size": 925,
-      "normalized_sha256": "0956d54fe9a9c9226ca339c236b3bab0b7b43c55bbdfec5c0178c4bcf58875d9"
+      "normalized_sha256": "7cbe3286be4209906e983ee334de8af5366ca05f70e35974ef7b891ac1b3b95d"
     },
     "settings.gradle.kts": {
       "role": "index",
@@ -538,9 +538,9 @@
     },
     "verification-consumer/build.gradle.kts": {
       "role": "index",
-      "sha256": "1f5db4fa55b6b6c92abb336b4f4dd8e81973e281da0baa7be03667c3f1f4f280",
+      "sha256": "fba0b6c1a02cce3db570b11667b86093eefcb65180cdc4c1c75588783d7241b3",
       "size": 6352,
-      "normalized_sha256": "1f5db4fa55b6b6c92abb336b4f4dd8e81973e281da0baa7be03667c3f1f4f280"
+      "normalized_sha256": "fba0b6c1a02cce3db570b11667b86093eefcb65180cdc4c1c75588783d7241b3"
     },
     "verification-consumer/gradle.properties": {
       "role": "index",
@@ -772,9 +772,9 @@
     },
     "verification/publication/test_metadata.py": {
       "role": "index",
-      "sha256": "8c27348988fef52b89d464839bc325274ddbf533cc9eaf197fa028645b4bb2d1",
+      "sha256": "5675d8de0e979f3b5be8243b80b35c3773918cd0032f8a237016bdc303b5bb24",
       "size": 6253,
-      "normalized_sha256": "8c27348988fef52b89d464839bc325274ddbf533cc9eaf197fa028645b4bb2d1"
+      "normalized_sha256": "5675d8de0e979f3b5be8243b80b35c3773918cd0032f8a237016bdc303b5bb24"
     },
     "verification/video-scripts.test.cjs": {
       "role": "index",
