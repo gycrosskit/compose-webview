@@ -28,7 +28,7 @@ settings.gradle.kts[FV5T]: F:配置 KMP 插件和 Maven 源，加载 WebView cor
 0.2.0-rc.9候选验收.md[SV4T]: F:保存 rc.9 的三端源码与测试、真 WKWebView 和原生回执候选证据 | R:code:docs/0.2.0-rc.9远程发布验收.md | A:- | S:-
 0.2.0-rc.9远程发布验收.md[SV4T]: F:记录 rc.9 的发布端归档与精确渠道回验结果 | R:code:docs/0.2.0-rc.9候选验收.md | A:- | S:-
 RC迁移说明.md[SV4T]: F:说明已移除 CMP 的历史消费者迁移、冻结候选和渠道边界 | R:code:docs/接入指南.md | A:- | S:-
-功能与平台差异.md[SU8M]: F:说明三端导航、Bridge、设备权限和文档生命周期合同 | R:code:docs/接入指南.md,code:docs/开发与验证.md | A:- | S:ArkWeb 的新窗口回调无原始请求，取消且不重发 URL。当前窗合法 GET、POST 与重定向由内核处理
+功能与平台差异.md[SU8M]: F:说明三端导航、Bridge、设备权限和文档生命周期合同 | R:code:docs/接入指南.md,code:docs/开发与验证.md | A:- | S:ArkWeb 新窗口缺原始请求，取消且不重发。可见失败页交给内核渲染，iOS 允许 HTTP 错误正文，失败文档不获得原生能力。
 完整源码审查.md[SQ5S]: F:保存共享请求、平台 WebView 与 Kuikly 接线的历史逐文件审查和验证限制 | R:code:docs/功能与平台差异.md | A:- | S:-
 开发与验证.md[SV6M]: F:提供平台编译、相机权限和生命周期回归，以及各发布渠道证据 | R:code:docs/功能与平台差异.md,code:scripts/build.sh | A:- | S:-
 接入指南.md[SU8M]: F:说明公共请求、开放导航、原生权限与早期通道的宿主接入 | R:code:docs/功能与平台差异.md,code:ios/Sources/GYWebView.h | A:AppWebView,GYWebView | S:允许任意 HTTP(S) 来源仍和显式 URL、scheme 及拒绝规则取交集，不修改 Bridge 信任
@@ -44,12 +44,12 @@ gradle-wrapper.properties[FV3T]: F:固定 Gradle 发行版及 Wrapper 存储路�
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ios/Sources/===
 GYWebView.h[LU8T]: F:声明 Kuikly WKWebView 原生入口和宿主文件选择 provider 合同 | R:code:ios/Sources/GYWebView.m | A:GYWebView,GYWebFileSelectionProvider | S:工厂不得捕获页面 owner；provider Main 单次回调，退回或文档撤销时归 owner 释放
-GYWebView.m[IU9L]: F:实现 WKWebView 的导航、主框架 Bridge、脚本、媒体和文件能力 | R:code:ios/Sources/GYWebView.h,code:ios/Sources/GYWebViewScripts.inc,code:ios/Tests/BooleanWireCheck.m | A:GYWebView,hrv_callWithMethod,hrv_removeFromSuperview | S:开放导航不绕过合法 HTTP(S) Origin 检查；原生能力继续按文档和来源校验，旧回执按代次撤销
+GYWebView.m[IU9L]: F:实现 WKWebView 的导航、主框架 Bridge、脚本、媒体和文件能力 | R:code:ios/Sources/GYWebView.h,code:ios/Sources/GYWebViewScripts.inc,code:ios/Tests/BooleanWireCheck.m | A:GYWebView,hrv_callWithMethod,hrv_removeFromSuperview | S:主文档 HTTP 失败仍由 WebKit 渲染响应，保留失败事件并拒绝原生能力。合法 HTTP(S) 导航与 Bridge 来源独立校验，旧回执按代次撤销。
 GYWebViewScripts.inc[IU6T]: F:提供由 Kotlin 生成的 WKWebView 注入脚本常量 | R:code:ios/generate-scripts.py,code:ios/Sources/GYWebView.m | A:- | S:以 Kotlin 源为准，生成物禁止手工维护
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ios/Tests/===
-BooleanWireCheck.m[TU6L]: F:用真实 WKWebView 回归 wire、跨域导航、Bridge 隔离及原生生命周期 | R:code:ios/Sources/GYWebView.m,code:ios/Tests/page-channel-server.py | A:- | S:覆盖开放导航与 Bridge 信任相互独立，系统权限和文件 provider 可用替身
-page-channel-server.py[TQ4T]: F:为真实 WKWebView 测试提供 loopback 页面与 iframe 等导航 fixture | R:code:ios/Tests/BooleanWireCheck.m | A:- | S:-
+BooleanWireCheck.m[TU6L]: F:用真实 WKWebView 回归 wire、导航、Bridge、原生生命周期及 HTTP 错误正文 | R:code:ios/Sources/GYWebView.m,code:ios/Tests/page-channel-server.py | A:- | S:HTTP 404/500 正文渲染须保留失败事件并隔离原生脚本。系统权限和文件 provider 可用替身。
+page-channel-server.py[TQ4T]: F:为真实 WKWebView 回归提供回环导航页面、混合资源及带正文的 HTTP 404/500 | R:code:ios/Tests/BooleanWireCheck.m | A:- | S:-
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ios/===
 generate-scripts.py[XV6T]: F:从 Kotlin 的 iOS/早期页面脚本生成 Objective-C include，可核对逐字一致 | R:code:ios/Sources/GYWebViewScripts.inc | A:--check | S:-
@@ -72,7 +72,7 @@ hvigor-config.json5[FV3T]: F:配置鸿蒙工程 Hvigor 模型与默认工具参�
 verify-har.sh[TV7T]: F:构建 API22 WebView HAR，执行源码与实际 HAR 合同并编译隔离消费者 | R:code:ohos/tests/contract.test.cjs,code:ohos/verification-consumer/build-profile.json5 | A:WEBVIEW_SYSTEM_ACTIONS_HAR | S:显式本地候选覆盖只用于本次验证，退出时恢复精确 Registry 配置
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/tests/===
-contract.test.cjs[TU6L]: F:以 ArkTS 源码或实际 HAR 检查导航、Bridge、权限、窗口和存储 | R:code:ohos/scripts/verify-har.sh,code:ohos/webview-native/src/main/ets/WebViewWire.ts | A:- | S:新窗口测试要求取消且不重发，正常当前窗 POST 保留。替身测试不证明 ArkWeb 真机行为
+contract.test.cjs[TU6L]: F:以 ArkTS 源码或实际 HAR 检查导航、Bridge、失败页可见性、权限和窗口 | R:code:ohos/scripts/verify-har.sh,code:ohos/webview-native/src/main/ets/WebViewWire.ts | A:- | S:可见失败页撤权不终止错误正文，真正隐藏仍 stop。新窗口取消且不重发，当前窗 POST 保留。替身不证明 ArkWeb 真机。
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/verification-consumer/AppScope/===
 app.json5[FV3T]: F:为独立 HAR consumer 声明单独应用标识与版本 | R:code:ohos/verification-consumer/build-profile.json5 | A:- | S:-
@@ -107,7 +107,7 @@ hvigorfile.ts[FV3T]: F:注册 WebViewNative HAR 模块任务 | R:code:ohos/hvigo
 oh-package.json5[FV6T]: F:声明独立 OHPM 2.5.1、公开入口及 Renderer 和窗口依赖 | R:code:ohos/webview-native/Index.ets | A:@gycrosskit/webview | S:Renderer ^2.29.1，System Actions 精确 1.0.2
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/ohos/webview-native/src/main/ets/===
-GYWebView.ets[IU9L]: F:运行 ArkWeb 控制器，执行导航、文档 Bridge、媒体权限和全屏文件回执 | R:code:ohos/webview-native/src/main/ets/WebViewComponent.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts,code:ohos/webview-native/src/main/ets/WebPermissionDialog.ets | A:GYWebView,selectHostFiles,revokeHostFiles,windowPolicyController | S:新窗口因缺原始请求同步取消。attach 与文档 token 隔离旧文件、权限和 window lease；reply 只表示受理
+GYWebView.ets[IU9L]: F:管理 ArkWeb 导航、Bridge、媒体权限和全屏文件回执 | R:code:ohos/webview-native/src/main/ets/WebViewComponent.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts,code:ohos/webview-native/src/main/ets/WebPermissionDialog.ets | A:GYWebView,selectHostFiles,revokeHostFiles,windowPolicyController | S:可见失败页撤权和停媒体但保留内核渲染，隐藏时停止。新窗口缺原始请求而取消；代次隔离旧文件、权限和窗口回执。
 OhosWebViewDataCleaner.ets[IU7T]: F:在 UI 线程清理默认 ArkWeb 资源缓存或网站数据 | R:code:ohos/webview-native/Index.ets | A:OhosWebViewDataCleaner.clearResourceCache,OhosWebViewDataCleaner.clearWebsiteData | S:只等待 Cookie 完成回调；缓存与 WebStorage 返回不代表持久化，已发出的清除无法撤销
 WebPermissionDialog.ets[AU5T]: F:构建由宿主文案和回调驱动的原生权限用途告知弹窗 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets | A:createWebPermissionDialog | S:-
 WebViewComponent.ets[IU8T]: F:将组件请求映射到 ArkUI Web 属性和原生事件回调 | R:code:ohos/webview-native/src/main/ets/GYWebView.ets,code:ohos/webview-native/src/main/ets/WebViewWire.ts | A:createGYWebView | S:每个回调先校验 render token；过期文件、窗口和权限按原生合同结算
@@ -308,14 +308,14 @@ IosWebViewScripts.kt[IU8M]: F:提供 iOS WebKit 文件输入、桥、视频全�
 build.gradle.kts[FV6T]: F:配置原生目标和 Android WebKit/Renderer，发布 KuiklyCompose KMP 组件 | R:code:webview-core/build.gradle.kts,code:gradle/libs.versions.toml | A:- | S:-
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/===
-GYWebViewNative.kt[IU9L]: F:将 Kuikly 请求、命令、生命周期和原生回执映射到 Android 系统 WebView | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt,code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebCapabilities.kt | A:GYWebViewNative.setProp,GYWebViewNative.call,GYWebViewNative.onDestroy | S:stop 先作用于旧加载再撤销回执；request/文档代次阻止旧回调；隐藏和实际离页的权限保留不同
+GYWebViewNative.kt[IU9L]: F:将 Kuikly 请求、命令、生命周期和回执映射到 Android 系统 WebView | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt,code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebCapabilities.kt | A:GYWebViewNative.setProp,GYWebViewNative.call,GYWebViewNative.onDestroy | S:可见主文档失败时仍绘制系统内容，能力继续按归属撤销。stop 先作用于旧加载，文档代次隔离旧回调。
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/===
 AndroidFullscreenHostTest.kt[TU6M]: F:验证 Android 全屏视频容器、默认控件、owner 重入、镜像输入和清理 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebFullscreenHost.kt | A:- | S:-
 AndroidNativeLifecycleTest.kt[TU5T]: F:验证关闭 popup、释放 owner 后忽略 Android Chrome 和错误事件 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
 AndroidPageChannelsNativeTest.kt[TN6M]: F:验证 Android 原生 channel 的早期安装、失败隔离、后台 owner 与更新后的单次回复 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
 AndroidPostNavigationNativeTest.kt[TS6M]: F:验证 Android 公开导航的 GET 交接、受限 POST/弹窗与旧 owner 隔离 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
-GYWebViewNativeTest.kt[TU6L]: F:验证 Android 原生请求、证书与来源合同、Bridge 支持和敏感诊断传播 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
+GYWebViewNativeTest.kt[TU6L]: F:验证 Android 原生请求、证书、来源、Bridge、诊断及失败页的归属和可见性 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:显式撤销归属仅在可见主文档失败时保留 View 可见，新导航恢复普通策略。
 GYWebViewStopTest.kt[TU6M]: F:验证 stop、文件注入 lease、媒体权限、实际离页和同步重入隔离 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/===
