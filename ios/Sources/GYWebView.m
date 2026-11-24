@@ -286,6 +286,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     } else { KUIKLY_SET_CSS_COMMON_PROP; }
 }
 - (BOOL)pageOwned { return self.pageOwnerActive ? self.pageOwnerActive.boolValue : self.pageVisible; }
+- (BOOL)canUsePageCapabilities { return !self.navigationFailed && [self pageOwned]; }
 - (void)emit:(NSDictionary *)event { if (!self.released && self.onEvent) self.onEvent(event); }
 - (void)fail:(NSString *)kind message:(NSString *)message url:(NSString *)url code:(NSNumber *)code {
     self.navigationFailed = YES;
@@ -760,8 +761,15 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
 - (void)webView:(WKWebView *)view decidePolicyForNavigationResponse:(WKNavigationResponse *)response decisionHandler:(void (^)(WKNavigationResponsePolicy))decision {
     NSHTTPURLResponse *http = [response.response isKindOfClass:NSHTTPURLResponse.class] ? (NSHTTPURLResponse *)response.response : nil;
     BOOL failed = view == self.webView && response.isForMainFrame && http.statusCode >= 400;
-    if (failed) { self.navigationFailed = YES; [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES; [self emit:@{@"type": @"loadFailed", @"kind": @"HTTP", @"url": http.URL.absoluteString ?: NSNull.null, @"httpStatus": @(http.statusCode), @"message": @"", @"isMainFrame": @YES}]; }
-    decision(failed ? WKNavigationResponsePolicyCancel : WKNavigationResponsePolicyAllow);
+    if (failed) {
+        self.navigationFailed = YES;
+        [self.pageMessageReplies removeAllObjects];
+        self.pageMessageRevoked = YES;
+        [self emit:@{@"type": @"loadFailed", @"kind": @"HTTP", @"url": http.URL.absoluteString ?: NSNull.null,
+            @"httpStatus": @(http.statusCode), @"message": @"", @"isMainFrame": @YES}];
+    }
+    // 错误正文由 WebKit 展示；记录失败的文档不能获得原生能力。
+    decision(view == self.webView && !self.released ? WKNavigationResponsePolicyAllow : WKNavigationResponsePolicyCancel);
 }
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000
 - (void)webView:(WKWebView *)view requestGeolocationPermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame decisionHandler:(void (^)(WKPermissionDecision))decision API_AVAILABLE(ios(27.0)) {
@@ -769,7 +777,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         NSString *source = GYSourceOrigin(origin);
         NSUInteger generation = self.callbackGeneration;
         BOOL (^current)(void) = ^BOOL {
-            return !self.released && self.webView == view && self.pageVisible && (!self.pageOwnerActive || self.pageOwnerActive.boolValue) &&
+            return !self.released && self.webView == view && self.pageVisible && [self canUsePageCapabilities] &&
                 self.callbackGeneration == generation && frame.webView == view && GYBool(self.request[@"security"], @"geolocationEnabled", NO) &&
                 [self trusted:source] && [self trusted:view.URL.absoluteString] && [GYOrigin(source) isEqual:GYOrigin(view.URL.absoluteString)] &&
                 [GYFrameOrigin(frame) isEqual:GYOrigin(source)] && [GYOrigin(frame.request.URL.absoluteString) isEqual:GYOrigin(source)];
@@ -784,7 +792,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
 #endif
 - (void)webView:(WKWebView *)view requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin initiatedByFrame:(WKFrameInfo *)frame type:(WKMediaCaptureType)type decisionHandler:(void (^)(WKPermissionDecision))decision API_AVAILABLE(ios(15.0)) {
     NSString *url = GYSourceOrigin(origin);
-    BOOL allow = !self.released && view == self.webView && self.pageVisible && (!self.pageOwnerActive || self.pageOwnerActive.boolValue) && frame.isMainFrame && frame.webView == view &&
+    BOOL allow = !self.released && view == self.webView && self.pageVisible && [self canUsePageCapabilities] && frame.isMainFrame && frame.webView == view &&
         GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO) && [self trusted:url] && [self trusted:view.URL.absoluteString] &&
         [GYFrameOrigin(frame) isEqual:GYOrigin(url)] && [GYOrigin(url) isEqual:GYOrigin(view.URL.absoluteString)] &&
         [GYPageMessageDocumentURL(frame.request.URL.absoluteString) isEqual:GYPageMessageDocumentURL(view.URL.absoluteString)];
@@ -812,7 +820,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     }
     NSUInteger generation = self.callbackGeneration;
     [self explainMediaPermissions:undetermined fileCapture:NO completion:^(BOOL accepted) {
-        BOOL current = accepted && !self.released && self.webView == view && self.pageVisible && (!self.pageOwnerActive || self.pageOwnerActive.boolValue) && self.callbackGeneration == generation &&
+        BOOL current = accepted && !self.released && self.webView == view && self.pageVisible && [self canUsePageCapabilities] && self.callbackGeneration == generation &&
             frame.isMainFrame && frame.webView == view && GYBool(self.request[@"security"], @"mediaCaptureEnabled", NO) && [self trusted:url] && [self trusted:view.URL.absoluteString] &&
             [GYFrameOrigin(frame) isEqual:GYOrigin(url)] && [GYOrigin(url) isEqual:GYOrigin(view.URL.absoluteString)] &&
             [GYPageMessageDocumentURL(frame.request.URL.absoluteString) isEqual:GYPageMessageDocumentURL(view.URL.absoluteString)];
@@ -851,7 +859,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     if (![envelope[@"token"] isEqual:self.documentToken]) return;
     if ([message.name isEqual:@"ComposeWebViewPageMessage"]) {
         NSString *channel = GYString(envelope[@"channel"]), *data = GYString(envelope[@"data"]), *source = message.frameInfo.request.URL.absoluteString;
-        if (![self pageOwned] || self.pageMessageRevoked || !channel || !data || data.length > 65536 || ![data canBeConvertedToEncoding:NSUTF8StringEncoding] || [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 65536 || self.pageMessageReplies.count >= 128 || ![self.request[@"pageMessageChannels"] containsObject:channel] || ![self pageMessageAllowed:source] || ![GYFrameOrigin(message.frameInfo) isEqual:GYOrigin(source)]) return;
+        if (![self canUsePageCapabilities] || self.pageMessageRevoked || !channel || !data || data.length > 65536 || ![data canBeConvertedToEncoding:NSUTF8StringEncoding] || [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 65536 || self.pageMessageReplies.count >= 128 || ![self.request[@"pageMessageChannels"] containsObject:channel] || ![self pageMessageAllowed:source] || ![GYFrameOrigin(message.frameInfo) isEqual:GYOrigin(source)]) return;
         NSString *replyId = NSUUID.UUID.UUIDString;
         self.pageMessageReplies[replyId] = @{@"channel": channel, @"source": source};
         [self emit:@{@"type": @"pageMessage", @"channel": channel, @"data": data, @"replyId": replyId}];
@@ -859,7 +867,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     }
     NSString *raw = GYString(envelope[@"value"]);
     if ([message.name isEqual:@"JSAndroidBridge"]) {
-        if (![self pageOwned]) return;
+        if (![self canUsePageCapabilities]) return;
         WKSecurityOrigin *origin = message.frameInfo.securityOrigin;
         NSString *source = GYSourceOrigin(origin);
         if (![self bridgeAllowed:source] || ![self bridgeAllowed:self.webView.URL.absoluteString]) return;
@@ -923,7 +931,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         NSDictionary *value = GYObject(params);
         NSString *replyId = GYString(value[@"replyId"]), *data = GYString(value[@"data"]);
         NSDictionary *reply = replyId ? self.pageMessageReplies[replyId] : nil;
-        if (owner && [self pageOwned] && !self.pageMessageRevoked && data && data.length <= 65536 && [data canBeConvertedToEncoding:NSUTF8StringEncoding] && [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] <= 65536 && reply && [self.request[@"pageMessageChannels"] containsObject:reply[@"channel"]] && [self pageMessageAllowed:reply[@"source"]]) {
+        if (owner && [self canUsePageCapabilities] && !self.pageMessageRevoked && data && data.length <= 65536 && [data canBeConvertedToEncoding:NSUTF8StringEncoding] && [data lengthOfBytesUsingEncoding:NSUTF8StringEncoding] <= 65536 && reply && [self.request[@"pageMessageChannels"] containsObject:reply[@"channel"]] && [self pageMessageAllowed:reply[@"source"]]) {
             [self.pageMessageReplies removeObjectForKey:replyId];
             NSString *script = [NSString stringWithFormat:@"window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__ && window.__GY_WEBVIEW_PAGE_MESSAGE_REPLY__(%@,%@,%@)", GYQuote(self.documentToken), GYQuote(reply[@"channel"]), GYQuote(data)];
             [owner evaluateJavaScript:script completionHandler:nil];
@@ -932,11 +940,11 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     }
     else if ([method isEqual:@"evaluateJavascript"]) {
         NSString *script = GYString(GYObject(params)[@"script"]);
-        if (!owner || !script || ![self pageOwned] || !GYBool(self.request[@"settings"], @"javaScriptEnabled", NO) || !([self trusted:owner.URL.absoluteString] || (GYBool(self.request[@"security"], @"pageBridgeEnabled", NO) && [self bridgeAllowed:owner.URL.absoluteString]))) { if (callback) callback(@{@"result": NSNull.null}); return; }
+        if (!owner || !script || ![self canUsePageCapabilities] || !GYBool(self.request[@"settings"], @"javaScriptEnabled", NO) || !([self trusted:owner.URL.absoluteString] || (GYBool(self.request[@"security"], @"pageBridgeEnabled", NO) && [self bridgeAllowed:owner.URL.absoluteString]))) { if (callback) callback(@{@"result": NSNull.null}); return; }
         NSUInteger generation = self.callbackGeneration;
         __weak typeof(self) weakSelf = self;
         [owner evaluateJavaScript:script completionHandler:^(id value, NSError *error) {
-            if (!weakSelf || weakSelf.released || ![weakSelf pageOwned] || weakSelf.webView != owner || weakSelf.callbackGeneration != generation) return;
+            if (!weakSelf || weakSelf.released || ![weakSelf canUsePageCapabilities] || weakSelf.webView != owner || weakSelf.callbackGeneration != generation) return;
             BOOL valid = !error;
             id result = NSNull.null;
             if (valid && value) { NSData *data = [NSJSONSerialization dataWithJSONObject:value options:NSJSONWritingFragmentsAllowed error:nil]; if (data) result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]; }
@@ -947,7 +955,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     if (callback) callback(@{@"result": result});
 }
 - (void)webView:(WKWebView *)view runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> *))completion API_AVAILABLE(ios(18.4)) {
-    if (self.released || view != self.webView || !self.pageVisible || (self.pageOwnerActive && !self.pageOwnerActive.boolValue) || !frame.isMainFrame || parameters.allowsDirectories || !GYBool(self.request[@"security"], @"fileChooserEnabled", NO) || ![self trusted:frame.request.URL.absoluteString] || ![GYFrameOrigin(frame) isEqual:GYOrigin(view.URL.absoluteString)] || ![GYOrigin(frame.request.URL.absoluteString) isEqual:GYOrigin(view.URL.absoluteString)] || self.filePickerCompletion) { completion(nil); return; }
+    if (self.released || view != self.webView || !self.pageVisible || ![self canUsePageCapabilities] || !frame.isMainFrame || parameters.allowsDirectories || !GYBool(self.request[@"security"], @"fileChooserEnabled", NO) || ![self trusted:frame.request.URL.absoluteString] || ![GYFrameOrigin(frame) isEqual:GYOrigin(view.URL.absoluteString)] || ![GYOrigin(frame.request.URL.absoluteString) isEqual:GYOrigin(view.URL.absoluteString)] || self.filePickerCompletion) { completion(nil); return; }
     self.maxFiles = parameters.allowsMultipleSelection ? 10 : 1;
     self.filePickerCompletion = completion; self.filePickerGeneration = self.callbackGeneration; self.fileOrigin = view.URL.absoluteString;
     NSUInteger revision = ++self.filePickerRevision;
@@ -990,7 +998,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     }];
 }
 - (BOOL)filePickerAllowed:(WKWebView *)owner {
-    return owner && owner == self.webView && !self.released && [self pageOwned] && self.filePickerCompletion && self.filePickerGeneration == self.callbackGeneration && GYBool(self.request[@"security"], @"fileChooserEnabled", NO) && [self trusted:owner.URL.absoluteString] && [GYOrigin(self.fileOrigin) isEqual:GYOrigin(owner.URL.absoluteString)];
+    return owner && owner == self.webView && !self.released && [self canUsePageCapabilities] && self.filePickerCompletion && self.filePickerGeneration == self.callbackGeneration && GYBool(self.request[@"security"], @"fileChooserEnabled", NO) && [self trusted:owner.URL.absoluteString] && [GYOrigin(self.fileOrigin) isEqual:GYOrigin(owner.URL.absoluteString)];
 }
 - (UIViewController *)filePresenter {
     UIViewController *presenter = self.window.rootViewController;
