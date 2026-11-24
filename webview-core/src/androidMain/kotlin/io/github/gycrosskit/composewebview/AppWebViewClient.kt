@@ -42,6 +42,8 @@ open class AppWebViewClient(
 
     /** 系统可能先报告错误再回调 onPageFinished，因此暂存到本轮主框架导航结束。 */
     private var pendingError: WebViewLoadError? = null
+    private var pendingHttpError: WebViewLoadError? = null
+    private var startedUrl: String? = null
     private var callbackOwner: WebView? = null
     private val rejectedCertificates = linkedMapOf<String, WebViewLoadError>()
     /** SSL、渲染进程和结束回调可能报告同一失败，只允许向状态层派发一次。 */
@@ -56,7 +58,10 @@ open class AppWebViewClient(
         }
         callbackOwner = view
         rejectedCertificates.keys.retainAll { it == url }
-        pendingError = null
+        startedUrl = url
+        // Chromium 可先交付响应错误，再通知同一主文档开始。
+        pendingError = pendingHttpError?.takeIf { it.url == url }
+        pendingHttpError = null
         failureDispatched = false
         commitVisibleDispatched = false
         WebViewDiagnostics.pageStarted(view, url)
@@ -70,8 +75,12 @@ open class AppWebViewClient(
             return
         }
         rejectedCertificates.remove(url)
-        val error = pendingError
+        if (startedUrl == url) startedUrl = null
+        val httpError = pendingHttpError?.takeIf { it.url == url }
+        if (httpError != null) pendingHttpError = null
+        val error = pendingError ?: httpError
         if (error != null) {
+            pendingError = error
             dispatchFailure(error)
         } else {
             dispatchCommitVisible(view, url)
@@ -113,7 +122,8 @@ open class AppWebViewClient(
     ) {
         if (!view.isActiveAppWebView() || !isOwner(view)) return
         WebViewErrorHelper.fromHttpError(request, errorResponse)?.let {
-            pendingError = it
+            // 已开始的文档使用同代次错误槽，避免中断后同 URL 的下一轮继承旧 HTTP 错误。
+            if (it.url == startedUrl) pendingError = it else pendingHttpError = it
             WebViewDiagnostics.loadFailure(view, it)
         }
         super.onReceivedHttpError(view, request, errorResponse)

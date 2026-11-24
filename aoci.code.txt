@@ -4,7 +4,7 @@
 .gitattributes[FC3T]: F:固定文本检出的 LF 行尾以保持 AOCI 字节基线跨平台一致 | R:- | A:- | S:-
 .gitignore[FC3T]: F:忽略本地构建、OHOS 工具生成文件、Python cache 与机器 MCP 配置 | R:- | A:- | S:-
 AGENTS.md[SG6S]: F:定义组件评审和 AOCI 会话与维护合同 | R:code:README.md | A:aoci_rules,aoci_overview,aoci_maintain | S:WebView 生命周期检查须区分旧/新 owner 与平台差异
-CHANGELOG.md[SV5S]: F:记录 WebView 功能和各版本三端行为变化 | R:code:README.md,code:docs/功能与平台差异.md | A:- | S:2.5.3 的可选 SSL 原因不改变证书兼容策略。
+CHANGELOG.md[SV5S]: F:记录 WebView 功能和各版本三端行为变化 | R:code:README.md,code:docs/功能与平台差异.md | A:- | S:2.5.3 补齐主文档 HTTP 失败时序和可选 SSL 原因，证书策略沿用。
 GYWebView.podspec[FV7T]: F:声明 GYWebView 2.5.3 原生 Pod 的源码版本、构建配置与 Renderer 依赖 | R:code:ios/Sources/GYWebView.h,code:ios/Sources/GYWebView.m | A:GYWebView | S:使用 native-<版本> 标签，最低 iOS 15，通过 -ObjC 保留运行时注册类。
 LICENSE[SS2M]: F:保留自有 WebView 源码的 Apache 2.0 许可 | R:- | A:- | S:-
 README.md[SG6S]: F:说明 2.5.3 三端安装坐标、导航能力、错误事件和宿主接线 | R:code:docs/功能与平台差异.md,code:docs/接入指南.md | A:AppWebView,GYWebView,WebViewLoadError | S:鸿蒙从固定私有 OHPM 获取；开放导航不授予原生权限，原生 SSL 细分仅基于实际系统证据。
@@ -234,7 +234,7 @@ AndroidWebViewConfig.kt[IU8S]: F:将公共 WebView 请求映射到 Android View�
 AndroidWebViewDataCleaner.kt[IU7T]: F:清理 Android 进程共享资源缓存或网站数据，等待 Cookie 删除与 flush | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewSettings.android.kt | A:AndroidWebViewDataCleaner.clearResourceCache,AndroidWebViewDataCleaner.clearWebsiteData | S:只保存应用 Context；普通清理保留 Cookie 和 WebStorage，取消不撤销已发出的删除
 AppWebBridge.kt[IN9M]: F:安装 Android 应用 Bridge 和具名 document-start 频道，管理单次回复与移除 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidEarlyScriptInstaller.kt | A:AndroidPageMessageChannels,installAppWebBridge,removeAppWebBridge | S:核对主框架、初始 Origin、owner 和文档 token；新文档不能继承旧回执
 AppWebChromeClient.kt[IU6T]: F:接收 Android 原生加载进度和标题事件，并核对活跃 View | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt | A:- | S:-
-AppWebViewClient.kt[IU9S]: F:处理 Android 主框架加载、首帧、网络错误、证书回调和渲染进程退出 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebRequestPolicy.kt,code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewErrorHelper.kt | A:AppWebViewClient | S:过滤过期 owner。证书回调可能先于 PageStarted 且没有主帧标记，有限缓存只在同 URL 的主帧资源失败返回 Chromium 证书转换码 0 时采纳；兼容放行不入缓存。主文档失败按导航去重。
+AppWebViewClient.kt[IU9S]: F:处理 Android 主框架加载、首帧、HTTP 与网络错误、证书回调和渲染进程退出 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidWebRequestPolicy.kt,code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/WebViewErrorHelper.kt | A:AppWebViewClient | S:已开始的主文档 HTTP 错误随该次导航结束或新开始回收，早到错误只绑定同 URL。拒绝的证书回调仅由同 URL 主帧资源错误码 0 确认，兼容放行不入缓存。
 ComposeWebViewFileProvider.kt[IS4T]: F:为 WebView 供给隔离的 Android FileProvider 类型 | R:code:webview-core/src/androidMain/AndroidManifest.xml | A:- | S:-
 WebViewDiagnostics.kt[IO7S]: F:按 WebView owner 记录创建、首帧、失败、释放和性能状态 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt | A:WebViewDiagnostics | S:以弱键追踪 View，防止持有已销毁实例；敏感诊断需要消隐
 WebViewErrorHelper.kt[IU6T]: F:把 Android 主帧资源、HTTP、证书及渲染异常归一为公共加载错误 | R:code:webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebViewClient.kt | A:WebViewErrorHelper | S:Android 证书主错误码 0 是实际错误值，通用网络码 -11 只确认握手失败。
@@ -315,7 +315,7 @@ AndroidFullscreenHostTest.kt[TU6M]: F:验证 Android 全屏视频容器、默认
 AndroidNativeLifecycleTest.kt[TU5T]: F:验证关闭 popup、释放 owner 后忽略 Android Chrome 和错误事件 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
 AndroidPageChannelsNativeTest.kt[TN6M]: F:验证 Android 原生 channel 的早期安装、失败隔离、后台 owner 与更新后的单次回复 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
 AndroidPostNavigationNativeTest.kt[TS6M]: F:验证 Android 公开导航的 GET 交接、受限 POST/弹窗与旧 owner 隔离 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
-GYWebViewNativeTest.kt[TU6L]: F:验证 Android 原生请求、证书兼容、跨导航错误归属、Bridge、诊断及失败页可见性 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:拒绝证书后等待迟到的主帧资源错误，子资源静默。归属撤销仅在可见主文档失败时保留 View 可见，新导航恢复普通策略。
+GYWebViewNativeTest.kt[TU6L]: F:验证 Android 证书兼容、HTTP 失败时序、Bridge 和可见失败页归属 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:覆盖先失败后开始、重复结束、未结束即同 URL 重新开始、切换 URL 和子资源过滤；原生失败页撤权后仍可见。
 GYWebViewStopTest.kt[TU6M]: F:验证 stop、文件注入 lease、媒体权限、实际离页和同步重入隔离 | R:code:webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt | A:- | S:-
 
 ===/Users/guoyang/.codex/worktrees/aoci-compose-webview/compose-webview/webview-kuikly/src/commonMain/kotlin/io/github/gycrosskit/composewebview/kuikly/===

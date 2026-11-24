@@ -5,6 +5,7 @@ import android.view.View
 import android.webkit.PermissionRequest
 import android.webkit.TestWebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.ValueCallback
 import androidx.activity.ComponentActivity
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
@@ -91,6 +92,49 @@ class GYWebViewNativeTest {
             assertEquals(0, stale.proceeded)
             assertTrue(stale.cancelled > 0)
         }
+    }
+
+    @Test
+    fun `main document HTTP error can arrive before page started`() {
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        val events = mutableListOf<Map<*, *>>()
+        native.setProp("onEvent", { raw: Any? -> events += raw as Map<*, *> } as KuiklyRenderCallback)
+        native.setProp("request", WebViewWire.encodeRequest(request))
+        val owner = native.getChildAt(0) as WebView
+        val client = Shadow.extract<RecordingWebView>(owner).webViewClient
+        val response = WebResourceResponse("text/html", "UTF-8", 404, "Not Found", emptyMap(), null)
+        val failed = "https://trusted.test/missing"
+
+        client.onReceivedHttpError(owner, resourceRequest(failed, mainFrame = true), response)
+        client.onPageStarted(owner, failed, null)
+        client.onPageFinished(owner, failed)
+        client.onPageFinished(owner, failed)
+        assertEquals(404, events.single { it["type"] == "loadFailed" }["httpStatus"])
+        assertTrue(events.none { it["type"] == "pageFinished" })
+
+        events.clear()
+        client.onPageStarted(owner, failed, null)
+        client.onPageFinished(owner, failed)
+        assertTrue(events.any { it["type"] == "pageFinished" })
+        assertTrue(events.none { it["type"] == "loadFailed" })
+
+        events.clear()
+        client.onPageStarted(owner, failed, null)
+        client.onReceivedHttpError(owner, resourceRequest(failed, mainFrame = true), response)
+        client.onPageStarted(owner, failed, null)
+        client.onPageFinished(owner, failed)
+        assertTrue(events.any { it["type"] == "pageFinished" })
+        assertTrue(events.none { it["type"] == "loadFailed" })
+
+        events.clear()
+        client.onReceivedHttpError(owner, resourceRequest(failed, mainFrame = true), response)
+        val next = "https://trusted.test/next"
+        client.onPageStarted(owner, next, null)
+        client.onReceivedHttpError(owner, resourceRequest(next, mainFrame = false), response)
+        client.onPageFinished(owner, next)
+        assertTrue(events.any { it["type"] == "pageFinished" })
+        assertTrue(events.none { it["type"] == "loadFailed" })
+        native.onDestroy()
     }
 
     private fun resourceRequest(url: String, mainFrame: Boolean) = object : WebResourceRequest {
