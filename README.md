@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-`2.5.2` 覆盖 Maven/JitPack、iOS Git Pod 与鸿蒙私有 OHPM，更新三端 WebView 的失败页面展示。实际发布状态以各渠道回执为准。
+`2.5.3` 覆盖 Maven/JitPack、iOS Git Pod 与鸿蒙私有 OHPM，补充三端 WebView 主文档加载失败的 SSL 诊断。实际发布状态以各渠道回执为准。
 
 济世三端已使用正式远程依赖编译，Android、iOS 已安装；私库字节与真实安装已核对，用户设备行为另行验收。通用 HAR 消费及 macOS 上的正式 Maven / Git Pod 完整消费通过，旧网络失败记录保留；Linux 公开消费仍 deferred。`2.3.2` / `native-2.3.2` 仅有冻结 Tag / 候选且未完成正式发行，旧 Tag、制品和历史记录保持。
 
@@ -60,19 +60,19 @@ dependencyResolutionManagement {
 
 ```kotlin
 // Kuikly Android/iOS/HarmonyOS
-implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.5.2")
+implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.5.3")
 ```
 
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.5.2'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.5.3'
 ```
 
 原生 Pod 的 Renderer 范围为 `>= 2.29.1, < 3.0`，由宿主统一选择；消费边界见
 [Renderer 依赖约束](docs/功能与平台差异.md#renderer-依赖约束)。
 
-HarmonyOS 通过私有 OHPM 安装 `@gycrosskit/webview@2.5.2`。接线见[鸿蒙接入指南](ohos/webview-native/README.md)。
+HarmonyOS 通过私有 OHPM 安装 `@gycrosskit/webview@2.5.3`。接线见[鸿蒙接入指南](ohos/webview-native/README.md)。
 
 ## 快速使用
 
@@ -94,6 +94,8 @@ fun ExamplePage(modifier: Modifier) {
 Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同名原生 View。Android 需要调用 `registerGYWebView()`；iOS Pod 链接 `OpenKuiklyIOSRender` 和 `-ObjC`；HarmonyOS 注册 HAR 导出的 Creator。完整示例见 [接入指南](docs/接入指南.md) 和 [HarmonyOS 接入](ohos/webview-native/README.md)。
 
 ## 能力与安全边界
+
+未发布候选新增 `WebViewLoadError.sslReason`，仅携带平台可确认的 TLS/证书原因及实际回调错误码，供宿主展示失败诊断；现有证书兼容与安全策略保持原样，见[加载错误](docs/接入指南.md#加载错误)。
 
 - JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTP(S) 来源；默认拒绝服务端证书错误。宿主可显式设置 `settings.verifyServerCertificate=false` 兼容过期、自签名或其他无效证书，详见[证书兼容设置](docs/接入指南.md#https-服务端证书兼容)。
 - 标准定位使用 `security.geolocationEnabled`（默认关闭），敏感页面首次加载前设置 `sensitiveDiagnostics=true`；iOS 按版本接入用途说明和系统定位授权的差异见[平台合同](docs/功能与平台差异.md#标准网页定位与敏感实例诊断)。

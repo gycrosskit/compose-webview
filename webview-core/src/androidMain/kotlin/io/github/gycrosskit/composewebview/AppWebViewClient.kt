@@ -42,7 +42,10 @@ open class AppWebViewClient(
 
     /** 系统可能先报告错误再回调 onPageFinished，因此暂存到本轮主框架导航结束。 */
     private var pendingError: WebViewLoadError? = null
+    private var pendingHttpError: WebViewLoadError? = null
+    private var startedUrl: String? = null
     private var callbackOwner: WebView? = null
+    private val rejectedCertificates = linkedMapOf<String, WebViewLoadError>()
     /** SSL、渲染进程和结束回调可能报告同一失败，只允许向状态层派发一次。 */
     private var failureDispatched = false
     /** 极少数旧内核不回调 commit visible，完成时需要补发一次首屏可见。 */
@@ -54,7 +57,11 @@ open class AppWebViewClient(
             return
         }
         callbackOwner = view
-        pendingError = null
+        rejectedCertificates.keys.retainAll { it == url }
+        startedUrl = url
+        // Chromium 可先交付响应错误，再通知同一主文档开始。
+        pendingError = pendingHttpError?.takeIf { it.url == url }
+        pendingHttpError = null
         failureDispatched = false
         commitVisibleDispatched = false
         WebViewDiagnostics.pageStarted(view, url)
@@ -67,8 +74,13 @@ open class AppWebViewClient(
             WebViewDiagnostics.ignoredCallback(view, "client-page-finish")
             return
         }
-        val error = pendingError
+        rejectedCertificates.remove(url)
+        if (startedUrl == url) startedUrl = null
+        val httpError = pendingHttpError?.takeIf { it.url == url }
+        if (httpError != null) pendingHttpError = null
+        val error = pendingError ?: httpError
         if (error != null) {
+            pendingError = error
             dispatchFailure(error)
         } else {
             dispatchCommitVisible(view, url)
@@ -93,9 +105,12 @@ open class AppWebViewClient(
         error: WebResourceError,
     ) {
         if (!view.isActiveAppWebView() || !isOwner(view)) return
-        WebViewErrorHelper.fromResourceError(request, error)?.let {
-            pendingError = it
-            WebViewDiagnostics.loadFailure(view, it)
+        WebViewErrorHelper.fromResourceError(request, error)?.let { loadError ->
+            val certificate = rejectedCertificates.remove(loadError.url)
+            // Chromium 把已由 SSL 回调处理的证书错误映射为 0；其他失败仍以资源回调为准。
+            val failure = if (loadError.errorCode == 0) certificate ?: loadError else loadError
+            pendingError = failure
+            WebViewDiagnostics.loadFailure(view, failure)
         }
         super.onReceivedError(view, request, error)
     }
@@ -107,7 +122,8 @@ open class AppWebViewClient(
     ) {
         if (!view.isActiveAppWebView() || !isOwner(view)) return
         WebViewErrorHelper.fromHttpError(request, errorResponse)?.let {
-            pendingError = it
+            // 已开始的文档使用同代次错误槽，避免中断后同 URL 的下一轮继承旧 HTTP 错误。
+            if (it.url == startedUrl) pendingError = it else pendingHttpError = it
             WebViewDiagnostics.loadFailure(view, it)
         }
         super.onReceivedHttpError(view, request, errorResponse)
@@ -116,17 +132,22 @@ open class AppWebViewClient(
     protected open val verifyServerCertificate: Boolean get() = true
 
     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-        if (view.isActiveAppWebView() && isOwner(view) && !verifyServerCertificate) {
+        val active = view.isActiveAppWebView() && isOwner(view)
+        if (active && !verifyServerCertificate) {
             handler.proceed()
             return
         }
+        if (active) {
+            // SSL 回调可能早于 PageStarted，也可能来自子资源。等待有主帧信息的失败回调确认。
+            error.url?.takeIf(String::isNotBlank)?.let { url ->
+                if (url !in rejectedCertificates && rejectedCertificates.size == 8) {
+                    rejectedCertificates.remove(rejectedCertificates.keys.first())
+                }
+                rejectedCertificates[url] = WebViewErrorHelper.fromSslError(url, error.primaryError)
+            }
+        }
         handler.cancel()
-        if (!view.isActiveAppWebView() || !isOwner(view)) return
-        val loadError = WebViewErrorHelper.fromSslError(error.url)
-        pendingError = loadError
-        WebViewDiagnostics.loadFailure(view, loadError)
-        dispatchFailure(loadError)
-        super.onReceivedSslError(view, handler, error)
+        if (view.isActiveAppWebView() && isOwner(view)) super.onReceivedSslError(view, handler, error)
     }
 
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {

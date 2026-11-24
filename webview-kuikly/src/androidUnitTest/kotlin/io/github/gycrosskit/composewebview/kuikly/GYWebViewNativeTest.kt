@@ -3,6 +3,9 @@ package io.github.gycrosskit.composewebview.kuikly
 import android.net.Uri
 import android.view.View
 import android.webkit.PermissionRequest
+import android.webkit.TestWebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.ValueCallback
 import androidx.activity.ComponentActivity
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
@@ -47,12 +50,41 @@ class GYWebViewNativeTest {
             val client = Shadow.extract<RecordingWebView>(owner).webViewClient
             val handler = Shadow.newInstanceOf(android.webkit.SslErrorHandler::class.java)
             val recorded = Shadow.extract<RecordingSslErrorHandler>(handler)
+            val initialUrl = owner.url
+            val failedUrl = "https://trusted.test/redirect"
+            client.onPageStarted(owner, initialUrl, null)
             val error = android.net.http.SslError(android.net.http.SslError.SSL_UNTRUSTED,
-                android.net.http.SslCertificate("test", "test", "2020", "2021"), "https://trusted.test/page")
+                android.net.http.SslCertificate("test", "test", "2020", "2021"), failedUrl)
             client.onReceivedSslError(owner, handler, error)
             assertEquals(if (verify) 0 else 1, recorded.proceeded)
             assertEquals(verify, recorded.cancelled > 0)
+            assertTrue(events.none { it["type"] == "loadFailed" })
+            client.onPageStarted(owner, failedUrl, null)
+            if (verify) {
+                client.onReceivedError(owner, resourceRequest(failedUrl, mainFrame = true), TestWebResourceError(0))
+            }
+            client.onPageFinished(owner, failedUrl)
             assertEquals(verify, events.any { it["type"] == "loadFailed" && it["kind"] == "SSL" })
+            if (verify) {
+                val failure = events.single { it["type"] == "loadFailed" }
+                assertEquals(android.net.http.SslError.SSL_UNTRUSTED, failure["errorCode"])
+                assertEquals("CERTIFICATE_UNTRUSTED", failure["sslReason"])
+            }
+            client.onPageStarted(owner, owner.url, null)
+            events.clear()
+            val resourceHandler = Shadow.newInstanceOf(android.webkit.SslErrorHandler::class.java)
+            client.onReceivedSslError(owner, resourceHandler, android.net.http.SslError(
+                android.net.http.SslError.SSL_EXPIRED,
+                android.net.http.SslCertificate("test", "test", "2020", "2021"), "https://cdn.test/image.png"))
+            val resource = Shadow.extract<RecordingSslErrorHandler>(resourceHandler)
+            assertEquals(if (verify) 0 else 1, resource.proceeded)
+            assertEquals(verify, resource.cancelled > 0)
+            if (verify) {
+                client.onReceivedError(owner, resourceRequest("https://cdn.test/image.png", mainFrame = false), TestWebResourceError(0))
+            }
+            assertTrue(events.none { it["type"] == "loadFailed" })
+            client.onPageFinished(owner, owner.url)
+            assertTrue(events.any { it["type"] == "pageFinished" })
             native.onDestroy()
             val staleHandler = Shadow.newInstanceOf(android.webkit.SslErrorHandler::class.java)
             client.onReceivedSslError(owner, staleHandler, error)
@@ -60,6 +92,58 @@ class GYWebViewNativeTest {
             assertEquals(0, stale.proceeded)
             assertTrue(stale.cancelled > 0)
         }
+    }
+
+    @Test
+    fun `main document HTTP error can arrive before page started`() {
+        val native = GYWebViewNative(RuntimeEnvironment.getApplication())
+        val events = mutableListOf<Map<*, *>>()
+        native.setProp("onEvent", { raw: Any? -> events += raw as Map<*, *> } as KuiklyRenderCallback)
+        native.setProp("request", WebViewWire.encodeRequest(request))
+        val owner = native.getChildAt(0) as WebView
+        val client = Shadow.extract<RecordingWebView>(owner).webViewClient
+        val response = WebResourceResponse("text/html", "UTF-8", 404, "Not Found", emptyMap(), null)
+        val failed = "https://trusted.test/missing"
+
+        client.onReceivedHttpError(owner, resourceRequest(failed, mainFrame = true), response)
+        client.onPageStarted(owner, failed, null)
+        client.onPageFinished(owner, failed)
+        client.onPageFinished(owner, failed)
+        assertEquals(404, events.single { it["type"] == "loadFailed" }["httpStatus"])
+        assertTrue(events.none { it["type"] == "pageFinished" })
+
+        events.clear()
+        client.onPageStarted(owner, failed, null)
+        client.onPageFinished(owner, failed)
+        assertTrue(events.any { it["type"] == "pageFinished" })
+        assertTrue(events.none { it["type"] == "loadFailed" })
+
+        events.clear()
+        client.onPageStarted(owner, failed, null)
+        client.onReceivedHttpError(owner, resourceRequest(failed, mainFrame = true), response)
+        client.onPageStarted(owner, failed, null)
+        client.onPageFinished(owner, failed)
+        assertTrue(events.any { it["type"] == "pageFinished" })
+        assertTrue(events.none { it["type"] == "loadFailed" })
+
+        events.clear()
+        client.onReceivedHttpError(owner, resourceRequest(failed, mainFrame = true), response)
+        val next = "https://trusted.test/next"
+        client.onPageStarted(owner, next, null)
+        client.onReceivedHttpError(owner, resourceRequest(next, mainFrame = false), response)
+        client.onPageFinished(owner, next)
+        assertTrue(events.any { it["type"] == "pageFinished" })
+        assertTrue(events.none { it["type"] == "loadFailed" })
+        native.onDestroy()
+    }
+
+    private fun resourceRequest(url: String, mainFrame: Boolean) = object : WebResourceRequest {
+        override fun getUrl() = Uri.parse(url)
+        override fun isForMainFrame() = mainFrame
+        override fun isRedirect() = true
+        override fun hasGesture() = false
+        override fun getMethod() = "GET"
+        override fun getRequestHeaders() = emptyMap<String, String>()
     }
 
     @Test

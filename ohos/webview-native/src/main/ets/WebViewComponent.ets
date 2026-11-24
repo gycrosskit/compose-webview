@@ -1,7 +1,7 @@
 import { KuiklyRenderBaseView } from '@kuikly-open/render';
 import { GYWebView } from './GYWebView';
 import { webview } from '@kit.ArkWeb';
-import { networkErrorKind } from './WebViewWire';
+import { networkErrorKind, networkSslReason, certificateSslReason } from './WebViewWire';
 
 // 两个原生 Web 分支共享现有属性和事件；只把注入 API 留在各分支，避免重复事件链。
 @Extend(Web)
@@ -35,9 +35,9 @@ function webViewAttributes(view: GYWebView, token: number) {
   .onPageEnd(event => { if (view.isRenderActive(token)) view.onPageEnd(event?.url || ''); })
   .onProgressChange(event => { if (view.isRenderActive(token)) view.emit({ type: 'progressChanged', progress: event?.newProgress || 0 }); })
   .onTitleReceive(event => { if (view.isRenderActive(token)) view.emit({ type: 'titleChanged', title: event?.title || '' }); })
-  .onErrorReceive(event => { if (view.isRenderActive(token) && event?.request.isMainFrame()) view.fail(networkErrorKind(event.error.getErrorCode()), event.error.getErrorInfo(), event.error.getErrorCode()); })
+  .onErrorReceive(event => { if (view.isRenderActive(token) && event?.request.isMainFrame()) view.fail(networkErrorKind(event.error.getErrorCode()), event.error.getErrorInfo(), event.error.getErrorCode(), undefined, networkSslReason(event.error.getErrorCode())); })
   .onHttpErrorReceive(event => { if (view.isRenderActive(token) && event?.request.isMainFrame()) view.fail('HTTP', 'HTTP load failed', undefined, event.response.getResponseCode()); })
-  .onSslErrorEventReceive(event => { if (view.isRenderActive(token) && view.settings().verifyServerCertificate === false) { event?.handler.handleConfirm(); } else { event?.handler.handleCancel(); if (view.isRenderActive(token)) view.fail('SSL', 'TLS certificate rejected'); } })
+  .onSslErrorEventReceive(event => { if (view.isRenderActive(token) && view.settings().verifyServerCertificate === false) { event?.handler.handleConfirm(); } else { event?.handler.handleCancel(); if (view.isRenderActive(token)) view.fail('SSL', 'TLS certificate rejected', event?.error, undefined, event ? certificateSslReason(event.error) : undefined); } })
   .onRenderExited(() => { if (view.isRenderActive(token)) view.renderExited(); })
   .onGeolocationShow(event => { if (event) { if (view.isRenderActive(token)) view.geolocationShow(event); else event.geolocation.invoke(event.origin, false, false); } })
   .onGeolocationHide(() => { if (view.isRenderActive(token)) view.geolocationHide(); })

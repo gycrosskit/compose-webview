@@ -52,7 +52,7 @@ interface BridgeMessage { handlerName: string; data: string; }
 export interface WebEvent {
   type: string; url?: string; title?: string; progress?: number; canGoBack?: boolean; canGoForward?: boolean;
   handlerName?: string; data?: string; isFullscreen?: boolean; kind?: string; message?: string;
-  errorCode?: number; httpStatus?: number; isMainFrame?: boolean; hasUserGesture?: boolean;
+  errorCode?: number; httpStatus?: number; sslReason?: string; isMainFrame?: boolean; hasUserGesture?: boolean;
   target?: string; requestId?: string; blocked?: boolean; permissions?: string[]; capability?: string; channel?: string; replyId?: string;
 }
 
@@ -921,13 +921,13 @@ listen('pagehide',function(){active=false;revoke(key,nonce)});
   /** 交付当前实例事件；销毁后静默丢弃，回调在所属 UI 执行链执行。 */
   emit(event: WebEvent): void { if (!this.lifetime.disposed) this.eventCallback?.(event); }
   /** 发布中立主文档错误，errorCode/httpStatus 可缺省。 */
-  fail(kind: string, message: string, errorCode?: number, httpStatus?: number): void {
+  fail(kind: string, message: string, errorCode?: number, httpStatus?: number, sslReason?: string): void {
     const controllerOwner = this.controller; const ownerToken = this.renderToken;
     this.revokePending();
     if (controllerOwner !== this.controller || ownerToken !== this.renderToken || this.lifetime.disposed) return;
     this.mainDocumentFailed = true;
     this.emit({ type: 'loadFailed', kind: kind, message: message, url: this.attached ? this.currentUrl() : '',
-      errorCode: errorCode, httpStatus: httpStatus, isMainFrame: true });
+      errorCode: errorCode, httpStatus: httpStatus, sslReason: sslReason, isMainFrame: true });
   }
   /** 当前 Controller 存活时发布历史可用性和地址。 */
   emitHistory(): void {
