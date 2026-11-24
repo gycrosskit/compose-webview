@@ -35,6 +35,7 @@ class GYWebViewNative @JvmOverloads constructor(
     private var sensitiveDiagnostics = false
     private var destroyed = false
     private var crashed = false
+    private var mainDocumentFailed = false
     private var initialHtmlNavigation = false
     private var callbackGeneration = 0L
     private var requestGeneration = 0L
@@ -135,7 +136,7 @@ class GYWebViewNative @JvmOverloads constructor(
             oldPopupRouter?.release()
             oldFullscreenHost?.hide()
         } else webView?.let { capabilities?.resume(it) }
-        visibility = if (canPresentUi) View.VISIBLE else View.INVISIBLE
+        visibility = if (pageVisible && (ownerActive || mainDocumentFailed)) View.VISIBLE else View.INVISIBLE
         if (ownerActive) webView?.onResume() else webView?.onPause()
     }
 
@@ -207,6 +208,7 @@ class GYWebViewNative @JvmOverloads constructor(
             return
         }
         crashed = false
+        mainDocumentFailed = false
         appBridgeUnsupportedReported = false
         val owner = WebView(context)
         webView = owner
@@ -226,6 +228,7 @@ class GYWebViewNative @JvmOverloads constructor(
         owner.settings.setGeolocationEnabled(current.security.geolocationEnabled)
         owner.webViewClient = object : AppWebViewClient(object : AppWebViewClient.Listener {
             override fun onPageLoadStarted(url: String?) { if (owner !== webView || destroyed) return;
+                mainDocumentFailed = false
                 pageMessageChannels?.onPageStarted(url)
                 exitFullscreen()
                 initialHtmlNavigation = false
@@ -242,6 +245,7 @@ class GYWebViewNative @JvmOverloads constructor(
             override fun onPageCommitVisible(url: String?) { if (owner !== webView || destroyed) return; emit(WebViewEvent.FirstContentVisible(url)) }
             override fun onPageLoadFailed(error: WebViewLoadError) {
                 if (owner !== webView || destroyed) return
+                mainDocumentFailed = true
                 pageMessageChannels?.revoke()
                 if (error.kind == WebViewErrorKind.RENDER_PROCESS) {
                     crashed = true
