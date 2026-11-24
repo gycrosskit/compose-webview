@@ -1196,6 +1196,12 @@ static void CheckNavigationErrors(void) {
         NSString *kind = code.integerValue == NSURLErrorTimedOut ? @"TIMEOUT" :
             (code.integerValue == NSURLErrorNotConnectedToInternet ? @"NETWORK" : @"SSL");
         Require([event[@"kind"] isEqual:kind] && [event[@"errorCode"] isEqual:code], @"Native navigation errors retain normalized kind and original code");
+        NSDictionary *reasons = @{@(NSURLErrorSecureConnectionFailed): @"TLS_HANDSHAKE_FAILED",
+            @(NSURLErrorServerCertificateHasBadDate): @"CERTIFICATE_DATE_INVALID",
+            @(NSURLErrorServerCertificateNotYetValid): @"CERTIFICATE_NOT_YET_VALID",
+            @(NSURLErrorServerCertificateUntrusted): @"CERTIFICATE_UNTRUSTED",
+            @(NSURLErrorServerCertificateHasUnknownRoot): @"CERTIFICATE_UNTRUSTED"};
+        Require([event[@"sslReason"] isEqual:reasons[code] ?: NSNull.null], @"TLS reason must match actual Foundation evidence");
         RequireBoolean(event[@"isMainFrame"], YES, @"navigation failure belongs to the main document");
     }
     NSUInteger count = events.count;
@@ -1205,6 +1211,10 @@ static void CheckNavigationErrors(void) {
     Require(events.count == count, @"Old WebView cannot report a failure");
     [page webView:page.webView didFailNavigation:nil withError:[NSError errorWithDomain:@"OtherDomain" code:NSURLErrorTimedOut userInfo:nil]];
     Require([events.lastObject[@"kind"] isEqual:@"UNKNOWN"], @"Native error codes are scoped to their domain");
+    for (NSNumber *code in @[@(NSURLErrorSecureConnectionFailed), @(NSURLErrorServerCertificateHasBadDate)]) {
+        [page webView:page.webView didFailNavigation:nil withError:[NSError errorWithDomain:@"OtherDomain" code:code.integerValue userInfo:nil]];
+        Require(events.lastObject[@"sslReason"] == NSNull.null, @"Foreign domain must not acquire a certificate diagnosis");
+    }
     [page hrv_removeFromSuperview];
 }
 

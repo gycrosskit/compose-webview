@@ -37,6 +37,32 @@ export function networkErrorKind(code: number): string {
   }
 }
 
+/** 只映射内核明确给出的原因，其他证书或 SSL 错误不猜测握手失败。 */
+export function networkSslReason(code: number): string | undefined {
+  switch (code) {
+    case WebNetErrorList.ERR_CERT_COMMON_NAME_INVALID: return 'CERTIFICATE_HOST_MISMATCH';
+    case WebNetErrorList.ERR_CERT_DATE_INVALID: return 'CERTIFICATE_DATE_INVALID';
+    case WebNetErrorList.ERR_CERT_AUTHORITY_INVALID: return 'CERTIFICATE_UNTRUSTED';
+    case WebNetErrorList.ERR_SSL_PROTOCOL_ERROR:
+    case WebNetErrorList.ERR_SSL_HANDSHAKE_NOT_COMPLETED: return 'TLS_HANDSHAKE_FAILED';
+    case WebNetErrorList.ERR_NO_SSL_VERSIONS_ENABLED:
+    case WebNetErrorList.ERR_SSL_VERSION_OR_CIPHER_MISMATCH:
+    case WebNetErrorList.ERR_SSL_OBSOLETE_CIPHER:
+    case WebNetErrorList.ERR_SSL_OBSOLETE_VERSION_OR_CIPHER: return 'TLS_VERSION_OR_CIPHER_MISMATCH';
+    default: return undefined;
+  }
+}
+
+/** SSL 主帧证书回调的独立枚举，与负数网络错误码不可混用。 */
+export function certificateSslReason(code: number): string | undefined {
+  switch (code) {
+    case SslError.HostMismatch: return 'CERTIFICATE_HOST_MISMATCH';
+    case SslError.DateInvalid: return 'CERTIFICATE_DATE_INVALID';
+    case SslError.Untrusted: return 'CERTIFICATE_UNTRUSTED';
+    default: return undefined;
+  }
+}
+
 /**
  * 中立内容 wire；由 decodeRequest 校验后使用，正文和 URL 可能包含敏感数据。
  * @property type url 或 html 内容类型。

@@ -3,6 +3,22 @@ package io.github.gycrosskit.composewebview
 import kotlin.test.*
 
 class WebViewWireTest {
+    @Test fun sslReasonsPreserveNativeCodesAndOldWire() {
+        for (reason in WebViewSslReason.entries) {
+            val error = WebViewLoadError(WebViewErrorKind.SSL, errorCode = 0, sslReason = reason)
+            val values = WebViewWire.eventValues(WebViewEvent.LoadFailed(error))
+            assertEquals(reason.name, values["sslReason"])
+            assertEquals(0, values["errorCode"])
+            assertEquals(WebViewEvent.LoadFailed(error), WebViewWire.decodeEvent(
+                """{"type":"loadFailed","kind":"SSL","errorCode":0,"sslReason":"${reason.name}"}"""))
+        }
+        for (field in listOf("", ",\"sslReason\":null", ",\"sslReason\":\"FUTURE_REASON\"")) {
+            val event = WebViewWire.decodeEvent("""{"type":"loadFailed","kind":"SSL"$field}""") as WebViewEvent.LoadFailed
+            assertNull(event.error.sslReason)
+            assertNull(event.error.errorCode)
+        }
+    }
+
     @Test fun sensitiveAndGeolocationWireAreExplicitAndStrict() {
         val request = WebViewRequest(WebViewContent.Url("https://safe.example"),
             security = WebViewSecurity(WebViewTrustPolicy(listOf("https://safe.example")), geolocationEnabled = true),

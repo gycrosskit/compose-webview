@@ -29,6 +29,19 @@ static NSString *GYNavigationErrorKind(NSError *error) {
     }
 }
 
+static NSString *GYNavigationSslReason(NSError *error) {
+    if (![error.domain isEqual:NSURLErrorDomain]) return nil;
+    switch (error.code) {
+        case NSURLErrorSecureConnectionFailed: return @"TLS_HANDSHAKE_FAILED";
+        // Foundation 的 bad date 同时包含过期和尚未生效，不能进一步断言。
+        case NSURLErrorServerCertificateHasBadDate: return @"CERTIFICATE_DATE_INVALID";
+        case NSURLErrorServerCertificateNotYetValid: return @"CERTIFICATE_NOT_YET_VALID";
+        case NSURLErrorServerCertificateUntrusted:
+        case NSURLErrorServerCertificateHasUnknownRoot: return @"CERTIFICATE_UNTRUSTED";
+        default: return nil;
+    }
+}
+
 static BOOL GYBool(NSDictionary *object, NSString *key, BOOL fallback) {
     id value = object[key];
     return [value isKindOfClass:NSNumber.class] ? [value boolValue] : fallback;
@@ -289,9 +302,12 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
 - (BOOL)canUsePageCapabilities { return !self.navigationFailed && [self pageOwned]; }
 - (void)emit:(NSDictionary *)event { if (!self.released && self.onEvent) self.onEvent(event); }
 - (void)fail:(NSString *)kind message:(NSString *)message url:(NSString *)url code:(NSNumber *)code {
+    [self fail:kind message:message url:url code:code sslReason:nil];
+}
+- (void)fail:(NSString *)kind message:(NSString *)message url:(NSString *)url code:(NSNumber *)code sslReason:(NSString *)sslReason {
     self.navigationFailed = YES;
     [self.pageMessageReplies removeAllObjects]; self.pageMessageRevoked = YES;
-    [self emit:@{@"type": @"loadFailed", @"kind": kind, @"message": message ?: @"", @"url": url ?: NSNull.null, @"errorCode": code ?: NSNull.null, @"isMainFrame": @YES}];
+    [self emit:@{@"type": @"loadFailed", @"kind": kind, @"message": message ?: @"", @"url": url ?: NSNull.null, @"errorCode": code ?: NSNull.null, @"isMainFrame": @YES, @"sslReason": sslReason ?: NSNull.null}];
 }
 - (BOOL)validRules:(id)rules {
     if (!rules || rules == NSNull.null) return YES;
@@ -755,7 +771,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
         completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
     }
 }
-- (void)webView:(WKWebView *)view didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error { if (view == self.webView && !([error.domain isEqual:NSURLErrorDomain] && error.code == NSURLErrorCancelled)) [self fail:GYNavigationErrorKind(error) message:error.localizedDescription url:view.URL.absoluteString code:@(error.code)]; }
+- (void)webView:(WKWebView *)view didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error { if (view == self.webView && !([error.domain isEqual:NSURLErrorDomain] && error.code == NSURLErrorCancelled)) [self fail:GYNavigationErrorKind(error) message:error.localizedDescription url:view.URL.absoluteString code:@(error.code) sslReason:GYNavigationSslReason(error)]; }
 - (void)webView:(WKWebView *)view didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error { [self webView:view didFailProvisionalNavigation:navigation withError:error]; }
 - (void)webViewWebContentProcessDidTerminate:(WKWebView *)view { if (view == self.webView) [self fail:@"RENDER_PROCESS" message:@"WebKit process terminated" url:view.URL.absoluteString code:nil]; }
 - (void)webView:(WKWebView *)view decidePolicyForNavigationResponse:(WKNavigationResponse *)response decisionHandler:(void (^)(WKNavigationResponsePolicy))decision {

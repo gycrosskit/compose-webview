@@ -95,6 +95,8 @@ Kuikly 使用 `GYWebView` 并显式设置尺寸，使用前在各平台注册同
 
 ## 能力与安全边界
 
+未发布候选新增 `WebViewLoadError.sslReason`，仅携带平台可确认的 TLS/证书原因及实际回调错误码，供宿主展示失败诊断；现有证书兼容与安全策略保持原样，见[加载错误](docs/接入指南.md#加载错误)。
+
 - JavaScript、Bridge、文件选择及媒体采集需要显式开启，高权限能力要求可信 HTTP(S) 来源；默认拒绝服务端证书错误。宿主可显式设置 `settings.verifyServerCertificate=false` 兼容过期、自签名或其他无效证书，详见[证书兼容设置](docs/接入指南.md#https-服务端证书兼容)。
 - 标准定位使用 `security.geolocationEnabled`（默认关闭），敏感页面首次加载前设置 `sensitiveDiagnostics=true`；iOS 按版本接入用途说明和系统定位授权的差异见[平台合同](docs/功能与平台差异.md#标准网页定位与敏感实例诊断)。
 - iOS Native 候选可由宿主通过 `pictureInPicturePageActive` 保留当前视频页的系统 PiP 后台播放，默认隐藏仍停播；业务 Bridge 按页面归属判断，新的采集权限 UI 仍要求可见，详见[全屏视频与 PiP 边界](docs/功能与平台差异.md#h5-全屏视频控制)。
