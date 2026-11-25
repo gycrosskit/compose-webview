@@ -52,14 +52,15 @@ class PublicationContracts(unittest.TestCase):
             'har': har['version'],
         }
         self.assertEqual(versions, {
-            'maven': '2.5.0',
-            'maven-package': '2.5.0',
-            'maven-consumer': '2.5.0',
-            'verify-consumer': '2.5.0',
-            'pod': '2.5.0',
-            'har': '2.5.1',
+            'maven': '2.5.3',
+            'maven-package': '2.5.3',
+            'maven-consumer': '2.5.3',
+            'verify-consumer': '2.5.3',
+            'pod': '2.5.4',
+            'har': '2.5.3',
         })
         for path, current in (('CHANGELOG.md', versions['maven']),
+                              ('CHANGELOG.md', versions['pod']),
                               ('ohos/webview-native/CHANGELOG.md', versions['har'])):
             sections = re.findall(r'^##[ \t]+(.*?)\n(.*?)(?=^#{1,2}[ \t]|\Z)',
                                   (root / path).read_text(), re.MULTILINE | re.DOTALL)
