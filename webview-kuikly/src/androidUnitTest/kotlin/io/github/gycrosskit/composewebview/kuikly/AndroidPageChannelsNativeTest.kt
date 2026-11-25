@@ -1,15 +1,10 @@
 package io.github.gycrosskit.composewebview.kuikly
 
-import android.net.Uri
 import android.os.Looper
 import android.webkit.WebView
-import androidx.webkit.JavaScriptExecutionException
-import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.ScriptHandler
-import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import androidx.webkit.WebViewOutcomeReceiver
 import io.github.gycrosskit.composewebview.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -21,21 +16,28 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadow.api.Shadow
-import java.util.WeakHashMap
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], shadows = [RecordingWebView::class, NativePageFeatures::class, NativePageProvider::class])
+@Config(sdk = [28], shadows = [RecordingWebView::class, NativePageFeatures::class])
 class AndroidPageChannelsNativeTest {
     private val request = WebViewRequest(
         WebViewContent.Url("https://page.test/initial"),
         settings = WebViewSettings(javaScriptEnabled = true),
         pageMessageChannels = setOf("PageReady"),
+        navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf("https://page.test/initial")),
     )
+
+    private fun javascriptReceiver(owner: WebView) =
+        requireNotNull(shadowOf(owner).getJavascriptInterface("PageReady"))
+
+    private fun send(receiver: Any, data: String) {
+        receiver.javaClass.getMethod("postMessage", String::class.java).invoke(receiver, data)
+        shadowOf(Looper.getMainLooper()).idle()
+    }
 
     @Test
     @Config(shadows = [RecordingWebView::class, NativeDocumentStartFeatures::class, NativeDocumentStartFailureProvider::class])
     fun `actual early add failure reports only native geolocation unsupported and preserves page initialization`() {
-        NativePageProvider.listeners.clear()
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())
         val events = mutableListOf<Map<String, Any?>>()
         native.setProp("onEvent", { event: Any? -> @Suppress("UNCHECKED_CAST") events.add(event as Map<String, Any?>) })
@@ -44,18 +46,15 @@ class AndroidPageChannelsNativeTest {
         native.setProp("request", WebViewWire.encodeRequest(adapted))
         val owner = native.getChildAt(0) as WebView
         assertEquals(listOf("NATIVE_GEOLOCATION"), events.filter { it["type"] == "capabilityUnsupported" }.map { it["capability"] })
-        assertEquals(setOf("PageReady"), NativePageProvider.listeners.getValue(owner).keys)
-        val proxy = NativePageReply()
-        NativePageProvider.listeners.getValue(owner).getValue("PageReady").onPostMessage(owner,
-            WebMessageCompat("initialization"), Uri.parse("https://page.test"), true, proxy)
+        assertNull(shadowOf(owner).getJavascriptInterface("ComposeWebViewPage_NativeGeolocation"))
+        send(javascriptReceiver(owner), "initialization")
         val id = events.single { it["type"] == "pageMessage" }["replyId"]
         native.call("replyPageMessage", """{"replyId":"$id","data":"ready"}""") {}
-        assertEquals(listOf("ready"), proxy.messages)
+        assertTrue(shadowOf(owner).lastEvaluatedJavascript.contains("channel.onmessage({data:\"ready\"})"))
         native.onDestroy()
     }
 
     @Test fun `business bridge follows trusted navigation and rejects queued old documents`() {
-        NativePageProvider.listeners.clear()
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())
         val events = mutableListOf<Map<String, Any?>>()
         native.setProp("onEvent", { event: Any? -> @Suppress("UNCHECKED_CAST") events.add(event as Map<String, Any?>) })
@@ -92,119 +91,94 @@ class AndroidPageChannelsNativeTest {
     }
 
     @Test fun `explicit owner preserves early page channel reply in background and revokes on departure`() {
-        NativePageProvider.listeners.clear()
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())
         val events = mutableListOf<Map<String, Any?>>()
         native.setProp("onEvent", { event: Any? -> @Suppress("UNCHECKED_CAST") events.add(event as Map<String, Any?>) })
         native.setProp("pageOwnerActive", true)
         native.setProp("request", WebViewWire.encodeRequest(request))
         val owner = native.getChildAt(0) as WebView
-        val listener = NativePageProvider.listeners.getValue(owner).getValue("PageReady")
-        val proxy = NativePageReply()
-        listener.onPostMessage(owner, WebMessageCompat("initial"), Uri.parse("https://page.test"), true, proxy)
+        val receiver = javascriptReceiver(owner)
+        send(receiver, "initial")
         val replyId = events.single { it["type"] == "pageMessage" }.getValue("replyId") as String
         native.setProp("visible", false)
         var result: Any? = null
         native.call("replyPageMessage", "{\"replyId\":\"$replyId\",\"data\":\"background\"}") { result = (it as Map<*, *>)["result"] }
         assertEquals(true, result)
-        assertEquals(listOf("background"), proxy.messages)
-        listener.onPostMessage(owner, WebMessageCompat("background"), Uri.parse("https://page.test"), true, proxy)
+        assertTrue(shadowOf(owner).lastEvaluatedJavascript.contains("channel.onmessage({data:\"background\"})"))
+        send(receiver, "background")
         val pendingId = events.last { it["type"] == "pageMessage" }.getValue("replyId") as String
-        listener.onPostMessage(owner, WebMessageCompat("cross-origin"), Uri.parse("https://other.test"), true, proxy)
+        owner.loadUrl("https://other.test/other")
+        send(receiver, "cross-origin")
+        owner.loadUrl("https://page.test/initial")
         assertEquals(2, events.count { it["type"] == "pageMessage" })
         native.setProp("pageOwnerActive", false)
         native.call("replyPageMessage", "{\"replyId\":\"$pendingId\",\"data\":\"stale\"}") { result = (it as Map<*, *>)["result"] }
         assertEquals(false, result)
-        assertEquals(listOf("background"), proxy.messages)
+        assertTrue(shadowOf(owner).lastEvaluatedJavascript.contains("channel.onmessage({data:\"background\"})"))
         native.setProp("visible", true)
-        listener.onPostMessage(owner, WebMessageCompat("stale"), Uri.parse("https://page.test"), true, proxy)
+        send(receiver, "stale")
         assertEquals(2, events.count { it["type"] == "pageMessage" })
         native.onDestroy()
     }
 
     @Test fun `Kuikly early message single reply hide reload and replacement stay owner scoped`() {
-        NativePageProvider.listeners.clear()
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())
         val events = mutableListOf<Map<String, Any?>>()
         native.setProp("onEvent", { event: Any? -> @Suppress("UNCHECKED_CAST") events.add(event as Map<String, Any?>) })
         native.setProp("request", WebViewWire.encodeRequest(request))
         val first = native.getChildAt(0) as WebView
-        val firstProxy = NativePageReply()
-        val firstListener = NativePageProvider.listeners.getValue(first).getValue("PageReady")
-        firstListener.onPostMessage(first, WebMessageCompat("inline"), Uri.parse("https://page.test"), true, firstProxy)
+        val firstReceiver = javascriptReceiver(first)
+        send(firstReceiver, "inline")
         val early = events.single { it["type"] == "pageMessage" }
         val replyId = early.getValue("replyId") as String
         val params = "{\"replyId\":\"$replyId\",\"data\":\"reply\"}"
         var callbackResult: Any? = null
         native.call("replyPageMessage", params) { callbackResult = (it as Map<*, *>)["result"] }
         assertEquals(true, callbackResult)
-        assertEquals(listOf("reply"), firstProxy.messages)
+        assertTrue(shadowOf(first).lastEvaluatedJavascript.contains("channel.onmessage({data:\"reply\"})"))
         native.call("replyPageMessage", params) { callbackResult = (it as Map<*, *>)["result"] }
         assertEquals(false, callbackResult)
         native.setProp("visible", false)
         native.setProp("visible", true)
-        firstListener.onPostMessage(first, WebMessageCompat("after show"), Uri.parse("https://page.test"), true, firstProxy)
+        send(firstReceiver, "after show")
         assertEquals(1, events.count { it["type"] == "pageMessage" })
         native.call("reload", null, null)
         val fresh = native.getChildAt(0) as WebView
         assertNotSame(first, fresh)
         assertEquals(0, Shadow.extract<RecordingWebView>(first).reloadInvocations)
-        val freshListener = NativePageProvider.listeners.getValue(fresh).getValue("PageReady")
-        val freshProxy = NativePageReply()
-        freshListener.onPostMessage(fresh, WebMessageCompat("fresh"), Uri.parse("https://page.test"), true, freshProxy)
-        firstListener.onPostMessage(first, WebMessageCompat("queued old"), Uri.parse("https://page.test"), true, firstProxy)
+        val freshReceiver = javascriptReceiver(fresh)
+        send(freshReceiver, "fresh")
+        send(firstReceiver, "queued old")
         assertEquals(2, events.count { it["type"] == "pageMessage" })
         val freshId = events.last { it["type"] == "pageMessage" }.getValue("replyId") as String
-        native.setProp("request", WebViewWire.encodeRequest(request.copy(content = WebViewContent.Url("https://page.test/replacement"))))
+        native.setProp("request", WebViewWire.encodeRequest(request.copy(content = WebViewContent.Url("https://page.test/replacement"),
+            navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf("https://page.test/replacement")))))
         assertNotSame(fresh, native.getChildAt(0))
         native.call("replyPageMessage", "{\"replyId\":\"$freshId\",\"data\":\"late\"}") { callbackResult = (it as Map<*, *>)["result"] }
         assertEquals(false, callbackResult)
-        assertTrue(freshProxy.messages.isEmpty())
         val last = native.getChildAt(0) as WebView
-        val lastListener = NativePageProvider.listeners.getValue(last).getValue("PageReady")
+        val lastReceiver = javascriptReceiver(last)
         val client = Shadow.extract<RecordingWebView>(last).webViewClient
-        val lastProxy = NativePageReply()
-        lastListener.onPostMessage(last, WebMessageCompat("before stop"), Uri.parse("https://page.test"), true, lastProxy)
+        send(lastReceiver, "before stop")
         val cancelledId = events.last { it["type"] == "pageMessage" }.getValue("replyId") as String
         native.call("stopLoading", null, null)
         native.call("replyPageMessage", "{\"replyId\":\"$cancelledId\",\"data\":\"cancelled\"}") { callbackResult = (it as Map<*, *>)["result"] }
         assertEquals(false, callbackResult)
-        assertTrue(lastProxy.messages.isEmpty())
         client.onPageStarted(last, last.url, null)
         last.loadUrl("https://page.test/replacement")
         client.onPageStarted(last, last.url, null)
-        lastListener.onPostMessage(last, WebMessageCompat("self reload"), Uri.parse("https://page.test"), true, NativePageReply())
+        send(lastReceiver, "self reload")
         assertEquals(3, events.count { it["type"] == "pageMessage" })
         native.onDestroy()
-        lastListener.onPostMessage(last, WebMessageCompat("destroyed"), Uri.parse("https://page.test"), true, NativePageReply())
+        send(lastReceiver, "destroyed")
         assertEquals(3, events.count { it["type"] == "pageMessage" })
     }
-}
-
-class NativePageReply : JavaScriptReplyProxy() {
-    val messages = mutableListOf<String>()
-    override fun postMessage(message: String) { messages += message }
-    override fun postMessage(arrayBuffer: ByteArray) { error("String protocol only") }
-    override fun executeJavaScript(script: String, receiver: WebViewOutcomeReceiver<String, JavaScriptExecutionException>?) {}
 }
 
 @Implements(value = WebViewFeature::class, isInAndroidSdk = false)
 class NativePageFeatures {
     companion object {
-        @JvmStatic @Implementation fun isFeatureSupported(feature: String): Boolean = feature == WebViewFeature.WEB_MESSAGE_LISTENER
-    }
-}
-
-@Implements(value = WebViewCompat::class, isInAndroidSdk = false)
-class NativePageProvider {
-    companion object {
-        val listeners = WeakHashMap<WebView, MutableMap<String, WebViewCompat.WebMessageListener>>()
-        @JvmStatic @Implementation
-        fun addWebMessageListener(owner: WebView, name: String, rules: Set<String>, listener: WebViewCompat.WebMessageListener) {
-            listeners.getOrPut(owner) { mutableMapOf() }[name] = listener
-        }
-        @JvmStatic @Implementation
-        fun removeWebMessageListener(owner: WebView, name: String) { listeners[owner]?.remove(name) }
+        @JvmStatic @Implementation fun isFeatureSupported(feature: String): Boolean = false
     }
 }
 
@@ -212,7 +186,7 @@ class NativePageProvider {
 class NativeDocumentStartFeatures {
     companion object {
         @JvmStatic @Implementation fun isFeatureSupported(feature: String): Boolean =
-            feature == WebViewFeature.WEB_MESSAGE_LISTENER || feature == WebViewFeature.DOCUMENT_START_SCRIPT
+            feature == WebViewFeature.DOCUMENT_START_SCRIPT
     }
 }
 
@@ -221,9 +195,5 @@ class NativeDocumentStartFailureProvider {
     companion object {
         @JvmStatic @Implementation fun addDocumentStartJavaScript(owner: WebView, source: String, origins: Set<String>): ScriptHandler =
             error("provider failed to register document-start")
-        @JvmStatic @Implementation fun addWebMessageListener(owner: WebView, name: String, rules: Set<String>, listener: WebViewCompat.WebMessageListener) =
-            NativePageProvider.addWebMessageListener(owner, name, rules, listener)
-        @JvmStatic @Implementation fun removeWebMessageListener(owner: WebView, name: String) =
-            NativePageProvider.removeWebMessageListener(owner, name)
     }
 }

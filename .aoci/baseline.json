@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-19T08:49:25Z",
-  "updated_at": "2026-11-25T11:50:45Z",
+  "updated_at": "2026-11-25T12:38:47Z",
   "files": {
     ".gitattributes": {
       "role": "index",
@@ -41,9 +41,9 @@
     },
     "README.md": {
       "role": "index",
-      "sha256": "a3c607f67c8f4857af9c8194668f050c40b0c5e64dba93bdf19ed49a9e249fd5",
-      "size": 20406,
-      "normalized_sha256": "a3c607f67c8f4857af9c8194668f050c40b0c5e64dba93bdf19ed49a9e249fd5"
+      "sha256": "2b576c106c1fb3a0ab9460970177281d714c709514cd59fac9b8330cd85b2cf7",
+      "size": 20533,
+      "normalized_sha256": "2b576c106c1fb3a0ab9460970177281d714c709514cd59fac9b8330cd85b2cf7"
     },
     "VALIDATION.md": {
       "role": "index",
@@ -53,9 +53,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "1cd57c5be88248612bb7f03c1f85ffa45cbde4529951ed0cb32e34098837a1cd",
-      "size": 58626,
-      "normalized_sha256": "1cd57c5be88248612bb7f03c1f85ffa45cbde4529951ed0cb32e34098837a1cd"
+      "sha256": "6a41c170371f24d9ac9b392ea0413f90d0f5c6a3fd40be14aaefd1358e6037d8",
+      "size": 59040,
+      "normalized_sha256": "6a41c170371f24d9ac9b392ea0413f90d0f5c6a3fd40be14aaefd1358e6037d8"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -131,9 +131,9 @@
     },
     "docs/功能与平台差异.md": {
       "role": "index",
-      "sha256": "a3b61d47e355e786fa5dd718c4e9c97ff7f2b49d860628732cdd5db18dc33027",
-      "size": 37880,
-      "normalized_sha256": "a3b61d47e355e786fa5dd718c4e9c97ff7f2b49d860628732cdd5db18dc33027"
+      "sha256": "6836b2bf6e381bb518a8a039bc8f82d9345a3e74af6d6e668c64bc08eca0bb43",
+      "size": 37903,
+      "normalized_sha256": "6836b2bf6e381bb518a8a039bc8f82d9345a3e74af6d6e668c64bc08eca0bb43"
     },
     "docs/完整源码审查.md": {
       "role": "index",
@@ -149,9 +149,9 @@
     },
     "docs/接入指南.md": {
       "role": "index",
-      "sha256": "1717e499109f0192bd122d8c181ebc74715575135927367e12c15dd672790d6a",
-      "size": 29387,
-      "normalized_sha256": "1717e499109f0192bd122d8c181ebc74715575135927367e12c15dd672790d6a"
+      "sha256": "050d73a19db06e78d953d2f12f73d3994614384f4a6ae97beaba8f68d3c1862d",
+      "size": 29367,
+      "normalized_sha256": "050d73a19db06e78d953d2f12f73d3994614384f4a6ae97beaba8f68d3c1862d"
     },
     "docs/早期页面通道候选验收.md": {
       "role": "index",
@@ -814,9 +814,9 @@
     },
     "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidEarlyScriptInstaller.kt": {
       "role": "index",
-      "sha256": "7d9c101c1b9f36a84d6b3422542783159e3a5d77091e9a4919c111a2d18a3aae",
-      "size": 4858,
-      "normalized_sha256": "7d9c101c1b9f36a84d6b3422542783159e3a5d77091e9a4919c111a2d18a3aae"
+      "sha256": "e2ec71fde35075d2a9ec578484961acd9990220c0848bb600335e08d1c880882",
+      "size": 5715,
+      "normalized_sha256": "e2ec71fde35075d2a9ec578484961acd9990220c0848bb600335e08d1c880882"
     },
     "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AndroidPopupRouter.kt": {
       "role": "index",
@@ -886,9 +886,9 @@
     },
     "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebBridge.kt": {
       "role": "index",
-      "sha256": "69aca72820ab54d74ac7613ec9752cb051dfc6b62c6f79469c41864c9e09b013",
-      "size": 13964,
-      "normalized_sha256": "69aca72820ab54d74ac7613ec9752cb051dfc6b62c6f79469c41864c9e09b013"
+      "sha256": "d1f8085ec83df07bf4e73693b44f3de28a27e7969e2671f227a8944ee9d27ebc",
+      "size": 14505,
+      "normalized_sha256": "d1f8085ec83df07bf4e73693b44f3de28a27e7969e2671f227a8944ee9d27ebc"
     },
     "webview-core/src/androidMain/kotlin/io/github/gycrosskit/composewebview/AppWebChromeClient.kt": {
       "role": "index",
@@ -952,9 +952,9 @@
     },
     "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidDocumentStartScriptsTest.kt": {
       "role": "index",
-      "sha256": "80c19ad08dc3ee0f015fe2e00dec69df8c79b4ad0056ebc003b11fbc02d1d43a",
-      "size": 17767,
-      "normalized_sha256": "80c19ad08dc3ee0f015fe2e00dec69df8c79b4ad0056ebc003b11fbc02d1d43a"
+      "sha256": "754c87fac2fc39f556945b6b2bd05e04c62017aaa14c7cd3355d4c3c27062b89",
+      "size": 18566,
+      "normalized_sha256": "754c87fac2fc39f556945b6b2bd05e04c62017aaa14c7cd3355d4c3c27062b89"
     },
     "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidEarlyBridgeInstallerTest.kt": {
       "role": "index",
@@ -964,9 +964,9 @@
     },
     "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidPageMessageChannelsTest.kt": {
       "role": "index",
-      "sha256": "8a014579ee765c8886b7dad357e84b3adf44dd158946786ddfbdf23ed7ed895d",
-      "size": 14551,
-      "normalized_sha256": "8a014579ee765c8886b7dad357e84b3adf44dd158946786ddfbdf23ed7ed895d"
+      "sha256": "2175dc8a838e2bd453e851e6e787bd2d0d7fe41f969f40382c58d90f9f6ecb47",
+      "size": 10991,
+      "normalized_sha256": "2175dc8a838e2bd453e851e6e787bd2d0d7fe41f969f40382c58d90f9f6ecb47"
     },
     "webview-core/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/AndroidWebCapabilitiesTest.kt": {
       "role": "index",
@@ -1222,9 +1222,9 @@
     },
     "webview-kuikly/src/androidMain/kotlin/io/github/gycrosskit/composewebview/kuikly/GYWebViewNative.kt": {
       "role": "index",
-      "sha256": "dffe93662f1501670657c16a4ab4eb4ca1fac2edbbce171b90e236d05ae41d41",
-      "size": 26382,
-      "normalized_sha256": "dffe93662f1501670657c16a4ab4eb4ca1fac2edbbce171b90e236d05ae41d41"
+      "sha256": "6618f9ed0a46fdb055422a68b746c077f8596cc81a0e989aaa8b243d892a05c6",
+      "size": 26441,
+      "normalized_sha256": "6618f9ed0a46fdb055422a68b746c077f8596cc81a0e989aaa8b243d892a05c6"
     },
     "webview-kuikly/src/androidUnitTest/kotlin/android/webkit/TestWebResourceError.kt": {
       "role": "index",
@@ -1246,9 +1246,9 @@
     },
     "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/AndroidPageChannelsNativeTest.kt": {
       "role": "index",
-      "sha256": "de38c99ddff07794f871bb747dd92076c95eca95ed02d6ca9136ba766b7c9e2a",
-      "size": 13672,
-      "normalized_sha256": "de38c99ddff07794f871bb747dd92076c95eca95ed02d6ca9136ba766b7c9e2a"
+      "sha256": "c612d97bd8dfd1d0ad937055b6bfb0f52ed6d4f471a685329da53c1048bbd08a",
+      "size": 11105,
+      "normalized_sha256": "c612d97bd8dfd1d0ad937055b6bfb0f52ed6d4f471a685329da53c1048bbd08a"
     },
     "webview-kuikly/src/androidUnitTest/kotlin/io/github/gycrosskit/composewebview/kuikly/AndroidPostNavigationNativeTest.kt": {
       "role": "index",

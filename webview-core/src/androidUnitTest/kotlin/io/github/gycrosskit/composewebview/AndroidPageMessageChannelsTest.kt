@@ -1,16 +1,9 @@
 package io.github.gycrosskit.composewebview
 
-import android.net.Uri
 import android.os.Looper
 import android.webkit.WebView
-import androidx.webkit.JavaScriptExecutionException
-import androidx.webkit.JavaScriptReplyProxy
-import androidx.webkit.WebMessageCompat
-import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import androidx.webkit.WebViewOutcomeReceiver
 import org.junit.Assert.*
-import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -19,172 +12,173 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
-import java.util.WeakHashMap
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], shadows = [PageChannelFeatures::class, PageChannelProvider::class])
+@Config(sdk = [28], shadows = [PageChannelFeatures::class])
 class AndroidPageMessageChannelsTest {
+    private val url = "https://page.test/initial"
     private val request = WebViewRequest(
-        WebViewContent.Url("https://page.test/initial"),
+        WebViewContent.Url(url),
         settings = WebViewSettings(javaScriptEnabled = true),
         pageMessageChannels = setOf("PageReady"),
     )
 
-    @Before fun resetProvider() { PageChannelProvider.listeners.clear() }
+    private fun pinnedRequest() = request.copy(
+        navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf(url)),
+    )
 
-    @Test fun `missing document start rejects only geolocation and preserves original page channels`() {
-        val adapted = request.copy(security = WebViewSecurity(
+    private fun view() = WebView(RuntimeEnvironment.getApplication())
+
+    private fun WebView.receiver(name: String) =
+        shadowOf(this).getJavascriptInterface(name) as JavascriptMessageReceiver
+
+    private fun flushMessages() = shadowOf(Looper.getMainLooper()).idle()
+
+    @Test fun `missing document start rejects geolocation and preserves a fixed page channel`() {
+        val adapted = pinnedRequest().copy(security = WebViewSecurity(
             trustedOrigins = WebViewTrustPolicy(trustedHostSuffixes = setOf("page.test")),
             geolocationEnabled = true,
         )).withNativeGeolocation()
-        val owner = WebView(RuntimeEnvironment.getApplication())
+        val owner = view()
         val events = mutableListOf<WebViewEvent>()
-        val session = AndroidPageMessageChannels(owner, { adapted }, { true }, documentStartInstalled = false, onEvent = events::add)
+        val session = AndroidPageMessageChannels(owner, { adapted }, { true }, documentStartInstalled = false,
+            documentStartToken = null, onEvent = events::add)
         assertEquals(listOf(WebViewEvent.CapabilityUnsupported(WebViewCapability.NATIVE_GEOLOCATION)), events)
-        assertEquals(setOf("PageReady"), PageChannelProvider.listeners.getValue(owner).keys)
-        val proxy = PageChannelReply()
-        PageChannelProvider.listeners.getValue(owner).getValue("PageReady").onPostMessage(owner,
-            WebMessageCompat("ready"), Uri.parse("https://page.test"), true, proxy)
+        assertNull(shadowOf(owner).getJavascriptInterface("ComposeWebViewPage_NativeGeolocation"))
+        owner.receiver("PageReady").postMessage("ready")
+        flushMessages()
         assertTrue(session.reply((events.last() as WebViewEvent.PageMessage).replyId, "still usable"))
-        assertEquals(listOf("still usable"), proxy.messages)
+        assertTrue(shadowOf(owner).lastEvaluatedJavascript.contains("still usable"))
         assertNull(adapted.earlyScriptSource())
     }
 
     @Test fun `browser normalized owner URL preserves initial inbound and reply`() {
-        val request = request.copy(
+        val initial = request.copy(
             content = WebViewContent.Url("https://page.test"),
             navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf("https://page.test/")),
         )
-        val owner = WebView(RuntimeEnvironment.getApplication())
+        val owner = view()
         owner.loadUrl("https://page.test/")
         val events = mutableListOf<WebViewEvent>()
-        val session = AndroidPageMessageChannels(owner, { request }, { true }, events::add)
+        val session = AndroidPageMessageChannels(owner, { initial }, { true }, events::add)
         session.onPageStarted("https://page.test/")
-        val listener = PageChannelProvider.listeners.getValue(owner).getValue("PageReady")
-        val proxy = PageChannelReply()
-        listener.onPostMessage(owner, WebMessageCompat("normalized"), Uri.parse("https://page.test"), true, proxy)
-        val replyId = (events.single() as WebViewEvent.PageMessage).replyId
-        assertTrue(session.reply(replyId, "reply"))
+        val receiver = owner.receiver("PageReady")
+        receiver.postMessage("normalized")
+        flushMessages()
+        assertTrue(session.reply((events.single() as WebViewEvent.PageMessage).replyId, "reply"))
         owner.loadUrl("https://page.test/?next")
-        listener.onPostMessage(owner, WebMessageCompat("different query"), Uri.parse("https://page.test"), true, proxy)
+        receiver.postMessage("different query")
+        flushMessages()
         assertEquals(1, events.size)
         session.revoke()
     }
 
-    @Test fun `early raw message is frame checked and replies through its own proxy`() {
-        val owner = WebView(RuntimeEnvironment.getApplication())
+    @Test fun `protected channel accepts document token and replies once for initial document`() {
+        val owner = view()
         val events = mutableListOf<WebViewEvent>()
-        val session = AndroidPageMessageChannels(owner, { request }, { true }, events::add)
-        val listener = PageChannelProvider.listeners.getValue(owner).getValue("PageReady")
-        val proxy = PageChannelReply()
-        fun send(origin: String, main: Boolean, value: String) = listener.onPostMessage(
-            owner, WebMessageCompat(value), Uri.parse(origin), main, proxy,
-        )
-        // 首段 inline 可以早于 commit/finished，WebView.url 尚未有值。
-        send("https://page.test", true, "raw ready")
+        val session = AndroidPageMessageChannels(owner, { request }, { true }, documentStartInstalled = true,
+            documentStartToken = "document", onEvent = events::add)
+        assertNull(shadowOf(owner).getJavascriptInterface("PageReady"))
+        val receiver = owner.receiver("ComposeWebViewPage_PageReady")
+        receiver.postMessage("raw")
+        receiver.postMessage("stale\u001Epage-one\u001Ewrong generation")
+        receiver.postMessage("document\u001Epage-one\u001E" + "中".repeat(22000))
+        flushMessages()
+        assertTrue(events.isEmpty())
+
+        receiver.postMessage("document\u001Epage-one\u001Eready")
+        flushMessages()
         val message = events.single() as WebViewEvent.PageMessage
-        assertEquals("raw ready", message.data)
-        assertTrue(session.reply(message.replyId, "raw reply"))
-        assertFalse(session.reply(message.replyId, "second reply"))
-        assertEquals(listOf("raw reply"), proxy.messages)
-        send("https://evil.test", true, "foreign")
-        send("https://page.test", false, "iframe")
-        send("https://page.test", true, "中".repeat(22000))
-        assertEquals(1, events.size)
+        assertEquals("ready", message.data)
         assertFalse(session.reply(message.replyId, "x".repeat(65537)))
-        session.onPageStarted("https://page.test/initial")
-        session.onPageStarted("https://page.test/initial")
-        send("https://page.test", true, "same URL reload")
+        assertTrue(session.reply(message.replyId, "reply"))
+        assertTrue(shadowOf(owner).lastEvaluatedJavascript.contains("""__GY_ANDROID_PAGE_MESSAGE_REPLY__("page-one","PageReady","reply")"""))
+        assertFalse(session.reply(message.replyId, "second reply"))
+
+        session.onPageStarted(url)
+        receiver.postMessage("document\u001Epage-one\u001Equeued before same URL reload")
+        session.onPageStarted(url)
+        flushMessages()
         assertEquals(1, events.size)
-        assertFalse(session.reply(message.replyId, "stale reply"))
+        assertNull(shadowOf(owner).getJavascriptInterface("ComposeWebViewPage_PageReady"))
     }
 
-    @Test fun `old SDK name routing revives same owner but cannot cross fresh physical owner`() {
-        val old = WebView(RuntimeEnvironment.getApplication())
-        var routedToNewGeneration = 0
-        WebViewCompat.addWebMessageListener(old, "PageReady", setOf("*")) { _, _, _, _, _ -> }
-        val savedJsObject = PageChannelProvider.JsObject(old, "PageReady")
-        WebViewCompat.removeWebMessageListener(old, "PageReady")
-        WebViewCompat.addWebMessageListener(old, "PageReady", setOf("*")) { _, _, _, _, _ -> routedToNewGeneration++ }
-        savedJsObject.postMessage("old document")
-        assertEquals(1, routedToNewGeneration)
-        WebViewCompat.removeWebMessageListener(old, "PageReady")
-
+    @Test fun `physical owner replacement discards old callbacks and keeps new channel`() {
+        val old = view()
         var currentOwner = old
         val events = mutableListOf<WebViewEvent>()
-        val oldSession = AndroidPageMessageChannels(old, { request }, { currentOwner === old }, events::add)
-        val queuedOldCallback = PageChannelProvider.listeners.getValue(old).getValue("PageReady")
-        oldSession.revoke()
-        val fresh = WebView(RuntimeEnvironment.getApplication())
+        val initial = pinnedRequest()
+        val oldSession = AndroidPageMessageChannels(old, { initial }, { currentOwner === old }, events::add)
+        val oldReceiver = old.receiver("PageReady")
+        oldReceiver.postMessage("queued old")
+        val fresh = view()
         currentOwner = fresh
-        AndroidPageMessageChannels(fresh, { request }, { currentOwner === fresh }, events::add)
-        savedJsObject.postMessage("old object after replacement")
-        queuedOldCallback.onPostMessage(old, WebMessageCompat("queued old inbound"), Uri.parse("https://page.test"), true, PageChannelReply())
+        oldSession.revoke()
+        AndroidPageMessageChannels(fresh, { initial }, { currentOwner === fresh }, events::add)
+        oldReceiver.postMessage("old reference after revocation")
+        flushMessages()
         assertTrue(events.isEmpty())
-        PageChannelProvider.JsObject(fresh, "PageReady").postMessage("fresh inline")
+        fresh.receiver("PageReady").postMessage("fresh inline")
+        flushMessages()
         assertEquals("fresh inline", (events.single() as WebViewEvent.PageMessage).data)
     }
 
-    @Test fun `cancel clears pending replies and bounded queue cannot silently switch documents`() {
-        val owner = WebView(RuntimeEnvironment.getApplication())
-        owner.loadUrl("https://page.test/initial")
+    @Test fun `cancel clears pending replies and queue is bounded`() {
+        val owner = view()
+        owner.loadUrl(url)
+        val initial = pinnedRequest()
         val events = mutableListOf<WebViewEvent.PageMessage>()
-        val session = AndroidPageMessageChannels(owner, { request }, { true }) {
+        val session = AndroidPageMessageChannels(owner, { initial }, { true }) {
             if (it is WebViewEvent.PageMessage) events += it
         }
-        val pending = PageChannelProvider.listeners.getValue(owner).getValue("PageReady")
-        val proxy = PageChannelReply()
-        repeat(129) { pending.onPostMessage(owner, WebMessageCompat("message $it"), Uri.parse("https://page.test"), true, proxy) }
+        val receiver = owner.receiver("PageReady")
+        repeat(129) { receiver.postMessage("message $it") }
+        flushMessages()
         assertEquals(128, events.size)
         assertTrue(session.reply(events.first().replyId, "reply"))
-        pending.onPostMessage(owner, WebMessageCompat("after consume"), Uri.parse("https://page.test"), true, proxy)
+        receiver.postMessage("after consume")
+        flushMessages()
         assertEquals(129, events.size)
         session.revoke()
         assertFalse(session.reply(events.last().replyId, "cancelled"))
-        pending.onPostMessage(owner, WebMessageCompat("after cancel"), Uri.parse("https://page.test"), true, proxy)
+        receiver.postMessage("after cancel")
+        flushMessages()
         assertEquals(129, events.size)
-
-        val nextOwner = WebView(RuntimeEnvironment.getApplication())
-        val replacement = AndroidPageMessageChannels(nextOwner, { request }, { true }) {}
-        val nextListener = PageChannelProvider.listeners.getValue(nextOwner).getValue("PageReady")
-        nextListener.onPostMessage(nextOwner, WebMessageCompat("one"), Uri.parse("https://page.test"), true, proxy)
-        nextListener.onPostMessage(nextOwner, WebMessageCompat("new document proxy"), Uri.parse("https://page.test"), true, PageChannelReply())
-        assertTrue(PageChannelProvider.listeners.getValue(nextOwner).isEmpty())
-        replacement.revoke()
     }
 
     @Test
-    @Config(shadows = [PageChannelUnsupportedFeatures::class, PageChannelProvider::class])
-    fun `fixed captcha document receives first message and can reply once on old provider`() {
-        val url = "https://page.test/initial"
-        val captcha = request.copy(
-            pageMessageChannels = setOf("smsCaptcha"),
-            navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf(url)),
-        )
-        val owner = WebView(RuntimeEnvironment.getApplication())
+    @Config(shadows = [PageChannelUnsupportedFeatures::class])
+    fun `fixed captcha document works without message listener support`() = assertFixedCaptchaChannel()
+
+    @Test
+    fun `fixed captcha document uses the same transport with message listener support`() = assertFixedCaptchaChannel()
+
+    private fun assertFixedCaptchaChannel() {
+        val captcha = pinnedRequest().copy(pageMessageChannels = setOf("smsCaptcha"))
+        val owner = view()
         val events = mutableListOf<WebViewEvent>()
         val session = AndroidPageMessageChannels(owner, { captcha }, { true }, events::add)
         val shadow = shadowOf(owner)
-        val receiver = shadow.getJavascriptInterface("smsCaptcha") as JavascriptMessageReceiver
+        val receiver = owner.receiver("smsCaptcha")
         receiver.postMessage("READY")
-        shadowOf(Looper.getMainLooper()).idle()
+        flushMessages()
         val event = events.single() as WebViewEvent.PageMessage
         assertEquals("smsCaptcha", event.channel)
         assertEquals("READY", event.data)
         owner.loadUrl(url)
         session.onPageStarted(url)
         assertTrue(session.reply(event.replyId, "config"))
-        assertTrue(shadow.lastEvaluatedJavascript.contains("channel.onmessage({data:\"config\"})"))
+        assertTrue(shadow.lastEvaluatedJavascript.contains("config"))
         assertFalse(session.reply(event.replyId, "duplicate"))
         receiver.postMessage("queued before reload")
         session.onPageStarted(url)
-        shadowOf(Looper.getMainLooper()).idle()
+        flushMessages()
         assertEquals(listOf(event), events)
         assertNull(shadow.getJavascriptInterface("smsCaptcha"))
     }
 
     @Test
-    @Config(shadows = [PageChannelUnsupportedFeatures::class, PageChannelProvider::class])
+    @Config(shadows = [PageChannelUnsupportedFeatures::class])
     fun `business bridge accepts current document without listener and drops revoked callbacks`() {
         val url = "https://page.test/initial"
         val request = request.copy(security = WebViewSecurity(
@@ -214,31 +208,27 @@ class AndroidPageMessageChannelsTest {
         assertFalse(owner.hasAppWebBridge())
     }
 
-    @Test
-    @Config(shadows = [PageChannelUnsupportedFeatures::class, PageChannelProvider::class])
-    fun `unsupported provider rejects channel without delaying page load or installing fallback`() {
-        val owner = WebView(RuntimeEnvironment.getApplication())
+    @Test fun `old constructor keeps an ordinary unpinned channel usable`() {
+        val owner = view()
         val events = mutableListOf<WebViewEvent>()
         val session = AndroidPageMessageChannels(owner, { request }, { true }, events::add)
-        owner.loadUrl("https://page.test/initial")
-        assertEquals("https://page.test/initial", owner.url)
-        assertEquals(listOf(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL)), events)
-        assertTrue(PageChannelProvider.listeners.isEmpty())
+        owner.loadUrl(url)
+        assertEquals(url, owner.url)
+        owner.receiver("PageReady").postMessage("ready")
+        flushMessages()
+        val message = events.single() as WebViewEvent.PageMessage
+        assertEquals("ready", message.data)
+        assertTrue(session.reply(message.replyId, "config"))
+        assertNull(shadowOf(owner).getJavascriptInterface("ComposeWebViewPage_PageReady"))
         assertFalse(session.reply("missing", "reply"))
     }
-}
-
-class PageChannelReply : JavaScriptReplyProxy() {
-    val messages = mutableListOf<String>()
-    override fun postMessage(message: String) { messages += message }
-    override fun postMessage(arrayBuffer: ByteArray) { error("String protocol only") }
-    override fun executeJavaScript(script: String, receiver: WebViewOutcomeReceiver<String, JavaScriptExecutionException>?) {}
 }
 
 @Implements(value = WebViewFeature::class, isInAndroidSdk = false)
 class PageChannelFeatures {
     companion object {
-        @JvmStatic @Implementation fun isFeatureSupported(feature: String): Boolean = feature == WebViewFeature.WEB_MESSAGE_LISTENER
+        @JvmStatic @Implementation
+        fun isFeatureSupported(feature: String): Boolean = feature == WebViewFeature.WEB_MESSAGE_LISTENER
     }
 }
 
@@ -246,25 +236,5 @@ class PageChannelFeatures {
 class PageChannelUnsupportedFeatures {
     companion object {
         @JvmStatic @Implementation fun isFeatureSupported(feature: String): Boolean = false
-    }
-}
-
-/** 模拟 Chromium JsBinding 保存名称、postMessage 时动态找当前映射，不能假设旧对象绑定旧 listener。 */
-@Implements(value = WebViewCompat::class, isInAndroidSdk = false)
-class PageChannelProvider {
-    class JsObject(private val owner: WebView, private val channel: String) {
-        private val proxy = PageChannelReply()
-        fun postMessage(data: String) {
-            listeners[owner]?.get(channel)?.onPostMessage(owner, WebMessageCompat(data), Uri.parse("https://page.test"), true, proxy)
-        }
-    }
-    companion object {
-        val listeners = WeakHashMap<WebView, MutableMap<String, WebViewCompat.WebMessageListener>>()
-        @JvmStatic @Implementation
-        fun addWebMessageListener(owner: WebView, name: String, rules: Set<String>, listener: WebViewCompat.WebMessageListener) {
-            listeners.getOrPut(owner) { mutableMapOf() }[name] = listener
-        }
-        @JvmStatic @Implementation
-        fun removeWebMessageListener(owner: WebView, name: String) { listeners[owner]?.remove(name) }
     }
 }
