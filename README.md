@@ -1,6 +1,6 @@
 # GY CrossKit WebView
 
-`2.5.3` 覆盖 Maven/JitPack、iOS Git Pod 与鸿蒙私有 OHPM，补充三端 WebView 主文档加载失败的 SSL 诊断。实际发布状态以各渠道回执为准。
+iOS Git Pod `2.5.4` 修复旧版 WebKit 在关闭视频呈现时可能触发的闪退。Maven/JitPack 和鸿蒙私有 OHPM 使用 `2.5.3`，提供主文档 SSL 诊断。实际发布状态以各渠道回执为准。
 
 济世三端已使用正式远程依赖编译，Android、iOS 已安装；私库字节与真实安装已核对，用户设备行为另行验收。通用 HAR 消费及 macOS 上的正式 Maven / Git Pod 完整消费通过，旧网络失败记录保留；Linux 公开消费仍 deferred。`2.3.2` / `native-2.3.2` 仅有冻结 Tag / 候选且未完成正式发行，旧 Tag、制品和历史记录保持。
 
@@ -66,7 +66,7 @@ implementation("com.github.gycrosskit.compose-webview:webview-kuikly:2.5.3")
 iOS Kuikly 另外安装原生 Pod；它不替代 KMP 依赖：
 
 ```ruby
-pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.5.3'
+pod 'GYWebView', :git => 'https://github.com/gycrosskit/compose-webview.git', :tag => 'native-2.5.4'
 ```
 
 原生 Pod 的 Renderer 范围为 `>= 2.29.1, < 3.0`，由宿主统一选择；消费边界见

@@ -721,7 +721,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     if (internalHtmlLoad && allow) [self emit:@{@"type": @"navigation", @"url": url, @"isMainFrame": @YES, @"hasUserGesture": @NO, @"target": @"CURRENT_WINDOW", @"blocked": @NO}];
     allow = allow && view == self.webView && !self.released && self.callbackGeneration == generation && self.request == request;
     if (allow && !popup && mainFrame) {
-        if (self.pictureInPictureFrameId) [view closeAllMediaPresentationsWithCompletionHandler:nil];
+        if (self.pictureInPictureFrameId) [view closeAllMediaPresentationsWithCompletionHandler:^{}];
         self.pictureInPictureFrameId = nil;
         self.pictureInPictureDocumentToken = NSUUID.UUID.UUIDString;
         if (!self.pageMessageInitialNavigation) self.pageMessageRevoked = YES;
@@ -1259,7 +1259,7 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     self.hidden = suspended;
     if (!self.webView) return;
     if (suspended) {
-        if (self.pictureInPictureFrameId) [self.webView closeAllMediaPresentationsWithCompletionHandler:nil];
+        if (self.pictureInPictureFrameId) [self.webView closeAllMediaPresentationsWithCompletionHandler:^{}];
         [self exitFullscreen:nil fallbackToHistory:NO];
     }
     [self.webView setAllMediaPlaybackSuspended:suspended completionHandler:nil];
@@ -1275,7 +1275,8 @@ static id<GYWebFileSelectionProvider> (^GYFileSelectionFactory)(void);
     WKWebView *owner = self.webView; self.webView = nil; self.documentToken = nil; self.fullscreen = NO;
     self.pictureInPictureFrameId = nil; self.pictureInPictureDocumentToken = nil;
     if (owner) {
-    [owner closeAllMediaPresentationsWithCompletionHandler:nil];
+    // 旧 WebKit 会执行空 completion（WebKit #290196），这里始终传入不捕获 owner 的 block。
+    [owner closeAllMediaPresentationsWithCompletionHandler:^{}];
     for (NSString *key in @[@"estimatedProgress", @"title", @"canGoBack", @"canGoForward"]) [owner removeObserver:self forKeyPath:key];
     [owner stopLoading]; owner.navigationDelegate = nil; owner.UIDelegate = nil;
     [owner.configuration.userContentController removeAllUserScripts];
