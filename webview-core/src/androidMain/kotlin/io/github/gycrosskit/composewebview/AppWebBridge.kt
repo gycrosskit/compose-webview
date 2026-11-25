@@ -1,11 +1,17 @@
 package io.github.gycrosskit.composewebview
 
+import android.os.Handler
+import android.os.Looper
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.annotation.Keep
+import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import androidx.webkit.JavaScriptReplyProxy
+import org.json.JSONObject
 import java.util.UUID
+import java.util.WeakHashMap
 
 /** 每个物理 WebView 只服务一次页面加载；撤销后不能同名重装，旧 JS 对象会按名称路由新 listener。 */
 class AndroidPageMessageChannels private constructor(
@@ -28,16 +34,25 @@ class AndroidPageMessageChannels private constructor(
     private val requestedChannels = initialRequest.pageMessageChannels.toSet()
     private var channels = requestedChannels
     private val proxies = mutableMapOf<String, JavaScriptReplyProxy>()
-    private val replies = mutableMapOf<String, JavaScriptReplyProxy>()
+    private val replies = mutableMapOf<String, (String) -> Unit>()
     private var active = initialRequest.canUsePageMessageChannelsAt(initialUrl) ||
         initialRequest.canUsePageMessageChannelsAt(initialUrl?.pageMessageDocumentUrl())
     private var started = false
+    private var useJavascriptInterface = false
     private val installed = mutableSetOf<String>()
 
     init {
         if (active && !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-            active = false
-            onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL))
+            // 验证页已将导航限定到单个完整 URL。定位仍需要真正的 document-start。
+            val pinnedUrl = initialRequest.navigationPolicy.allowedUrls?.singleOrNull()?.pageMessageDocumentUrl()
+            useJavascriptInterface = pinnedUrl != null && pinnedUrl == initialUrl?.pageMessageDocumentUrl()
+            channels = if (useJavascriptInterface) channels - NATIVE_GEOLOCATION_CHANNEL else emptySet()
+            if (channels.isEmpty()) {
+                active = false
+                onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL))
+            } else if (NATIVE_GEOLOCATION_CHANNEL in requestedChannels) {
+                onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.NATIVE_GEOLOCATION))
+            }
         }
         if (active && NATIVE_GEOLOCATION_CHANNEL in channels &&
             initialRequest.scripts.any { it.injectionTime == WebViewScriptInjectionTime.DOCUMENT_START_REQUIRED } &&
@@ -47,38 +62,65 @@ class AndroidPageMessageChannels private constructor(
             if (channels.isEmpty() || !isOwner() || !owner.isActiveAppWebView()) active = false
         }
         if (active) try {
-            val origin = requireNotNull(initialUrl?.toHttpOrigin())
-            val rules = buildSet {
-                add("${origin.scheme}://${origin.host}:${origin.port}")
-                if (!origin.host.startsWith('[')) add("${origin.scheme}://${origin.host}.:${origin.port}")
-            }
-            for (channel in channels) {
-                WebViewCompat.addWebMessageListener(owner, channel, rules) {
-                    view, message, origin, mainFrame, proxy ->
-                    if (view !== owner || !allowed() || !mainFrame ||
-                        initialUrl?.toHttpOrigin() != origin.toString().toHttpOrigin() ||
-                        message.type != WebMessageCompat.TYPE_STRING
-                    ) return@addWebMessageListener
-                    val data = message.data ?: return@addWebMessageListener
-                    if (!isValidPageMessageData(data)) return@addWebMessageListener
-                    val previous = proxies[channel]
-                    // 一个主文档/通道只有一个 proxy；不同 proxy 表示文档身份已改变。
-                    if (previous != null && previous !== proxy) {
-                        revoke()
-                        return@addWebMessageListener
-                    }
-                    if (replies.size >= 128) return@addWebMessageListener
-                    proxies[channel] = proxy
-                    val replyId = UUID.randomUUID().toString()
-                    replies[replyId] = proxy
-                    onEvent(WebViewEvent.PageMessage(channel, data, replyId))
-                }
-                installed += channel
-            }
+            if (useJavascriptInterface) installJavascriptInterfaces() else installWebMessageListeners()
         } catch (_: Exception) {
             revoke()
             onEvent(WebViewEvent.CapabilityUnsupported(WebViewCapability.PAGE_MESSAGE_CHANNEL))
         }
+    }
+
+    private fun installWebMessageListeners() {
+        val origin = requireNotNull(initialUrl?.toHttpOrigin())
+        val rules = buildSet {
+            add("${origin.scheme}://${origin.host}:${origin.port}")
+            if (!origin.host.startsWith('[')) add("${origin.scheme}://${origin.host}.:${origin.port}")
+        }
+        for (channel in channels) {
+            WebViewCompat.addWebMessageListener(owner, channel, rules) {
+                view, message, origin, mainFrame, proxy ->
+                if (view !== owner || !allowed() || !mainFrame ||
+                    initialUrl?.toHttpOrigin() != origin.toString().toHttpOrigin() ||
+                    message.type != WebMessageCompat.TYPE_STRING
+                ) return@addWebMessageListener
+                val data = message.data ?: return@addWebMessageListener
+                if (!isValidPageMessageData(data)) return@addWebMessageListener
+                val previous = proxies[channel]
+                // 一个主文档/通道只有一个 proxy；不同 proxy 表示文档身份已改变。
+                if (previous != null && previous !== proxy) {
+                    revoke()
+                    return@addWebMessageListener
+                }
+                proxies[channel] = proxy
+                emitMessage(channel, data, proxy::postMessage)
+            }
+            installed += channel
+        }
+    }
+
+    private fun installJavascriptInterfaces() {
+        val url = requireNotNull(initialUrl?.pageMessageDocumentUrl()).asJavascriptString()
+        for (channel in channels) {
+            val name = channel.asJavascriptString()
+            owner.addJavascriptInterface(JavascriptMessageReceiver { data ->
+                if (!allowed() || !isValidPageMessageData(data)) return@JavascriptMessageReceiver
+                emitMessage(channel, data) { response ->
+                    val value = response.asJavascriptString()
+                    owner.evaluateJavascript(
+                        "(function(){if(location.href!==$url)return;var channel=window[$name];" +
+                            "if(channel&&typeof channel.onmessage==='function')channel.onmessage({data:$value});})();",
+                        null,
+                    )
+                }
+            }, channel)
+            installed += channel
+        }
+    }
+
+    private fun emitMessage(channel: String, data: String, reply: (String) -> Unit) {
+        if (replies.size >= 128) return
+        val replyId = UUID.randomUUID().toString()
+        replies[replyId] = reply
+        onEvent(WebViewEvent.PageMessage(channel, data, replyId))
     }
 
     private fun allowed(): Boolean {
@@ -90,8 +132,8 @@ class AndroidPageMessageChannels private constructor(
 
     fun reply(replyId: String, data: String): Boolean {
         if (!allowed() || !isValidPageMessageData(data)) return false
-        val proxy = replies.remove(replyId) ?: return false
-        return runCatching { proxy.postMessage(data); true }.getOrDefault(false)
+        val submit = replies.remove(replyId) ?: return false
+        return runCatching { submit(data); true }.getOrDefault(false)
     }
 
     /** 新实例的第一次开始属于声明加载；任何后续开始都关闭本轮通道。 */
@@ -104,12 +146,30 @@ class AndroidPageMessageChannels private constructor(
         active = false
         proxies.clear()
         replies.clear()
-        for (channel in installed) runCatching { WebViewCompat.removeWebMessageListener(owner, channel) }
+        for (channel in installed) runCatching {
+            if (useJavascriptInterface) owner.removeJavascriptInterface(channel)
+            else WebViewCompat.removeWebMessageListener(owner, channel)
+        }
         installed.clear()
     }
 }
 
-/** 只解析已通过真实 frame 来源校验的消息；业务 handler 留在页面。 */
+private fun String.asJavascriptString(): String =
+    JSONObject.quote(this).replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+
+internal class JavascriptMessageReceiver(private val receive: (String) -> Unit) {
+    @Keep
+    @JavascriptInterface
+    fun postMessage(data: String?) {
+        if (data != null) mainHandler.post { receive(data) }
+    }
+
+    private companion object {
+        val mainHandler = Handler(Looper.getMainLooper())
+    }
+}
+
+/** 解析组件信封，业务 handler 留在页面。 */
 internal fun dispatchAppWebBridgeMessage(
     raw: String,
     onMessage: (handlerName: String, data: String) -> Unit,
@@ -119,7 +179,7 @@ internal fun dispatchAppWebBridgeMessage(
     onMessage(message.handlerName, message.data)
 }
 
-/** AndroidX 提供原始 frame 来源；不能用 WebView.url 代表消息来源。 */
+/** 在首个 load 前注册，JS 包装脚本在当前主文档内初始化。 */
 fun WebView.installAppWebBridge(
     request: () -> WebViewRequest,
     onMessage: (handlerName: String, data: String) -> Unit,
@@ -131,18 +191,16 @@ fun WebView.installAppWebBridge(
     documentToken: () -> String?,
     onMessage: (handlerName: String, data: String) -> Unit,
 ) {
-    if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
-    WebViewDiagnostics.bridge(event = "install", view = this)
-    WebViewCompat.addWebMessageListener(this, APP_WEB_BRIDGE_TRANSPORT, setOf("*")) {
-        sourceView, message, sourceOrigin, isMainFrame, _ ->
-        if (sourceView !== this || !sourceView.isActiveAppWebView() ||
-            !request().canReceiveAppBridgeMessage(sourceOrigin.toString(), isMainFrame) ||
-            message.type != WebMessageCompat.TYPE_STRING
-        ) return@addWebMessageListener
-        val raw = message.data ?: return@addWebMessageListener
-        val payload = appWebBridgePayload(raw, documentToken()) ?: return@addWebMessageListener
+    val registration = Any()
+    addJavascriptInterface(JavascriptMessageReceiver { raw ->
+        if (appBridgeRegistrations[this] !== registration || !isActiveAppWebView() ||
+            !request().canUseAppBridgeAt(url)
+        ) return@JavascriptMessageReceiver
+        val payload = appWebBridgePayload(raw, documentToken()) ?: return@JavascriptMessageReceiver
         dispatchAppWebBridgeMessage(payload, onMessage)
-    }
+    }, APP_WEB_BRIDGE_TRANSPORT)
+    appBridgeRegistrations[this] = registration
+    WebViewDiagnostics.bridge(event = "install", view = this)
 }
 
 internal fun appWebBridgePayload(raw: String, documentToken: String?): String? {
@@ -153,9 +211,9 @@ internal fun appWebBridgePayload(raw: String, documentToken: String?): String? {
 
 /** 页面释放时移除 Bridge，缩短 Android 接口在 WebView 中的暴露周期。 */
 fun WebView.removeAppWebBridge() {
-    if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
+    if (appBridgeRegistrations.remove(this) == null) return
     WebViewDiagnostics.bridge(event = "remove", view = this)
-    runCatching { WebViewCompat.removeWebMessageListener(this, APP_WEB_BRIDGE_TRANSPORT) }
+    runCatching { removeJavascriptInterface(APP_WEB_BRIDGE_TRANSPORT) }
 }
 
 /**
@@ -165,7 +223,7 @@ fun WebView.removeAppWebBridge() {
  * 等页面能力必须由业务脚本单独注入，不能继续复制本段基础协议。
  */
 fun WebView.injectAppWebBridge() {
-    if (!isActiveAppWebView() || !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+    if (!isActiveAppWebView() || !hasAppWebBridge()) {
         WebViewDiagnostics.ignoredCallback(this, "bridge-inject")
         return
     }
@@ -173,6 +231,9 @@ fun WebView.injectAppWebBridge() {
     evaluateJavascript(APP_WEB_BRIDGE_SCRIPT, null)
 }
 
+fun WebView.hasAppWebBridge(): Boolean = this in appBridgeRegistrations
+
+private val appBridgeRegistrations = WeakHashMap<WebView, Any>()
 private const val APP_WEB_BRIDGE_TRANSPORT = "ComposeWebViewBridgeTransport"
 /** H5 已使用的两个入口属于兼容协议，不能随 Kotlin 包名调整。 */
 internal const val APP_WEB_BRIDGE_SCRIPT = """
@@ -181,6 +242,14 @@ internal const val APP_WEB_BRIDGE_SCRIPT = """
         if (window !== window.top) return;
         var transport = window.ComposeWebViewBridgeTransport;
         if (!transport || typeof transport.postMessage !== 'function') return;
+        function announceLegacyReady() {
+          if (window.__GY_WEBVIEW_LEGACY_READY__ ||
+              (window.__GY_WEBVIEW_TOKEN_REQUIRED__ && !window.__GY_WEBVIEW_DOCUMENT_TOKEN__)) return;
+          var bridge = window.WebViewJavascriptBridge;
+          if (!bridge || typeof bridge.callHandler !== 'function') return;
+          window.__GY_WEBVIEW_LEGACY_READY__ = true;
+          document.dispatchEvent(new Event('WebViewJavascriptBridgeReady'));
+        }
         var pending = window.__GY_WEBVIEW_BRIDGE_PENDING__;
         if (!pending) {
           pending = {messages: [], size: 0};
@@ -192,6 +261,7 @@ internal const val APP_WEB_BRIDGE_SCRIPT = """
             if (deliver && token) for (var i = 0; i < messages.length; i++) {
               try { transport.postMessage(String(token) + '\u001E' + messages[i]); } catch (_) {}
             }
+            if (deliver) announceLegacyReady();
           };
         }
         function publish(raw) {
@@ -227,6 +297,7 @@ internal const val APP_WEB_BRIDGE_SCRIPT = """
             registerHandler: function(handlerName, callback) {}
           };
         }
+        announceLegacyReady();
       } catch (e) { console.log('bridge inject error'); }
     })();
 """

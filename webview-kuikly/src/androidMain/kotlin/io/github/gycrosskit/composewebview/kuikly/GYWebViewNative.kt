@@ -13,7 +13,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.widget.FrameLayout
-import androidx.webkit.WebViewFeature
 import androidx.lifecycle.Lifecycle
 import com.tencent.kuikly.core.render.android.export.IKuiklyRenderViewExport
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
@@ -372,7 +371,7 @@ class GYWebViewNative @JvmOverloads constructor(
         }
         // 在文档回调中报告，避免创建节点时宿主尚未绑定 controller；不阻断网页或降级来源校验。
         if (!appBridgeUnsupportedReported && current.canUseAppBridgeAt(owner.url) &&
-            !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            !owner.hasAppWebBridge()) {
             appBridgeUnsupportedReported = true
             emit(WebViewEvent.CapabilityUnsupported(WebViewCapability.APP_BRIDGE))
         }
