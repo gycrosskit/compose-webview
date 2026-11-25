@@ -1,10 +1,9 @@
 package io.github.gycrosskit.composewebview
 
 import android.annotation.SuppressLint
-import android.net.Uri
+import android.os.Looper
 import android.webkit.WebView
 import androidx.webkit.ScriptHandler
-import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import androidx.webkit.internal.WebViewGlueCommunicator
@@ -18,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
@@ -33,9 +33,11 @@ import javax.tools.ToolProvider
 class AndroidDocumentStartScriptsTest {
     private val temporary = Files.createTempDirectory("document-start-v0-").toFile()
     private lateinit var legacyLoader: URLClassLoader
-    private val request = WebViewRequest(WebViewContent.Url("https://page.test/initial"),
+    private val url = "https://page.test/initial"
+    private val request = WebViewRequest(WebViewContent.Url(url),
         settings = WebViewSettings(javaScriptEnabled = true),
         security = WebViewSecurity(WebViewTrustPolicy(listOf("https://page.test")), geolocationEnabled = true),
+        navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf(url)),
         pageMessageChannels = setOf("PageReady"),
     ).withNativeGeolocation()
 
@@ -132,31 +134,58 @@ class AndroidDocumentStartScriptsTest {
         val events = mutableListOf<WebViewEvent>()
         val channels = AndroidPageMessageChannels(owner, { request }, { true }, events::add)
         assertEquals(listOf(WebViewEvent.CapabilityUnsupported(WebViewCapability.NATIVE_GEOLOCATION)), events)
-        assertEquals(setOf("PageReady"), DocumentStartBackend.listeners.getValue(owner).keys)
+        assertNotNull(shadowOf(owner).getJavascriptInterface("PageReady"))
+        assertNull(shadowOf(owner).getJavascriptInterface("ComposeWebViewPage_NativeGeolocation"))
         assertEquals(0, DocumentStartBackend.factoryReads)
         channels.revoke()
     }
 
-    @Test fun `successful v0 installation enables geolocation with original frame and origin gates`() {
+    @Test fun `successful v0 installs the protected geolocation wrapper and accepts its token`() {
         val owner = view()
         val installer = AndroidEarlyScriptInstaller { _, _, _ -> }
         installer.install(owner, request)
+        val token = requireNotNull(installer.pageChannelToken(owner))
+        val bootstrap = DocumentStartBackend.added.single {
+            it.source.contains("ComposeWebViewPage_") && it.source.contains(token)
+        }.source
+        assertTrue(bootstrap.replace(" ", "").contains("window!==window.top"))
+        assertTrue(bootstrap.contains(url.asJavascriptString()))
         val events = mutableListOf<WebViewEvent>()
         val channels = AndroidPageMessageChannels(owner, { request }, { true },
             documentStartInstalled = installer.hasDocumentStartScripts(owner), onEvent = events::add)
-        val listener = DocumentStartBackend.listeners.getValue(owner).getValue(NATIVE_GEOLOCATION_CHANNEL)
-        val reply = PageChannelReply()
-        listener.onPostMessage(owner, WebMessageCompat("foreign"), Uri.parse("https://foreign.test"), true, reply)
-        listener.onPostMessage(owner, WebMessageCompat("iframe"), Uri.parse("https://page.test"), false, reply)
+        val receiver = shadowOf(owner).getJavascriptInterface("ComposeWebViewPage_NativeGeolocation") as JavascriptMessageReceiver
+        receiver.postMessage("missing token")
+        receiver.postMessage("stale\u001Epage-one\u001Eget")
+        shadowOf(Looper.getMainLooper()).idle()
         assertTrue(events.isEmpty())
-        listener.onPostMessage(owner, WebMessageCompat("get"), Uri.parse("https://page.test"), true, reply)
+
+        receiver.postMessage("$token\u001Epage-one\u001Eget")
+        shadowOf(Looper.getMainLooper()).idle()
         val message = events.single() as WebViewEvent.PageMessage
         assertEquals(NATIVE_GEOLOCATION_CHANNEL, message.channel)
         assertTrue(channels.reply(message.replyId, "position"))
+        assertTrue(shadowOf(owner).lastEvaluatedJavascript.contains("position"))
         channels.revoke(); installer.remove(owner)
         assertFalse(channels.reply(message.replyId, "late"))
-        assertEquals(listOf("position"), reply.messages)
+        assertNull(shadowOf(owner).getJavascriptInterface("ComposeWebViewPage_NativeGeolocation"))
         assertTrue(DocumentStartBackend.added.all { it.legacy && it.removes == 1 })
+    }
+
+    @Test fun `performance messages are discarded on removal`() {
+        val owner = view()
+        val metrics = mutableListOf<Pair<WebViewPerformanceMetric, Long>>()
+        val installer = AndroidEarlyScriptInstaller { _, metric, duration -> metrics += metric to duration }
+        installer.install(owner, request)
+        val receiver = shadowOf(owner).getJavascriptInterface(PERFORMANCE_MESSAGE_HANDLER) as JavascriptMessageReceiver
+        receiver.postMessage("invalid")
+        receiver.postMessage("perf:dom:20")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(WebViewPerformanceMetric.DOM_CONTENT_LOADED to 20L), metrics)
+
+        receiver.postMessage("perf:dom:40")
+        installer.remove(owner)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, metrics.size)
     }
 
     @Test fun `registration and removal require UI thread without consuming a rejected removal`() {
@@ -187,8 +216,10 @@ class AndroidDocumentStartScriptsTest {
         assertTrue(installer.hasDocumentStartScripts(fresh))
         assertEquals(1, DocumentStartBackend.added.single { it.owner === old }.removes)
         assertTrue(DocumentStartBackend.added.filter { it.owner === fresh }.all { it.removes == 0 })
-        assertFalse(DocumentStartBackend.listeners.containsKey(old))
-        assertTrue(DocumentStartBackend.listeners.containsKey(fresh))
+        assertNull(shadowOf(old).getJavascriptInterface("ComposeWebViewPerformance"))
+        assertNotNull(shadowOf(fresh).getJavascriptInterface("ComposeWebViewPerformance"))
+        assertNull(installer.pageChannelToken(old))
+        assertNotNull(installer.pageChannelToken(fresh))
         installer.remove(old)
         assertTrue(installer.hasDocumentStartScripts(fresh))
 
@@ -196,12 +227,11 @@ class AndroidDocumentStartScriptsTest {
         val channels = AndroidPageMessageChannels(old, { request }, { true },
             documentStartInstalled = installer.hasDocumentStartScripts(old), onEvent = events::add)
         assertEquals(listOf(WebViewEvent.CapabilityUnsupported(WebViewCapability.NATIVE_GEOLOCATION)), events)
-        assertEquals(setOf("PageReady"), DocumentStartBackend.listeners.getValue(old).keys)
-        val reply = PageChannelReply()
-        DocumentStartBackend.listeners.getValue(old).getValue("PageReady").onPostMessage(old,
-            WebMessageCompat("ready"), Uri.parse("https://page.test"), true, reply)
+        val receiver = shadowOf(old).getJavascriptInterface("PageReady") as JavascriptMessageReceiver
+        receiver.postMessage("ready")
+        shadowOf(Looper.getMainLooper()).idle()
         assertTrue(channels.reply((events.last() as WebViewEvent.PageMessage).replyId, "ok"))
-        assertEquals(listOf("ok"), reply.messages)
+        assertTrue(shadowOf(old).lastEvaluatedJavascript.contains("ok"))
         channels.revoke(); installer.remove(fresh); installer.remove(fresh)
         assertTrue(DocumentStartBackend.added.all { it.removes == 1 })
     }
@@ -227,7 +257,7 @@ class AndroidDocumentStartScriptsTest {
         val owner = view()
         val installer = AndroidEarlyScriptInstaller { _, _, _ -> }
         installer.install(owner, request); installer.install(owner, request)
-        assertEquals(2, DocumentStartBackend.added.size)
+        assertEquals(3, DocumentStartBackend.added.size)
         assertTrue(installer.hasDocumentStartScripts(owner))
         installer.remove(owner); installer.remove(owner)
         assertTrue(DocumentStartBackend.added.all { it.removes == 1 })
@@ -251,11 +281,10 @@ private object DocumentStartBackend {
     var onAdd: (Added) -> Unit = {}
     var onRemove: (Added) -> Unit = {}
     val added = mutableListOf<Added>()
-    val listeners = mutableMapOf<WebView, MutableMap<String, WebViewCompat.WebMessageListener>>()
 
     fun reset(legacy: ClassLoader) {
         stable = false; features = arrayOf("DOCUMENT_START_SCRIPT"); loader = legacy
-        factoryReads = 0; attempts = 0; failAdd = -1; onAdd = {}; onRemove = {}; added.clear(); listeners.clear()
+        factoryReads = 0; attempts = 0; failAdd = -1; onAdd = {}; onRemove = {}; added.clear()
     }
 
     fun add(owner: WebView, source: String, origins: Set<String>, legacy: Boolean): Added {
@@ -293,7 +322,7 @@ private object DocumentStartBackend {
 class DocumentStartFeatures {
     companion object {
         @JvmStatic @Implementation fun isFeatureSupported(feature: String): Boolean =
-            feature == WebViewFeature.WEB_MESSAGE_LISTENER || feature == WebViewFeature.DOCUMENT_START_SCRIPT && DocumentStartBackend.stable
+            feature == WebViewFeature.DOCUMENT_START_SCRIPT && DocumentStartBackend.stable
     }
 }
 
@@ -304,12 +333,7 @@ class DocumentStartPublicApi {
             val entry = DocumentStartBackend.add(owner, source, origins, false)
             return ScriptHandler { entry.removes++; DocumentStartBackend.onRemove(entry) }
         }
-        @JvmStatic @Implementation fun addWebMessageListener(owner: WebView, name: String, origins: Set<String>, listener: WebViewCompat.WebMessageListener) {
-            DocumentStartBackend.listeners.getOrPut(owner) { mutableMapOf() }[name] = listener
-        }
-        @JvmStatic @Implementation fun removeWebMessageListener(owner: WebView, name: String) {
-            DocumentStartBackend.listeners[owner]?.let { it.remove(name); if (it.isEmpty()) DocumentStartBackend.listeners.remove(owner) }
-        }
+
     }
 }
 

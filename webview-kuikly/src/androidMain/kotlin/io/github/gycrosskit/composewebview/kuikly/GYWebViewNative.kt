@@ -315,7 +315,8 @@ class GYWebViewNative @JvmOverloads constructor(
         if (current.pageMessageChannels.isNotEmpty()) {
             pageMessageChannels = AndroidPageMessageChannels(
                 owner, { requireNotNull(request) }, { owner === webView && ownerActive && !destroyed && !crashed },
-                documentStartInstalled = earlyScripts.hasDocumentStartScripts(owner), onEvent = ::emit,
+                documentStartInstalled = earlyScripts.hasDocumentStartScripts(owner),
+                documentStartToken = earlyScripts.pageChannelToken(owner), onEvent = ::emit,
             )
             if (!ownerActive) pageMessageChannels?.revoke()
         }
@@ -363,7 +364,7 @@ class GYWebViewNative @JvmOverloads constructor(
             owner.evaluateJavascript(bridgeTokenScript(ownerActive && !discardEarlyBridgeMessages), null)
             owner.injectAppWebBridge()
         }
-        owner.evaluateJavascript(WEB_VIEW_PERFORMANCE_SCRIPT, null)
+        earlyScripts.injectPerformanceScript(owner)
         current.earlyScriptSource()?.let { owner.evaluateJavascript(it, null) }
         if (finished && !finishedScriptsInjected) {
             finishedScriptsInjected = true
