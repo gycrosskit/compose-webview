@@ -35,8 +35,9 @@ static NSDictionary *JSONRoundTrip(NSDictionary *value) {
     if (completion) completion();
 }
 - (void)closeAllMediaPresentationsWithCompletionHandler:(void (^)(void))completion {
+    Require(completion != nil, @"Closing media presentations must provide a non-null completion for older WebKit");
     self.closedPresentations++;
-    if (completion) completion();
+    completion();
 }
 - (void)pauseAllMediaPlaybackWithCompletionHandler:(void (^)(void))completion {
     self.pauses++;
@@ -182,9 +183,13 @@ static void CheckPictureInPictureMediaVisibility(void) {
     Require(media.suspended && page.hidden, @"Leaving a foreground page must still hide and pause even with PiP");
     [page hrv_setPropWithKey:@"visible" propValue:@YES];
     Require(!media.suspended, @"Returning to the visible page removes the suspension without reloading");
-    // Probe 未注册 createWebView 的 KVO；清空后再执行生产释放入口。
-    page.webView = nil;
+    // Probe 未通过 createWebView 初始化，补齐生产释放入口期待的 KVO 注册。
+    for (NSString *key in @[@"estimatedProgress", @"title", @"canGoBack", @"canGoForward"])
+        [media addObserver:page forKeyPath:key options:NSKeyValueObservingOptionNew context:nil];
+    NSUInteger closedPresentations = media.closedPresentations;
     [page hrv_removeFromSuperview];
+    Require(page.webView == nil && media.closedPresentations == closedPresentations + 1,
+            @"Removing the WebView must close its native media presentations once");
     puts("PASS: Native PiP media policy: background, ordinary leave, hidden Bridge, child frames, late/stale messages, PiP exit and foreground restore (WebKit probes)");
 }
 
