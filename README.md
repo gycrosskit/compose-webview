@@ -23,7 +23,7 @@ iOS 常规网页最低 15.0；受控文件选择要求 iOS18.4+，旧系统关�
 
 宿主通过 `AppWebView` 或 raw `GYWebView` 配置 `WebViewRequest`，并用 `WebViewEvent` 接收结果。core 定义请求、导航和安全契约，三端原生 View 管理文档与系统回执。导航由原生同步判定，Bridge、文件和权限另行核对当前文档与来源。iOS 使用 Pod，HarmonyOS 使用 HAR。源码关系见 [AOCI 索引](aoci.txt)，实际接线见[接入指南](docs/接入指南.md)。
 
-Android 启用 JavaScript 与可信 App Bridge 的页面，在内核不支持 `WEB_MESSAGE_LISTENER` 时报告 `CapabilityUnsupported(APP_BRIDGE)`，同一物理 WebView 一次，网页继续加载；宿主负责提示与关闭交互。升级到 Maven `2.1.1` 时，穷举 `WebViewCapability` 的 `when` 需处理新增的 `APP_BRIDGE`。普通页面和支持该能力的设备不报告此事件，来源校验保持不变。
+Android 应用 Bridge 通过 `addJavascriptInterface` 收信，沿用已有 H5 入口、文档归属和 Kuikly 业务事件。具名通道默认使用 AndroidX 消息，旧内核的单 URL 验证页可通过同一种注入接口兼容早期握手。
 
 具名早期双向消息通道自 Maven / Git Pod rc.13 与 OHOS HAR rc.12 提供，既有 Maven / Git Pod / HAR `1.1.0` 的范围以对应 Tag 为准，当前通道合同如下：`pageMessageChannels` 显式指定 `window[channel].postMessage(string)` / `onmessage(event.data)`，默认关闭；宿主用单次 `replyPageMessage` 回复。三端仅初始完整 HTTP(S) 主页面获得 capability；文档身份仅规范化 scheme/host 大小写、默认端口和空路径，path/query/fragment 保留原字节，`navigationPolicy.allowedUrls` 仍匹配实际 URL 原字符串。隐藏、停止和后续导航撤销；恢复必须显式 reload 重建 owner。接线与边界见[接入指南](docs/接入指南.md#具名早期双向页面通道)。
 
