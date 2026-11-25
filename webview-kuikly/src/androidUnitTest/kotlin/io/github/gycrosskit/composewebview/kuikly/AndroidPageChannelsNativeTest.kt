@@ -1,6 +1,7 @@
 package io.github.gycrosskit.composewebview.kuikly
 
 import android.net.Uri
+import android.os.Looper
 import android.webkit.WebView
 import androidx.webkit.JavaScriptExecutionException
 import androidx.webkit.JavaScriptReplyProxy
@@ -15,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
@@ -52,7 +54,7 @@ class AndroidPageChannelsNativeTest {
         native.onDestroy()
     }
 
-    @Test fun `independent navigation installs bridge for later trusted document without granting other frames`() {
+    @Test fun `business bridge follows trusted navigation and rejects queued old documents`() {
         NativePageProvider.listeners.clear()
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())
         val events = mutableListOf<Map<String, Any?>>()
@@ -64,21 +66,27 @@ class AndroidPageChannelsNativeTest {
                 exactOrigins = setOf("https://other.test", "https://trusted.test"))))
         native.setProp("request", WebViewWire.encodeRequest(request))
         val owner = native.getChildAt(0) as WebView
-        val listener = NativePageProvider.listeners.getValue(owner).getValue("ComposeWebViewBridgeTransport")
+        val receiver = shadowOf(owner).getJavascriptInterface("ComposeWebViewBridgeTransport")
+        val postMessage = receiver.javaClass.getMethod("postMessage", String::class.java)
         val client = Shadow.extract<RecordingWebView>(owner).webViewClient
         fun token(): String = native.javaClass.getDeclaredField("documentToken").let { it.isAccessible = true; it.get(native) as String }
-        fun send(origin: String, main: Boolean, documentToken: String) = listener.onPostMessage(owner,
-            WebMessageCompat("$documentToken\u001Eecho\u001F{}"), Uri.parse(origin), main, NativePageReply())
+        fun send(documentToken: String? = null) {
+            val prefix = if (documentToken == null) "" else "$documentToken\u001E"
+            postMessage.invoke(receiver, "${prefix}echo\u001F{}")
+            shadowOf(Looper.getMainLooper()).idle()
+        }
         val oldToken = token()
-        send("https://other.test", true, oldToken)
-        send("https://trusted.test", false, oldToken)
+        send(oldToken)
         assertEquals(0, events.count { it["type"] == "bridgeMessage" })
-        client.onPageStarted(owner, "https://trusted.test/page", null)
-        send("https://trusted.test", true, oldToken)
-        send("https://trusted.test", true, token())
+        val trustedUrl = "https://trusted.test/page"
+        owner.loadUrl(trustedUrl)
+        client.onPageStarted(owner, trustedUrl, null)
+        send(oldToken)
+        send()
+        send(token())
         assertEquals(1, events.count { it["type"] == "bridgeMessage" })
         native.setProp("visible", false)
-        send("https://trusted.test", true, token())
+        send(token())
         assertEquals(1, events.count { it["type"] == "bridgeMessage" })
         native.onDestroy()
     }

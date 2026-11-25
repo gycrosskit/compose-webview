@@ -1,6 +1,7 @@
 package io.github.gycrosskit.composewebview
 
 import android.net.Uri
+import android.os.Looper
 import android.webkit.WebView
 import androidx.webkit.JavaScriptExecutionException
 import androidx.webkit.JavaScriptReplyProxy
@@ -14,6 +15,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
@@ -149,6 +151,67 @@ class AndroidPageMessageChannelsTest {
         nextListener.onPostMessage(nextOwner, WebMessageCompat("new document proxy"), Uri.parse("https://page.test"), true, PageChannelReply())
         assertTrue(PageChannelProvider.listeners.getValue(nextOwner).isEmpty())
         replacement.revoke()
+    }
+
+    @Test
+    @Config(shadows = [PageChannelUnsupportedFeatures::class, PageChannelProvider::class])
+    fun `fixed captcha document receives first message and can reply once on old provider`() {
+        val url = "https://page.test/initial"
+        val captcha = request.copy(
+            pageMessageChannels = setOf("smsCaptcha"),
+            navigationPolicy = WebViewNavigationPolicy(allowedUrls = setOf(url)),
+        )
+        val owner = WebView(RuntimeEnvironment.getApplication())
+        val events = mutableListOf<WebViewEvent>()
+        val session = AndroidPageMessageChannels(owner, { captcha }, { true }, events::add)
+        val shadow = shadowOf(owner)
+        val receiver = shadow.getJavascriptInterface("smsCaptcha") as JavascriptMessageReceiver
+        receiver.postMessage("READY")
+        shadowOf(Looper.getMainLooper()).idle()
+        val event = events.single() as WebViewEvent.PageMessage
+        assertEquals("smsCaptcha", event.channel)
+        assertEquals("READY", event.data)
+        owner.loadUrl(url)
+        session.onPageStarted(url)
+        assertTrue(session.reply(event.replyId, "config"))
+        assertTrue(shadow.lastEvaluatedJavascript.contains("channel.onmessage({data:\"config\"})"))
+        assertFalse(session.reply(event.replyId, "duplicate"))
+        receiver.postMessage("queued before reload")
+        session.onPageStarted(url)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(event), events)
+        assertNull(shadow.getJavascriptInterface("smsCaptcha"))
+    }
+
+    @Test
+    @Config(shadows = [PageChannelUnsupportedFeatures::class, PageChannelProvider::class])
+    fun `business bridge accepts current document without listener and drops revoked callbacks`() {
+        val url = "https://page.test/initial"
+        val request = request.copy(security = WebViewSecurity(
+            appBridgeEnabled = true,
+            trustedOrigins = WebViewTrustPolicy(urls = listOf(url)),
+        ))
+        var token = "one"
+        val received = mutableListOf<String>()
+        val owner = WebView(RuntimeEnvironment.getApplication())
+        owner.installAppWebBridge({ request }, { token }) { handler, _ -> received += handler }
+        owner.loadUrl(url)
+        owner.injectAppWebBridge()
+        assertTrue(owner.hasAppWebBridge())
+        val shadow = shadowOf(owner)
+        assertTrue(shadow.lastEvaluatedJavascript.contains("WebViewJavascriptBridgeReady"))
+        val receiver = shadow.getJavascriptInterface("ComposeWebViewBridgeTransport") as JavascriptMessageReceiver
+        receiver.postMessage("one\u001EmerchantTransfer\u001F{}")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf("merchantTransfer"), received)
+        receiver.postMessage("one\u001Estale\u001F{}")
+        token = "two"
+        shadowOf(Looper.getMainLooper()).idle()
+        receiver.postMessage("two\u001Ereleased\u001F{}")
+        owner.removeAppWebBridge()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf("merchantTransfer"), received)
+        assertFalse(owner.hasAppWebBridge())
     }
 
     @Test

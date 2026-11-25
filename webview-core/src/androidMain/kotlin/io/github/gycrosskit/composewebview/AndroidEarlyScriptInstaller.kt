@@ -52,15 +52,13 @@ class AndroidEarlyScriptInstaller(
                     else runCatching(handler::remove)
                 }
                 val bridge = (if (requireDocumentToken) "window.__GY_WEBVIEW_TOKEN_REQUIRED__=true;" else "") + APP_WEB_BRIDGE_SCRIPT
-                if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
-                    request.security.appBridgeEnabled && request.navigationPolicy.navigationOrigins != null) {
+                if (request.security.appBridgeEnabled && request.navigationPolicy.navigationOrigins != null) {
                     val trust = request.security.trustedOrigins
                     add(
                         "(function(){if(!(${trust.javascriptTrustExpression()}))return;$bridge})();",
                         trust.documentStartOriginRules(),
                     )
-                } else if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
-                    request.canUseAppBridgeAt(request.content.initialOrigin())) {
+                } else if (request.canUseAppBridgeAt(request.content.initialOrigin())) {
                     add(
                         bridge,
                         setOf(WILDCARD_ORIGIN_RULE),

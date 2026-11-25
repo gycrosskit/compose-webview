@@ -173,29 +173,32 @@ class GYWebViewNativeTest {
     }
 
     @Test
-    fun `unsupported app bridge reports once after load and leaves the document working`() {
+    fun `legacy WebView registers app bridge without reporting unsupported`() {
         val native = GYWebViewNative(RuntimeEnvironment.getApplication())
         val events = mutableListOf<Map<*, *>>()
         native.setProp("onEvent", { raw: Any? -> events += raw as Map<*, *> } as KuiklyRenderCallback)
         val trusted = request.copy(security = request.security.copy(appBridgeEnabled = true))
         native.setProp("request", WebViewWire.encodeRequest(trusted))
         val owner = native.getChildAt(0) as WebView
-        val client = Shadow.extract<RecordingWebView>(owner).webViewClient
+        val shadow = Shadow.extract<RecordingWebView>(owner)
+        val client = shadow.webViewClient
         assertEquals("https://trusted.test/page", owner.url)
+        assertNotNull(shadow.getJavascriptInterface("ComposeWebViewBridgeTransport"))
         assertTrue(events.isEmpty())
         client.onPageCommitVisible(owner, owner.url)
         client.onPageFinished(owner, owner.url)
         client.onPageStarted(owner, owner.url, null)
         client.onPageFinished(owner, owner.url)
-        assertEquals(1, events.count { it["capability"] == "APP_BRIDGE" })
+        assertTrue(shadow.scripts.any { it.contains("announceLegacyReady") })
         assertTrue(events.none { it["type"] == "loadFailed" })
         assertTrue(events.any { it["type"] == "pageFinished" })
         native.setProp("request", WebViewWire.encodeRequest(trusted.copy(content = WebViewContent.Url("https://trusted.test/new"))))
         client.onPageFinished(owner, owner.url)
-        assertEquals(1, events.count { it["capability"] == "APP_BRIDGE" })
         val replacement = native.getChildAt(0) as WebView
-        Shadow.extract<RecordingWebView>(replacement).webViewClient.onPageFinished(replacement, replacement.url)
-        assertEquals(2, events.count { it["capability"] == "APP_BRIDGE" })
+        val replacementShadow = Shadow.extract<RecordingWebView>(replacement)
+        assertNotNull(replacementShadow.getJavascriptInterface("ComposeWebViewBridgeTransport"))
+        replacementShadow.webViewClient.onPageFinished(replacement, replacement.url)
+        assertTrue(events.none { it["capability"] == "APP_BRIDGE" })
         native.onDestroy()
     }
 
@@ -355,19 +358,31 @@ class GYWebViewNativeTest {
         val owner = native.getChildAt(0) as WebView
         val shadow = Shadow.extract<RecordingWebView>(owner)
         val client = shadow.webViewClient
-        client.onPageStarted(owner, owner.url, null)
-        client.onPageCommitVisible(owner, owner.url)
-        assertTrue(shadow.scripts.last { it.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__") }.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true)"))
-        native.setProp("visible", false)
-        native.setProp("visible", true)
-        assertTrue(shadow.scripts.last().contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(false)"))
-        client.onPageStarted(owner, owner.url, null)
-        native.call("stopLoading", null, null)
-        client.onPageCommitVisible(owner, owner.url)
-        assertTrue(shadow.scripts.last { it.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__") }.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(false)"))
-        client.onPageStarted(owner, owner.url, null)
-        client.onPageCommitVisible(owner, owner.url)
-        assertTrue(shadow.scripts.last { it.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__") }.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__(true)"))
+        fun assertDelivery(deliver: Boolean, transition: () -> Unit) {
+            val before = shadow.scripts.size
+            transition()
+            val tokenScript = shadow.scripts.drop(before).last {
+                it.startsWith("window.__GY_WEBVIEW_DOCUMENT_TOKEN__ = ")
+            }
+            assertTrue(tokenScript.contains("__GY_WEBVIEW_BRIDGE_TOKEN_READY__($deliver)"))
+        }
+        assertDelivery(true) {
+            client.onPageStarted(owner, owner.url, null)
+            client.onPageCommitVisible(owner, owner.url)
+        }
+        assertDelivery(false) {
+            native.setProp("visible", false)
+            native.setProp("visible", true)
+        }
+        assertDelivery(false) {
+            client.onPageStarted(owner, owner.url, null)
+            native.call("stopLoading", null, null)
+            client.onPageCommitVisible(owner, owner.url)
+        }
+        assertDelivery(true) {
+            client.onPageStarted(owner, owner.url, null)
+            client.onPageCommitVisible(owner, owner.url)
+        }
         native.onDestroy()
     }
 
